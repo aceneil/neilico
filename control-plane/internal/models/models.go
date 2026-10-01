@@ -35,7 +35,9 @@ type Node struct {
 	TenantID       uuid.UUID                   `gorm:"type:uuid;not null;index" json:"tenant_id"`
 	Name           string                      `gorm:"type:varchar(255);not null" json:"name"`
 	PublicKey      string                      `gorm:"type:text;not null" json:"public_key"`
+	PrivateKey     string                      `gorm:"type:text;not null;default:''" json:"-"`
 	VirtualIP      *string                     `gorm:"type:inet" json:"virtual_ip"`
+	PublicEndpoint *string                     `gorm:"type:varchar(255)" json:"public_endpoint,omitempty"`
 	OS             string                      `gorm:"type:varchar(64);not null" json:"os"`
 	Arch           string                      `gorm:"type:varchar(64);not null" json:"arch"`
 	Version        string                      `gorm:"type:varchar(64);not null" json:"version"`
@@ -136,9 +138,10 @@ func (a *AccessControl) Scan(value any) error {
 
 type VirtualNetwork struct {
 	ID        uuid.UUID `gorm:"type:uuid;primaryKey" json:"id"`
-	TenantID  uuid.UUID `gorm:"type:uuid;not null;index" json:"tenant_id"`
-	Name      string    `gorm:"type:varchar(255);not null" json:"name"`
-	CIDR      string    `gorm:"type:cidr;not null" json:"cidr"`
+	TenantID  uuid.UUID `gorm:"type:uuid;not null;index;uniqueIndex:idx_virtual_networks_tenant_name,priority:1" json:"tenant_id"`
+	Name      string    `gorm:"type:varchar(255);not null;uniqueIndex:idx_virtual_networks_tenant_name,priority:2" json:"name"`
+	CIDR      string    `gorm:"column:cidr;type:cidr;not null" json:"cidr"`
+	Secret    string    `gorm:"type:text;not null;default:''" json:"-"`
 	CreatedAt time.Time `gorm:"type:timestamp;not null;index" json:"created_at"`
 
 	Tenant *Tenant `gorm:"foreignKey:TenantID;constraint:OnDelete:RESTRICT,OnUpdate:CASCADE" json:"-"`
@@ -146,9 +149,9 @@ type VirtualNetwork struct {
 
 type NetworkMember struct {
 	ID        uuid.UUID `gorm:"type:uuid;primaryKey" json:"id"`
-	NetworkID uuid.UUID `gorm:"type:uuid;not null;index" json:"network_id"`
-	NodeID    uuid.UUID `gorm:"type:uuid;not null;index" json:"node_id"`
-	VirtualIP string    `gorm:"type:inet;not null" json:"virtual_ip"`
+	NetworkID uuid.UUID `gorm:"type:uuid;not null;index;uniqueIndex:idx_network_members_network_node,priority:1" json:"network_id"`
+	NodeID    uuid.UUID `gorm:"type:uuid;not null;index;uniqueIndex:idx_network_members_network_node,priority:2" json:"node_id"`
+	VirtualIP string    `gorm:"type:inet;not null;uniqueIndex:idx_network_members_network_ip,priority:1" json:"virtual_ip"`
 	Role      string    `gorm:"type:varchar(32);not null;default:member" json:"role"`
 	JoinedAt  time.Time `gorm:"type:timestamp;not null;index" json:"joined_at"`
 
@@ -173,7 +176,7 @@ type SubnetRoute struct {
 	ID        uuid.UUID `gorm:"type:uuid;primaryKey" json:"id"`
 	NetworkID uuid.UUID `gorm:"type:uuid;not null;index" json:"network_id"`
 	NodeID    uuid.UUID `gorm:"type:uuid;not null;index" json:"node_id"`
-	CIDR      string    `gorm:"type:cidr;not null" json:"cidr"`
+	CIDR      string    `gorm:"column:cidr;type:cidr;not null" json:"cidr"`
 	Enabled   bool      `gorm:"not null;default:true" json:"enabled"`
 
 	Network *VirtualNetwork `gorm:"foreignKey:NetworkID;constraint:OnDelete:RESTRICT,OnUpdate:CASCADE" json:"-"`
@@ -192,10 +195,12 @@ type RelayServer struct {
 type ConfigVersion struct {
 	ID         uuid.UUID      `gorm:"type:uuid;primaryKey" json:"id"`
 	TenantID   uuid.UUID      `gorm:"type:uuid;not null;index" json:"tenant_id"`
-	TargetType string         `gorm:"type:varchar(32);not null" json:"target_type"`
-	TargetID   uuid.UUID      `gorm:"type:uuid;not null;index" json:"target_id"`
-	Version    int            `gorm:"not null" json:"version"`
+	TargetType string         `gorm:"type:varchar(32);not null;uniqueIndex:idx_config_versions_target_version,priority:1" json:"target_type"`
+	TargetID   uuid.UUID      `gorm:"type:uuid;not null;index;uniqueIndex:idx_config_versions_target_version,priority:2" json:"target_id"`
+	Version    int            `gorm:"not null;uniqueIndex:idx_config_versions_target_version,priority:3" json:"version"`
 	Config     datatypes.JSON `gorm:"type:jsonb;not null" json:"config"`
+	Reason     string         `gorm:"type:varchar(255);not null;default:''" json:"reason,omitempty"`
+	Summary    datatypes.JSON `gorm:"type:jsonb;not null" json:"summary,omitempty"`
 	CreatedAt  time.Time      `gorm:"type:timestamp;not null;index" json:"created_at"`
 
 	Tenant *Tenant `gorm:"foreignKey:TenantID;constraint:OnDelete:RESTRICT,OnUpdate:CASCADE" json:"-"`

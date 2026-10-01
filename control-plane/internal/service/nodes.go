@@ -5,7 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/netip"
+	"strconv"
 	"strings"
 	"time"
 
@@ -15,6 +17,8 @@ import (
 
 	"umpp/control-plane/internal/auth"
 	"umpp/control-plane/internal/models"
+	"umpp/control-plane/internal/service/cert"
+	"umpp/control-plane/internal/service/mesh/wireguard"
 )
 
 const (
@@ -25,10 +29,21 @@ const (
 type NodeService struct {
 	db      *gorm.DB
 	timeout time.Duration
+	crypto  *cert.Crypto
 }
 
-func NewNodeService(db *gorm.DB, heartbeatTimeout time.Duration) *NodeService {
-	return &NodeService{db: db, timeout: heartbeatTimeout}
+func NewNodeService(db *gorm.DB, heartbeatTimeout time.Duration, keyCrypto ...*cert.Crypto) *NodeService {
+	var keyCipher *cert.Crypto
+	if len(keyCrypto) > 0 {
+		keyCipher = keyCrypto[0]
+	}
+	return &NodeService{db: db, timeout: heartbeatTimeout, crypto: keyCipher}
+}
+
+func (s *NodeService) ConfigureKeyCrypto(keyCrypto *cert.Crypto) {
+	if s.crypto == nil {
+		s.crypto = keyCrypto
+	}
 }
 
 type NodeRegisterInput struct {
@@ -46,6 +61,8 @@ type NodeRegisterOutput struct {
 	AgentToken string    `json:"agent_token"`
 	TenantID   uuid.UUID `json:"tenant_id"`
 	Status     string    `json:"status"`
+	PublicKey  string    `json:"public_key"`
+	PrivateKey string    `json:"private_key,omitempty"`
 }
 
 func validateVirtualIP(value string) error {
@@ -65,12 +82,19 @@ type HeartbeatInput struct {
 
 func (s *NodeService) Register(ctx context.Context, tenantID uuid.UUID, input NodeRegisterInput) (NodeRegisterOutput, error) {
 	input.Name = strings.TrimSpace(input.Name)
-	input.PublicKey = strings.TrimSpace(input.PublicKey)
 	input.OS = strings.TrimSpace(input.OS)
 	input.Arch = strings.TrimSpace(input.Arch)
 	input.Version = strings.TrimSpace(input.Version)
-	if input.Name == "" || input.PublicKey == "" || input.OS == "" || input.Arch == "" {
-		return NodeRegisterOutput{}, fmt.Errorf("%w: name, public_key, os, and arch are required", ErrInvalidInput)
+	if input.Name == "" || input.OS == "" || input.Arch == "" {
+		return NodeRegisterOutput{}, fmt.Errorf("%w: name, os, and arch are required", ErrInvalidInput)
+	}
+	privateKey, publicKey, err := wireguard.GenerateKeyPair()
+	if err != nil {
+		return NodeRegisterOutput{}, err
+	}
+	encryptedPrivateKey, err := s.encryptPrivateKey(privateKey)
+	if err != nil {
+		return NodeRegisterOutput{}, err
 	}
 	plain, tokenHash, err := auth.GenerateAgentToken()
 	if err != nil {
@@ -92,7 +116,8 @@ func (s *NodeService) Register(ctx context.Context, tenantID uuid.UUID, input No
 		ID:             uuid.New(),
 		TenantID:       tenantID,
 		Name:           input.Name,
-		PublicKey:      input.PublicKey,
+		PublicKey:      publicKey,
+		PrivateKey:     encryptedPrivateKey,
 		VirtualIP:      virtualIP,
 		OS:             input.OS,
 		Arch:           input.Arch,
@@ -109,7 +134,111 @@ func (s *NodeService) Register(ctx context.Context, tenantID uuid.UUID, input No
 		AgentToken: plain,
 		TenantID:   node.TenantID,
 		Status:     node.Status,
+		PublicKey:  publicKey,
+		PrivateKey: privateKey,
 	}, nil
+}
+
+func (s *NodeService) encryptPrivateKey(value string) (string, error) {
+	if s.crypto == nil {
+		return "", errors.New("node private key encryption is unavailable")
+	}
+	encrypted, err := s.crypto.Encrypt(value)
+	if err != nil {
+		return "", fmt.Errorf("encrypt node private key: %w", err)
+	}
+	return encrypted, nil
+}
+
+func (s *NodeService) DecryptPrivateKey(node models.Node) (string, error) {
+	if s.crypto == nil || node.PrivateKey == "" {
+		return "", errors.New("node private key is unavailable")
+	}
+	plaintext, err := s.crypto.Decrypt(node.PrivateKey)
+	if err != nil {
+		return "", fmt.Errorf("decrypt node private key: %w", err)
+	}
+	return plaintext, nil
+}
+
+type NodeKeyRotateOutput struct {
+	NodeID     uuid.UUID `json:"node_id"`
+	PublicKey  string    `json:"public_key"`
+	PrivateKey string    `json:"private_key"`
+}
+
+func (s *NodeService) RotateKey(ctx context.Context, id uuid.UUID, tenantID *uuid.UUID) (NodeKeyRotateOutput, error) {
+	node, err := s.Get(ctx, id, tenantID)
+	if err != nil {
+		return NodeKeyRotateOutput{}, err
+	}
+	privateKey, publicKey, err := wireguard.GenerateKeyPair()
+	if err != nil {
+		return NodeKeyRotateOutput{}, err
+	}
+	encrypted, err := s.encryptPrivateKey(privateKey)
+	if err != nil {
+		return NodeKeyRotateOutput{}, err
+	}
+	result := s.db.WithContext(ctx).Model(&models.Node{}).Where("id = ?", node.ID).Updates(map[string]any{
+		"public_key":  publicKey,
+		"private_key": encrypted,
+	})
+	if result.Error != nil {
+		return NodeKeyRotateOutput{}, fmt.Errorf("rotate node key: %w", result.Error)
+	}
+	return NodeKeyRotateOutput{NodeID: node.ID, PublicKey: publicKey, PrivateKey: privateKey}, nil
+}
+
+func (s *NodeService) AuthenticateNode(ctx context.Context, nodeID uuid.UUID, agentToken string) (models.Node, error) {
+	if agentToken == "" {
+		return models.Node{}, ErrForbidden
+	}
+	var node models.Node
+	err := s.db.WithContext(ctx).
+		Where("id = ? AND agent_token_hash = ?", nodeID, auth.HashAgentToken(agentToken)).
+		First(&node).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return models.Node{}, ErrForbidden
+	}
+	if err != nil {
+		return models.Node{}, fmt.Errorf("authenticate node: %w", err)
+	}
+	return node, nil
+}
+
+type NetworkReportInput struct {
+	PublicEndpoint string `json:"public_endpoint"`
+}
+
+func (s *NodeService) NetworkReport(ctx context.Context, nodeID uuid.UUID, agentToken string, input NetworkReportInput) (models.Node, error) {
+	node, err := s.AuthenticateNode(ctx, nodeID, agentToken)
+	if err != nil {
+		return models.Node{}, err
+	}
+	endpoint := strings.TrimSpace(input.PublicEndpoint)
+	if endpoint != "" {
+		host, port, splitErr := net.SplitHostPort(endpoint)
+		if splitErr != nil || strings.TrimSpace(host) == "" || strings.TrimSpace(port) == "" {
+			return models.Node{}, fmt.Errorf("%w: public_endpoint must use host:port syntax", ErrInvalidInput)
+		}
+		portNumber, portErr := strconv.Atoi(port)
+		if portErr != nil || portNumber < 1 || portNumber > 65535 {
+			return models.Node{}, fmt.Errorf("%w: public_endpoint port must be between 1 and 65535", ErrInvalidInput)
+		}
+	}
+	now := time.Now().UTC()
+	node.LastSeen = &now
+	node.Status = NodeStatusOnline
+	if endpoint == "" {
+		node.PublicEndpoint = nil
+	} else {
+		node.PublicEndpoint = &endpoint
+	}
+	if err := s.db.WithContext(ctx).Save(&node).Error; err != nil {
+		return models.Node{}, fmt.Errorf("record network report: %w", err)
+	}
+	return node, nil
 }
 
 func (s *NodeService) Heartbeat(ctx context.Context, nodeID uuid.UUID, agentToken string, input HeartbeatInput) (models.Node, error) {

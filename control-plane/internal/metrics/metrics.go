@@ -17,6 +17,9 @@ type Metrics struct {
 	nodesOnline     prometheus.GaugeFunc
 	proxyRequests   *prometheus.CounterVec
 	proxyProviderUp *prometheus.GaugeVec
+	tunnelUp        *prometheus.GaugeVec
+	configVersion   *prometheus.GaugeVec
+	aclDenied       prometheus.Counter
 }
 
 func New(db *gorm.DB) *Metrics {
@@ -43,16 +46,47 @@ func New(db *gorm.DB) *Metrics {
 		Name: "umpp_proxy_provider_up",
 		Help: "Whether a UMPP proxy provider is ready (1) or unavailable (0).",
 	}, []string{"kind"})
+	tunnelUp := prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "umpp_tunnel_up",
+		Help: "Whether a UMPP mesh tunnel is up (1) or down (0).",
+	}, []string{"network_id", "node_id"})
+	configVersion := prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "umpp_config_version",
+		Help: "Latest UMPP configuration version for a target.",
+	}, []string{"target_type", "target_id"})
+	aclDenied := prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "umpp_acl_denied_total",
+		Help: "Total UMPP traffic decisions denied by ACL policy.",
+	})
 	proxyProviderUp.WithLabelValues("builtin").Set(0)
 	proxyProviderUp.WithLabelValues("nps").Set(0)
-	registry.MustRegister(httpRequests, nodesOnline, proxyRequests, proxyProviderUp)
+	registry.MustRegister(httpRequests, nodesOnline, proxyRequests, proxyProviderUp, tunnelUp, configVersion, aclDenied)
 	return &Metrics{
 		registry:        registry,
 		httpRequests:    httpRequests,
 		nodesOnline:     nodesOnline,
 		proxyRequests:   proxyRequests,
 		proxyProviderUp: proxyProviderUp,
+		tunnelUp:        tunnelUp,
+		configVersion:   configVersion,
+		aclDenied:       aclDenied,
 	}
+}
+
+func (m *Metrics) SetTunnelUp(networkID, nodeID string, up bool) {
+	value := 0.0
+	if up {
+		value = 1
+	}
+	m.tunnelUp.WithLabelValues(networkID, nodeID).Set(value)
+}
+
+func (m *Metrics) SetConfigVersion(targetType, targetID string, version int) {
+	m.configVersion.WithLabelValues(targetType, targetID).Set(float64(version))
+}
+
+func (m *Metrics) IncACLDenied() {
+	m.aclDenied.Inc()
 }
 
 func (m *Metrics) Handler() http.Handler {

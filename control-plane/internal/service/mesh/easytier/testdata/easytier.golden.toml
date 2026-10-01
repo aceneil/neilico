@@ -1,0 +1,15 @@
+# UMPP EasyTier configuration export (export only; not wired to runtime)
+network_name = "home"
+network_secret = "NETWORK_SECRET"
+peers = [
+  {
+    public_key = "PEER_A_PUBLIC",
+    endpoint = "1.2.3.4:51820",
+    allowed_ips = ["100.64.0.3/32", "192.168.1.0/24"],
+  },
+  {
+    public_key = "PEER_B_PUBLIC",
+    endpoint = "",
+    allowed_ips = ["100.64.0.4/32"],
+  },
+]

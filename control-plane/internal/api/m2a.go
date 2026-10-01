@@ -230,6 +230,14 @@ func (s *Server) handleProxyRules(w http.ResponseWriter, r *http.Request) {
 			s.serviceError(w, err)
 			return
 		}
+		if err := s.bumpTenantNodes(r.Context(), item.TenantID, "proxy rule added"); err != nil {
+			s.serviceError(w, err)
+			return
+		}
+		if _, err := s.configs.BumpForProxy(r.Context(), item.ID, "proxy rule added"); err != nil {
+			s.serviceError(w, err)
+			return
+		}
 		s.reloadProxy(r)
 		writeJSON(w, http.StatusCreated, item)
 	default:
@@ -270,6 +278,14 @@ func (s *Server) handleProxyRuleItem(w http.ResponseWriter, r *http.Request) {
 			s.serviceError(w, err)
 			return
 		}
+		if err := s.bumpTenantNodes(r.Context(), item.TenantID, "proxy rule updated"); err != nil {
+			s.serviceError(w, err)
+			return
+		}
+		if _, err := s.configs.BumpForProxy(r.Context(), item.ID, "proxy rule updated"); err != nil {
+			s.serviceError(w, err)
+			return
+		}
 		s.reloadProxy(r)
 		writeJSON(w, http.StatusOK, item)
 	case http.MethodDelete:
@@ -277,7 +293,20 @@ func (s *Server) handleProxyRuleItem(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusForbidden, "forbidden", "insufficient role")
 			return
 		}
+		item, err := s.proxyRules.Get(r.Context(), id, s.userScope(principal))
+		if err != nil {
+			s.serviceError(w, err)
+			return
+		}
+		if _, err := s.configs.BumpForProxy(r.Context(), item.ID, "proxy rule removed"); err != nil {
+			s.serviceError(w, err)
+			return
+		}
 		if err := s.proxyRules.Delete(r.Context(), id, s.userScope(principal)); err != nil {
+			s.serviceError(w, err)
+			return
+		}
+		if err := s.bumpTenantNodes(r.Context(), item.TenantID, "proxy rule removed"); err != nil {
 			s.serviceError(w, err)
 			return
 		}

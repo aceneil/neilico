@@ -18,6 +18,7 @@ import (
 	"umpp/control-plane/internal/models"
 	"umpp/control-plane/internal/service"
 	"umpp/control-plane/internal/service/cert"
+	configservice "umpp/control-plane/internal/service/config"
 	"umpp/control-plane/internal/service/proxy"
 )
 
@@ -33,6 +34,8 @@ type Server struct {
 	certs      *service.CertificateService
 	proxyRules *service.ProxyRuleService
 	traffic    *service.TrafficService
+	networks   *service.NetworkService
+	configs    *configservice.Manager
 	metrics    *metrics.Metrics
 	logger     *slog.Logger
 	version    string
@@ -73,6 +76,7 @@ func NewWithProxy(
 	if err != nil {
 		panic(err)
 	}
+	nodeService.ConfigureKeyCrypto(certificateCrypto)
 	server := &Server{
 		db:         db,
 		auth:       authManager,
@@ -83,6 +87,8 @@ func NewWithProxy(
 		certs:      service.NewCertificateService(db, certificateCrypto),
 		proxyRules: service.NewProxyRuleService(db),
 		traffic:    service.NewTrafficService(db),
+		networks:   service.NewNetworkService(db, certificateCrypto),
+		configs:    configservice.New(db, certificateCrypto, promMetrics),
 		metrics:    promMetrics,
 		logger:     logger,
 		version:    version,
@@ -92,6 +98,7 @@ func NewWithProxy(
 	}
 	mux := http.NewServeMux()
 	server.registerM2A(mux)
+	server.registerM2B(mux)
 
 	mux.HandleFunc("/healthz", server.handleHealth)
 	mux.Handle("/metrics", promMetrics.Handler())

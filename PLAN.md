@@ -78,3 +78,16 @@ umpp/
 
 ## 8. 风险
 见规格 §16。执行侧新增风险：① 单轮任务过长会被云端通道中断 → 已按里程碑切分，每轮 ≤ 目标 30 分钟工作量；② 单仓并行写冲突 → 严格串行；③ 外部依赖（NPS/EasyTier 镜像）不可得 → 一律走接口 + 内置实现的降级路径，验收不依赖外部二进制。
+
+## 9. 执行偏差记录（实现期追加，回写规格未覆盖之处）
+
+| # | 偏差 | 原因 | 影响 |
+| :--- | :--- | :--- | :--- |
+| E1 | 规格 §8.2 的注册请求含 `public_key`，**实际实现改为控制面用 `wgtypes` 生成密钥对**，注册响应一次性返回 `private_key`，agent 不再上传公钥 | 自研 Mesh 需要控制面持有密钥以生成 peer 配置；由 agent 生成会导致控制面无法在节点离线时轮换密钥 | Agent（M3）按新契约实现；`docs/API.md`（M5）须反映 |
+| E2 | 新增 `nodes.agent_token_hash`（规格 §7.1 未列） | 满足「agent_token 只存哈希」的安全要求 | 仅 DDL 增列，API 不返回 |
+| E3 | 新增 `POST /api/v1/nodes/{id}/network-report`（规格未列） | peer 的 `Endpoint` 需要节点上报公网端点才能生成 | M3 Agent 需实现上报 |
+| E4 | `network_secret` 仅创建响应与 agent 配置中下发 | 最小暴露面 | Dashboard 列表不显示 secret |
+| E5 | 代理面新增 `POST /api/v1/proxy/render` 只读渲染端点 | 让「配置生成」可被验收而不依赖外部 NPS 二进制 | 仅管理接口，无副作用 |
+| E6 | 规格 §4.4.2 前端 React 与 §6 vue3 冲突 → 取 **Vue 3**（裁决 D1） | 见 §2 | Dashboard 用 Ant Design Vue |
+
+**尚未实现（转 V1）**：ACME 自动签发（仅有 `Issuer` 接口位 + `ErrNotImplemented`）、中继节点调度、Windows/macOS Agent、Helm Chart、WebSocket 实时推送（Dashboard 用轮询降级）、商业化计费。

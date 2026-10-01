@@ -114,5 +114,11 @@ func (s *TenantService) Delete(ctx context.Context, id uuid.UUID) error {
 }
 
 func isUniqueViolation(err error) bool {
-	return err != nil && strings.Contains(strings.ToLower(err.Error()), "unique")
+	if err == nil {
+		return false
+	}
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "unique") ||
+		strings.Contains(message, "duplicate") ||
+		strings.Contains(message, "constraint failed")
 }
