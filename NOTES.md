@@ -32,13 +32,14 @@ UMPP（Unified Mesh & Proxy Platform）：统一「内网穿透 + Mesh 组网」
 | M1 控制面骨架+身份/节点 | ✅ | `c9c8372` | 14 张核心表、JWT/RBAC/租户隔离、节点注册/心跳/离线 sweeper、审计、`/metrics` |
 | M2a 域名/证书/代理面 | ✅ | `c3c4af6` | 域名/证书（私钥 AES-GCM 加密、响应 `json:"-"`）/代理规则 CRUD、NPS 配置 Provider、**内置 httputil 反代**（WS + IP 白名单 + BasicAuth + JWT）、流量上报 |
 | M2b Mesh + 配置版本化下发 | ✅ | 见 `git log` | 虚拟网络/成员（并发安全 VIP 分配）/ACL（31 条用例，默认拒绝）/子网路由、WireGuard 与 EasyTier Provider、加密密钥与轮换、`config_versions` + 304 + 回滚只增版本号 |
-| M3 Agent + CLI | 🔄 | — | codex 运行中 |
-| M4 Dashboard | ⏳ | — | 任务书已就绪 |
+| M3 Agent + CLI | ✅ | 见 `git log` | `agent/`（注册/心跳/端点上报/版本化轮询/幂等应用管线/wgctrl→shell 降级/dry-run 不碰宿主网络/子网路由与回滚/流量增量/指标/优雅退出/Dockerfile）+ `cli/`（umppctl 全部子命令）+ `control-plane/testkit` 跨 module 集成测试 |
+| **修正**：配置下发语义 | ✅ | 见 `git log` | `agent/config` 的 `version` 改为**客户端状态提示**：非最新版本（落后/超前/未知）一律返回最新配置，仅相等时 304。原实现返回历史快照会让落后节点**永不收敛**（详见 PLAN §9 E7） |
+| M4 Dashboard | 🔄 | — | codex 运行中（Vue3 + Ant Design Vue，含 4K/主题/一屏三项硬性 UI 要求） |
 | M5 部署+文档+冒烟 | ⏳ | — | 任务书已就绪 |
 
 ### 关键接口事实（Agent/Dashboard 对接必读）
 - 注册 `POST /api/v1/nodes/register` **不需要上传 public_key**（控制面用 wgtypes 生成密钥对）；响应里的 `private_key` **只出现一次**。
-- 配置轮询 `GET /api/v1/agent/config?node_id=&version=`：同版本返回 **HTTP 304**；否则返回 `{version,node,network,proxy_rules,acl,routes,policy_filtered,wireguard_config}`（`wireguard_config` 是 INI 文本）。
+- 配置轮询 `GET /api/v1/agent/config?node_id=&version=`：**`version` 是客户端状态提示，不是资源 ID** —— 与最新版本相等返回 **HTTP 304**；落后 / 超前 / 未知版本一律返回 **200 + 最新期望配置**（保证任何客户端都收敛）。历史快照请走 `GET /api/v1/configs` 与 `POST /api/v1/configs/{target_type}/{target_id}/rollback`。
 - 节点端点上报 `POST /api/v1/nodes/{id}/network-report`（agent_token 认证），成功后同网络 peer 版本递增。
 - 私有数据保护约定：证书 `key_pem`、节点密钥 `private_key` 一律 `json:"-"` 或一次性返回；agent_token 只存 SHA-256。
 

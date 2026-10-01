@@ -96,3 +96,84 @@ func TestNodeConfigSnapshotGoldenAndDeterministic(t *testing.T) {
 }
 
 func stringPointer(value string) *string { return &value }
+
+// Regression: a client lagging more than one version must be served the LATEST
+// desired configuration (which advances it), never its own historical snapshot.
+// Serving the snapshot leaves such a client applying a stale config, storing that
+// stale version, and re-requesting it forever — a liveness bug (no convergence).
+func TestDeliveryServesLatestForLaggingClient(t *testing.T) {
+	handle, err := db.Open(appconfig.Database{
+		Driver: "sqlite", DSN: "file:" + uuid.NewString() + "?mode=memory&cache=shared",
+	}, "error")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(handle); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if sqlDB, dbErr := handle.DB(); dbErr == nil {
+			_ = sqlDB.Close()
+		}
+	})
+	crypto, err := cert.NewCryptoFromKey([]byte("delivery-key"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	tenantID := uuid.MustParse("11111111-1111-1111-1111-111111111111")
+	nodeID := uuid.MustParse("33333333-3333-3333-3333-333333333333")
+	hash := bytes.Repeat([]byte("a"), 64)
+	for _, record := range []any{
+		&models.Tenant{ID: tenantID, Name: "delivery"},
+		&models.Node{ID: nodeID, TenantID: tenantID, Name: "node-a", PublicKey: "PUB", OS: "linux", Arch: "amd64", Version: "test", Tags: []string{}, AgentTokenHash: string(hash)},
+	} {
+		if err := handle.Create(record).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	manager := New(handle, crypto, nil)
+	ctx := context.Background()
+
+	if _, err := manager.BumpForNode(ctx, nodeID, "initial"); err != nil {
+		t.Fatal(err)
+	}
+	v1, err := manager.Latest(ctx, TargetNode, nodeID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := manager.BumpForNode(ctx, nodeID, "change-2"); err != nil {
+		t.Fatal(err)
+	}
+	v2, err := manager.Latest(ctx, TargetNode, nodeID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v2.Version != v1.Version+1 {
+		t.Fatalf("version bump = %d, want %d", v2.Version, v1.Version+1)
+	}
+
+	lagging, notModified, err := manager.Delivery(ctx, nodeID, v1.Version, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if notModified {
+		t.Fatal("lagging client must not be told not-modified")
+	}
+	if lagging.Version != v2.Version {
+		t.Fatalf("lagging client got version %d, want latest %d (stale snapshot served)", lagging.Version, v2.Version)
+	}
+
+	if _, notModified, err := manager.Delivery(ctx, nodeID, v2.Version, false); err != nil || !notModified {
+		t.Fatalf("up-to-date client: notModified=%v err=%v, want true/nil", notModified, err)
+	}
+
+	// A client AHEAD of the server (e.g. right after a rollback) must also receive
+	// the latest config rather than an error for a version that no longer exists.
+	ahead, _, err := manager.Delivery(ctx, nodeID, v2.Version+5, false)
+	if err != nil {
+		t.Fatalf("client ahead of server must not error: %v", err)
+	}
+	if ahead.Version != v2.Version {
+		t.Fatalf("client ahead got version %d, want latest %d", ahead.Version, v2.Version)
+	}
+}

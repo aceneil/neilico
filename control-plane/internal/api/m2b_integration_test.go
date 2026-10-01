@@ -156,10 +156,18 @@ func TestM2BMeshConfigAndRollbackFlow(t *testing.T) {
 		t.Fatalf("unexpected 304 body: %s", notModified.Body.Bytes())
 	}
 
-	oldConfig := getM2BConfig(t, app, nodeA.AgentToken, nodeA.NodeID.String(), configBeforeACL.Version)
-	if oldConfig.Version != configBeforeACL.Version || len(oldConfig.Network.Peers) != 1 {
-		t.Fatalf("stale version did not return its full snapshot: %#v", oldConfig)
+	// A client lagging behind must be served the LATEST desired config so it
+	// converges — never its own historical snapshot (that would make it apply a
+	// stale config, store that version, and re-request it forever).
+	lagging := getM2BConfig(t, app, nodeA.AgentToken, nodeA.NodeID.String(), configBeforeACL.Version)
+	if lagging.Version != configA.Version {
+		t.Fatalf("lagging version = %d, want latest %d", lagging.Version, configA.Version)
 	}
+	if len(lagging.Network.Peers) != len(configA.Network.Peers) || !lagging.PolicyFiltered {
+		t.Fatalf("lagging config is not the latest desired state: %#v", lagging)
+	}
+	// Historical snapshots stay reachable via the version list + rollback APIs,
+	// which the rollback assertions below exercise.
 
 	status, body = mustRequest(t, app.server, http.MethodPost, "/api/v1/configs/node/"+nodeA.NodeID.String()+"/rollback", admin.Token, map[string]any{
 		"version": configBeforeACL.Version,
@@ -201,9 +209,18 @@ func TestM2BMeshConfigAndRollbackFlow(t *testing.T) {
 		t.Fatalf("network detail leaked its secret: %s", body)
 	}
 
+	// An unknown/ahead version is a client-state hint, not a resource id: the
+	// server answers with the latest desired config so any client converges
+	// (a 404 here would strand agents whose version is ahead, e.g. after a restore).
 	status, body = mustRequest(t, app.server, http.MethodGet, "/api/v1/agent/config?node_id="+nodeA.NodeID.String()+"&version=999999", nodeA.AgentToken, nil)
-	requireStatus(t, status, http.StatusNotFound)
-	requireErrorCode(t, body, "not_found")
+	requireStatus(t, status, http.StatusOK)
+	var aheadResponse struct {
+		Version int `json:"version"`
+	}
+	decodeResponse(t, body, &aheadResponse)
+	if aheadResponse.Version != rollback.Version {
+		t.Fatalf("unknown-version request returned version %d, want latest %d", aheadResponse.Version, rollback.Version)
+	}
 	status, body = mustRequest(t, app.server, http.MethodGet, "/api/v1/agent/config?node_id="+nodeA.NodeID.String(), nodeB.AgentToken, nil)
 	requireStatus(t, status, http.StatusForbidden)
 	requireErrorCode(t, body, "invalid_agent_token")

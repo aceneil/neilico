@@ -490,13 +490,15 @@ func (m *Manager) Delivery(ctx context.Context, nodeID uuid.UUID, requestedVersi
 	if requestedVersion > 0 && requestedVersion == latest.Version {
 		return Delivery{Version: latest.Version}, true, nil
 	}
+	// Always serve the LATEST desired configuration to a client that is behind.
+	// (Clients that are AHEAD — e.g. right after a rollback — also get the latest.)
+	//
+	// Returning the caller's own historical snapshot here would be a liveness bug:
+	// a node lagging more than one version would apply that stale snapshot, store
+	// its version, then request that same version forever and never converge.
+	// Historical snapshots stay reachable via ListVersions/Rollback, which is where
+	// they are actually needed.
 	selected := latest
-	if requestedVersion > 0 {
-		selected, err = m.GetVersion(ctx, TargetNode, nodeID, requestedVersion)
-		if err != nil {
-			return Delivery{}, false, err
-		}
-	}
 	var config NodeConfig
 	if err := json.Unmarshal(selected.Config, &config); err != nil {
 		return Delivery{}, false, fmt.Errorf("decode node config snapshot: %w", err)

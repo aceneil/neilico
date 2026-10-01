@@ -1,0 +1,134 @@
+package mesh
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"os"
+	"strings"
+
+	"umpp/agent/internal/route"
+)
+
+type ShellApplier struct {
+	executor      route.Executor
+	created       bool
+	interfaceName string
+	tempDir       string
+}
+
+func NewShellApplier(executor route.Executor, tempDir string) *ShellApplier {
+	if executor == nil {
+		executor = route.ExecExecutor{}
+	}
+	return &ShellApplier{executor: executor, tempDir: tempDir}
+}
+
+func (a *ShellApplier) Plan(config Config) ([]route.Command, error) {
+	if strings.TrimSpace(config.WireGuardConfig) == "" {
+		return nil, errors.New("wireguard_config is empty")
+	}
+	parsed, err := parseWireGuardConfig(config.WireGuardConfig)
+	if err != nil {
+		return nil, err
+	}
+	commands := []route.Command{
+		{Name: "ip", Args: []string{"link", "add", "dev", config.Interface, "type", "wireguard"}},
+	}
+	for _, address := range parsed.addresses {
+		address = strings.TrimSpace(address)
+		if address != "" {
+			commands = append(commands, route.Command{Name: "ip", Args: []string{"address", "replace", address, "dev", config.Interface}})
+		}
+	}
+	var peerNotes []string
+	for _, peer := range parsed.peers {
+		peerNotes = append(peerNotes, "peer "+peer.publicKey+" allowed_ips="+strings.Join(peer.allowedIPs, ","))
+	}
+	commands = append(commands,
+		route.Command{Name: "ip", Args: []string{"link", "set", config.Interface, "mtu", fmt.Sprintf("%d", config.MTU), "up"}},
+		route.Command{Name: "wg", Args: []string{"setconf", config.Interface, "/run/umpp-agent/wg.conf"}, Comment: strings.Join(peerNotes, "; ")},
+	)
+	return commands, nil
+}
+
+func (a *ShellApplier) Apply(ctx context.Context, config Config) error {
+	commands, err := a.Plan(config)
+	if err != nil {
+		return err
+	}
+	exists, err := a.interfaceExists(ctx, config.Interface)
+	if err != nil {
+		return err
+	}
+	start := 0
+	if exists {
+		start = 1
+	} else {
+		if err := a.executor.Run(ctx, commands[0]); err != nil {
+			return err
+		}
+		a.created = true
+		a.interfaceName = config.Interface
+	}
+	tempFile, err := a.writeConfig(config.WireGuardConfig)
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tempFile)
+	for _, command := range commands[start : len(commands)-1] {
+		if err := a.executor.Run(ctx, command); err != nil {
+			return err
+		}
+	}
+	setconf := route.Command{Name: "wg", Args: []string{"setconf", config.Interface, tempFile}}
+	return a.executor.Run(ctx, setconf)
+}
+
+func (a *ShellApplier) writeConfig(content string) (string, error) {
+	directory := a.tempDir
+	if directory == "" {
+		directory = os.TempDir()
+	}
+	if err := os.MkdirAll(directory, 0o700); err != nil {
+		return "", fmt.Errorf("create WireGuard temporary directory: %w", err)
+	}
+	file, err := os.CreateTemp(directory, "umpp-wg-*.conf")
+	if err != nil {
+		return "", fmt.Errorf("create WireGuard temporary config: %w", err)
+	}
+	name := file.Name()
+	if err := file.Chmod(0o600); err != nil {
+		file.Close()
+		os.Remove(name)
+		return "", fmt.Errorf("secure WireGuard temporary config: %w", err)
+	}
+	if _, err := file.WriteString(content); err != nil {
+		file.Close()
+		os.Remove(name)
+		return "", fmt.Errorf("write WireGuard temporary config: %w", err)
+	}
+	if err := file.Close(); err != nil {
+		os.Remove(name)
+		return "", fmt.Errorf("close WireGuard temporary config: %w", err)
+	}
+	return name, nil
+}
+
+func (a *ShellApplier) interfaceExists(ctx context.Context, name string) (bool, error) {
+	output, err := a.executor.Output(ctx, route.Command{Name: "ip", Args: []string{"link", "show", "dev", name}})
+	if err != nil {
+		return false, nil
+	}
+	return strings.TrimSpace(output) != "", nil
+}
+
+func (a *ShellApplier) Cleanup(ctx context.Context) error {
+	if !a.created {
+		return nil
+	}
+	a.created = false
+	return a.executor.Run(ctx, route.Command{Name: "ip", Args: []string{"link", "delete", "dev", a.interfaceName}})
+}
+
+var _ Applier = (*ShellApplier)(nil)
