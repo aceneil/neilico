@@ -1,0 +1,196 @@
+export type Role = 'platform_admin' | 'tenant_admin' | 'ops' | 'readonly'
+
+export interface AuthUser {
+  id: string
+  email: string
+  role: Role
+  tenant_id: string
+}
+
+export interface AuthResponse {
+  token: string
+  refresh_token: string
+  user: AuthUser
+}
+
+export interface Tenant {
+  id: string
+  name: string
+  plan: string
+  created_at: string
+}
+
+export interface User {
+  id: string
+  tenant_id: string
+  email: string
+  role: Role
+  status: 'active' | 'inactive' | string
+  created_at: string
+}
+
+export interface Node {
+  id: string
+  tenant_id: string
+  name: string
+  public_key: string
+  virtual_ip?: string | null
+  public_endpoint?: string | null
+  os: string
+  arch: string
+  version: string
+  status: 'online' | 'offline' | string
+  last_seen?: string | null
+  tags: string[]
+  created_at: string
+}
+
+export interface NodeRegisterResult {
+  node_id: string
+  agent_token: string
+  tenant_id: string
+  status: string
+  public_key: string
+  private_key?: string
+}
+
+export interface Paged<T> {
+  items: T[]
+  total: number
+  page?: number
+  page_size?: number
+}
+
+export interface VirtualNetwork {
+  id: string
+  tenant_id: string
+  name: string
+  cidr: string
+  network_secret?: string
+  created_at: string
+}
+
+export interface NetworkMember {
+  id: string
+  network_id: string
+  node_id: string
+  virtual_ip: string
+  role: string
+  joined_at: string
+  node?: Node
+}
+
+export interface AclRule {
+  id: string
+  network_id: string
+  src: string
+  dst: string
+  action: 'allow' | 'deny' | string
+  protocol: string
+  ports: string
+  priority: number
+}
+
+export interface SubnetRoute {
+  id: string
+  network_id: string
+  node_id: string
+  cidr: string
+  enabled: boolean
+}
+
+export interface Certificate {
+  id: string
+  tenant_id: string
+  domain: string
+  issuer: string
+  cert_pem: string
+  expires_at?: string | null
+}
+
+export interface Domain {
+  id: string
+  tenant_id: string
+  domain: string
+  cert_id?: string | null
+  status: string
+  created_at: string
+}
+
+export interface BasicAuth {
+  enabled: boolean
+  username?: string
+  password?: string
+  password_hash?: string
+}
+
+export interface AccessControl {
+  ip_whitelist: string[]
+  basic_auth: BasicAuth
+  require_jwt: boolean
+}
+
+export interface ProxyRule {
+  id: string
+  tenant_id: string
+  domain_id: string
+  path: string
+  target_type: 'internal_ip' | 'virtual_ip' | 'node' | string
+  target: string
+  access_control: AccessControl
+  enabled: boolean
+  created_at: string
+}
+
+export interface TrafficLog {
+  id: string
+  tenant_id: string
+  node_id: string
+  direction: 'in' | 'out' | string
+  bytes: number
+  protocol: string
+  peer: string
+  created_at: string
+}
+
+export interface HealthStatus {
+  status: string
+  db: string
+  version: string
+  uptime: number
+}
+
+export interface ConfigPeer {
+  node_id: string
+  public_key: string
+  endpoint: string
+  allowed_ips: string[]
+  virtual_ip: string
+}
+
+export interface AgentConfig {
+  version: number
+  node: { id: string; name: string; virtual_ip: string; public_endpoint?: string }
+  network?: {
+    id: string
+    name: string
+    cidr: string
+    network_secret?: string
+    peers: ConfigPeer[]
+  } | null
+  proxy_rules: ProxyRule[]
+  acl: AclRule[]
+  routes: SubnetRoute[]
+  policy_filtered: boolean
+  wireguard_config?: string
+}
+
+export interface ConfigVersion {
+  id: string
+  target_type: 'node' | 'network' | 'proxy' | string
+  target_id: string
+  version: number
+  reason?: string
+  summary?: unknown
+  created_at: string
+}
