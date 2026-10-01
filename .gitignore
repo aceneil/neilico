@@ -1,0 +1,11 @@
+bin/
+dist/
+node_modules/
+*.log
+/tmp/
+.env
+*.env
+!*.env.example
+.DS_Store
+coverage.out
+*.test
