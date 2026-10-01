@@ -109,6 +109,11 @@ func (m *Manager) Parse(tokenString, expectedType string) (Claims, error) {
 	return claims, nil
 }
 
+func (m *Manager) CertificateEncryptionKey() []byte {
+	digest := sha256.Sum256([]byte("umpp-auth-jwt-secret-v1\x00" + string(m.secret)))
+	return digest[:]
+}
+
 func HashPassword(password string) (string, error) {
 	if password == "" {
 		return "", errors.New("password is required")

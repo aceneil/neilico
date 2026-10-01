@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/netip"
 	"strings"
 	"time"
 
@@ -32,6 +33,7 @@ func NewNodeService(db *gorm.DB, heartbeatTimeout time.Duration) *NodeService {
 
 type NodeRegisterInput struct {
 	Name      string   `json:"name"`
+	VirtualIP *string  `json:"virtual_ip,omitempty"`
 	PublicKey string   `json:"public_key"`
 	OS        string   `json:"os"`
 	Arch      string   `json:"arch"`
@@ -44,6 +46,17 @@ type NodeRegisterOutput struct {
 	AgentToken string    `json:"agent_token"`
 	TenantID   uuid.UUID `json:"tenant_id"`
 	Status     string    `json:"status"`
+}
+
+func validateVirtualIP(value string) error {
+	host := value
+	if prefix, err := netip.ParsePrefix(value); err == nil {
+		host = prefix.Addr().String()
+	}
+	if _, err := netip.ParseAddr(host); err != nil {
+		return errors.New("virtual_ip must be an IP address")
+	}
+	return nil
 }
 
 type HeartbeatInput struct {
@@ -67,11 +80,20 @@ func (s *NodeService) Register(ctx context.Context, tenantID uuid.UUID, input No
 	if tags == nil {
 		tags = []string{}
 	}
+	var virtualIP *string
+	if input.VirtualIP != nil {
+		value := strings.TrimSpace(*input.VirtualIP)
+		if err := validateVirtualIP(value); err != nil {
+			return NodeRegisterOutput{}, fmt.Errorf("%w: %v", ErrInvalidInput, err)
+		}
+		virtualIP = &value
+	}
 	node := models.Node{
 		ID:             uuid.New(),
 		TenantID:       tenantID,
 		Name:           input.Name,
 		PublicKey:      input.PublicKey,
+		VirtualIP:      virtualIP,
 		OS:             input.OS,
 		Arch:           input.Arch,
 		Version:        input.Version,

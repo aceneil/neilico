@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "server": {
+    "bind_port": 8024,
+    "http_proxy_port": 8081,
+    "reload_strategy": "file"
+  },
+  "clients": [
+    {
+      "tenant_id": "22222222-2222-2222-2222-222222222222",
+      "tunnels": [
+        {
+          "mode": "httpProxy",
+          "port": 80,
+          "target_addr": "100.64.0.10:8080",
+          "host": "app.example.com",
+          "path": "/",
+          "rule_id": "11111111-1111-1111-1111-111111111111",
+          "domain_id": "33333333-3333-3333-3333-333333333333",
+          "enabled": true,
+          "access_control": {
+            "ip_whitelist": [
+              "1.2.3.4/32"
+            ],
+            "basic_auth": {
+              "enabled": true,
+              "username": "u",
+              "password_hash": "$2a$10$hash"
+            },
+            "require_jwt": false
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -1,6 +1,10 @@
 package models
 
 import (
+	"database/sql/driver"
+	"encoding/json"
+	"errors"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -46,17 +50,20 @@ type Node struct {
 
 type Certificate struct {
 	ID        uuid.UUID  `gorm:"type:uuid;primaryKey" json:"id"`
+	TenantID  uuid.UUID  `gorm:"type:uuid;not null;index" json:"tenant_id"`
 	Domain    string     `gorm:"type:varchar(255);not null;index" json:"domain"`
 	Issuer    string     `gorm:"type:varchar(255);not null" json:"issuer"`
 	CertPEM   string     `gorm:"type:text;not null" json:"cert_pem"`
 	KeyPEM    string     `gorm:"type:text;not null" json:"-"`
 	ExpiresAt *time.Time `gorm:"type:timestamp" json:"expires_at"`
+
+	Tenant *Tenant `gorm:"foreignKey:TenantID;constraint:OnDelete:RESTRICT,OnUpdate:CASCADE" json:"-"`
 }
 
 type Domain struct {
 	ID        uuid.UUID  `gorm:"type:uuid;primaryKey" json:"id"`
 	TenantID  uuid.UUID  `gorm:"type:uuid;not null;index" json:"tenant_id"`
-	Domain    string     `gorm:"type:varchar(255);not null" json:"domain"`
+	Domain    string     `gorm:"type:varchar(255);not null;uniqueIndex" json:"domain"`
 	CertID    *uuid.UUID `gorm:"type:uuid;index" json:"cert_id"`
 	Status    string     `gorm:"type:varchar(32);not null;default:pending" json:"status"`
 	CreatedAt time.Time  `gorm:"type:timestamp;not null;index" json:"created_at"`
@@ -66,18 +73,65 @@ type Domain struct {
 }
 
 type ProxyRule struct {
-	ID            uuid.UUID      `gorm:"type:uuid;primaryKey" json:"id"`
-	TenantID      uuid.UUID      `gorm:"type:uuid;not null;index" json:"tenant_id"`
-	DomainID      uuid.UUID      `gorm:"type:uuid;not null;index" json:"domain_id"`
-	Path          string         `gorm:"type:varchar(255);not null;default:/" json:"path"`
-	TargetType    string         `gorm:"type:varchar(32);not null" json:"target_type"`
-	Target        string         `gorm:"type:varchar(255);not null" json:"target"`
-	AccessControl datatypes.JSON `gorm:"type:jsonb;not null" json:"access_control"`
-	Enabled       bool           `gorm:"not null;default:true" json:"enabled"`
-	CreatedAt     time.Time      `gorm:"type:timestamp;not null;index" json:"created_at"`
+	ID            uuid.UUID     `gorm:"type:uuid;primaryKey" json:"id"`
+	TenantID      uuid.UUID     `gorm:"type:uuid;not null;index" json:"tenant_id"`
+	DomainID      uuid.UUID     `gorm:"type:uuid;not null;index" json:"domain_id"`
+	Path          string        `gorm:"type:varchar(255);not null;default:/" json:"path"`
+	TargetType    string        `gorm:"type:varchar(32);not null" json:"target_type"`
+	Target        string        `gorm:"type:varchar(255);not null" json:"target"`
+	AccessControl AccessControl `gorm:"type:jsonb;not null" json:"access_control"`
+	Enabled       bool          `gorm:"not null;default:true" json:"enabled"`
+	CreatedAt     time.Time     `gorm:"type:timestamp;not null;index" json:"created_at"`
 
 	Tenant *Tenant `gorm:"foreignKey:TenantID;constraint:OnDelete:RESTRICT,OnUpdate:CASCADE" json:"-"`
 	Domain *Domain `gorm:"foreignKey:DomainID;constraint:OnDelete:RESTRICT,OnUpdate:CASCADE" json:"-"`
+}
+
+type BasicAuth struct {
+	Enabled      bool   `json:"enabled"`
+	Username     string `json:"username,omitempty"`
+	PasswordHash string `json:"password_hash,omitempty"`
+}
+
+func (b *BasicAuth) UnmarshalJSON(data []byte) error {
+	if string(data) == "false" || string(data) == "null" {
+		*b = BasicAuth{}
+		return nil
+	}
+	type basicAuth BasicAuth
+	var decoded basicAuth
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return errors.New("basic_auth must be false or an object")
+	}
+	*b = BasicAuth(decoded)
+	return nil
+}
+
+type AccessControl struct {
+	IPWhitelist []string  `json:"ip_whitelist"`
+	BasicAuth   BasicAuth `json:"basic_auth"`
+	RequireJWT  bool      `json:"require_jwt"`
+}
+
+func (a AccessControl) Value() (driver.Value, error) {
+	return json.Marshal(a)
+}
+
+func (a *AccessControl) Scan(value any) error {
+	var raw []byte
+	switch typed := value.(type) {
+	case []byte:
+		raw = append(raw[:0], typed...)
+	case string:
+		raw = []byte(typed)
+	default:
+		return fmt.Errorf("cannot scan %T into AccessControl", value)
+	}
+	if len(raw) == 0 {
+		*a = AccessControl{IPWhitelist: []string{}}
+		return nil
+	}
+	return json.Unmarshal(raw, a)
 }
 
 type VirtualNetwork struct {
@@ -164,12 +218,12 @@ type AuditLog struct {
 type TrafficLog struct {
 	ID        uuid.UUID `gorm:"type:uuid;primaryKey" json:"id"`
 	TenantID  uuid.UUID `gorm:"type:uuid;not null;index" json:"tenant_id"`
-	NodeID    uuid.UUID `gorm:"type:uuid;not null;index" json:"node_id"`
+	NodeID    uuid.UUID `gorm:"type:uuid;not null;index:idx_traffic_logs_node_created,priority:1" json:"node_id"`
 	Direction string    `gorm:"type:varchar(8);not null" json:"direction"`
 	Bytes     int64     `gorm:"type:bigint;not null" json:"bytes"`
 	Protocol  string    `gorm:"type:varchar(32);not null" json:"protocol"`
 	Peer      string    `gorm:"type:varchar(255);not null" json:"peer"`
-	CreatedAt time.Time `gorm:"type:timestamp;not null;index" json:"created_at"`
+	CreatedAt time.Time `gorm:"type:timestamp;not null;index:idx_traffic_logs_node_created,priority:2" json:"created_at"`
 
 	Tenant *Tenant `gorm:"foreignKey:TenantID;constraint:OnDelete:RESTRICT,OnUpdate:CASCADE" json:"-"`
 	Node   *Node   `gorm:"foreignKey:NodeID;constraint:OnDelete:RESTRICT,OnUpdate:CASCADE" json:"-"`

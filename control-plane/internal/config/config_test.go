@@ -27,6 +27,15 @@ bootstrap:
   default_tenant: main
 node:
   heartbeat_timeout: 45s
+proxy:
+  enabled: false
+  kind: nps
+  listen: ":9081"
+  nps:
+    config_path: /tmp/nps.json
+    binary_path: /opt/nps
+    pid_file: /tmp/nps.pid
+    reload_strategy: file
 log:
   level: warn
   format: text
@@ -95,6 +104,8 @@ func clearEnvironment(t *testing.T) {
 		"UMPP_AUTH_JWT_SECRET", "UMPP_AUTH_ACCESS_TTL", "UMPP_AUTH_REFRESH_TTL",
 		"UMPP_BOOTSTRAP_ADMIN_EMAIL", "UMPP_BOOTSTRAP_ADMIN_PASSWORD", "UMPP_BOOTSTRAP_DEFAULT_TENANT",
 		"UMPP_NODE_HEARTBEAT_TIMEOUT", "UMPP_LOG_LEVEL", "UMPP_LOG_FORMAT",
+		"UMPP_PROXY_ENABLED", "UMPP_PROXY_KIND", "UMPP_PROXY_LISTEN",
+		"UMPP_NPS_CONFIG_PATH", "UMPP_NPS_BINARY_PATH", "UMPP_NPS_PID_FILE", "UMPP_NPS_RELOAD_STRATEGY",
 	}
 	for _, key := range keys {
 		value, existed := os.LookupEnv(key)

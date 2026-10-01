@@ -15,7 +15,8 @@ type Metrics struct {
 	registry        *prometheus.Registry
 	httpRequests    *prometheus.CounterVec
 	nodesOnline     prometheus.GaugeFunc
-	nodesOnlineDesc *prometheus.Desc
+	proxyRequests   *prometheus.CounterVec
+	proxyProviderUp *prometheus.GaugeVec
 }
 
 func New(db *gorm.DB) *Metrics {
@@ -34,11 +35,23 @@ func New(db *gorm.DB) *Metrics {
 		}
 		return float64(count)
 	})
-	registry.MustRegister(httpRequests, nodesOnline)
+	proxyRequests := prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "umpp_proxy_requests_total",
+		Help: "Total requests handled by the UMPP proxy plane.",
+	}, []string{"domain", "status"})
+	proxyProviderUp := prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "umpp_proxy_provider_up",
+		Help: "Whether a UMPP proxy provider is ready (1) or unavailable (0).",
+	}, []string{"kind"})
+	proxyProviderUp.WithLabelValues("builtin").Set(0)
+	proxyProviderUp.WithLabelValues("nps").Set(0)
+	registry.MustRegister(httpRequests, nodesOnline, proxyRequests, proxyProviderUp)
 	return &Metrics{
-		registry:     registry,
-		httpRequests: httpRequests,
-		nodesOnline:  nodesOnline,
+		registry:        registry,
+		httpRequests:    httpRequests,
+		nodesOnline:     nodesOnline,
+		proxyRequests:   proxyRequests,
+		proxyProviderUp: proxyProviderUp,
 	}
 }
 
@@ -48,4 +61,16 @@ func (m *Metrics) Handler() http.Handler {
 
 func (m *Metrics) ObserveHTTP(method, path string, status int) {
 	m.httpRequests.WithLabelValues(method, path, strconv.Itoa(status)).Inc()
+}
+
+func (m *Metrics) ObserveProxyRequest(domain, status string) {
+	m.proxyRequests.WithLabelValues(domain, status).Inc()
+}
+
+func (m *Metrics) SetProxyProviderUp(kind string, up bool) {
+	value := 0.0
+	if up {
+		value = 1
+	}
+	m.proxyProviderUp.WithLabelValues(kind).Set(value)
 }

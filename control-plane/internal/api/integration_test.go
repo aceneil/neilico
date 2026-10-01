@@ -23,6 +23,7 @@ import (
 	"umpp/control-plane/internal/metrics"
 	"umpp/control-plane/internal/models"
 	"umpp/control-plane/internal/service"
+	"umpp/control-plane/internal/service/proxy"
 )
 
 const testJWTSecret = "0123456789abcdef0123456789abcdef"
@@ -33,6 +34,7 @@ type testApp struct {
 	db      *gormDBAlias
 	sweeper *service.NodeSweeper
 	handler http.Handler
+	proxy   *proxy.Builtin
 }
 
 type gormDBAlias = gormDB
@@ -254,7 +256,12 @@ func newTestApp(t *testing.T) testApp {
 	nodeService := service.NewNodeService(handle, time.Minute)
 	sweeper := service.NewNodeSweeper(handle, time.Minute, logger)
 	promMetrics := metrics.New(handle)
-	handler := api.New(handle, manager, nodeService, promMetrics, logger, "test")
+	builtinProxy := proxy.NewBuiltin(handle, manager, logger, promMetrics)
+	handler := api.NewWithProxy(handle, manager, nodeService, promMetrics, logger, "test", builtinProxy, api.ProxyOptions{
+		Enabled: true,
+		Kind:    "builtin",
+		Listen:  "127.0.0.1:0",
+	})
 	server := httptest.NewServer(handler)
 	t.Cleanup(func() {
 		server.Close()
@@ -263,7 +270,7 @@ func newTestApp(t *testing.T) testApp {
 			_ = sqlDB.Close()
 		}
 	})
-	return testApp{t: t, server: server, db: handle, sweeper: sweeper, handler: handler}
+	return testApp{t: t, server: server, db: handle, sweeper: sweeper, handler: handler, proxy: builtinProxy}
 }
 
 func mustLogin(t *testing.T, app testApp, email, password string) loginResponse {

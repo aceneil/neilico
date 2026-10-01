@@ -17,20 +17,28 @@ import (
 	"umpp/control-plane/internal/middleware"
 	"umpp/control-plane/internal/models"
 	"umpp/control-plane/internal/service"
+	"umpp/control-plane/internal/service/cert"
+	"umpp/control-plane/internal/service/proxy"
 )
 
 const maxRequestBody = 1 << 20
 
 type Server struct {
-	db        *gorm.DB
-	auth      *auth.Manager
-	tenants   *service.TenantService
-	users     *service.UserService
-	nodes     *service.NodeService
-	metrics   *metrics.Metrics
-	logger    *slog.Logger
-	version   string
-	startedAt time.Time
+	db         *gorm.DB
+	auth       *auth.Manager
+	tenants    *service.TenantService
+	users      *service.UserService
+	nodes      *service.NodeService
+	domains    *service.DomainService
+	certs      *service.CertificateService
+	proxyRules *service.ProxyRuleService
+	traffic    *service.TrafficService
+	metrics    *metrics.Metrics
+	logger     *slog.Logger
+	version    string
+	proxy      proxy.Provider
+	proxyOpts  ProxyOptions
+	startedAt  time.Time
 }
 
 func New(
@@ -41,18 +49,49 @@ func New(
 	logger *slog.Logger,
 	version string,
 ) http.Handler {
+	return NewWithProxy(db, authManager, nodeService, promMetrics, logger, version, nil, ProxyOptions{
+		Enabled: true,
+		Kind:    "builtin",
+		Listen:  ":8081",
+	})
+}
+
+func NewWithProxy(
+	db *gorm.DB,
+	authManager *auth.Manager,
+	nodeService *service.NodeService,
+	promMetrics *metrics.Metrics,
+	logger *slog.Logger,
+	version string,
+	proxyProvider proxy.Provider,
+	opts ProxyOptions,
+) http.Handler {
+	if proxyProvider == nil {
+		proxyProvider = proxy.NewBuiltin(db, authManager, logger, promMetrics)
+	}
+	certificateCrypto, err := cert.NewCryptoFromKey(authManager.CertificateEncryptionKey())
+	if err != nil {
+		panic(err)
+	}
 	server := &Server{
-		db:        db,
-		auth:      authManager,
-		tenants:   service.NewTenantService(db),
-		users:     service.NewUserService(db),
-		nodes:     nodeService,
-		metrics:   promMetrics,
-		logger:    logger,
-		version:   version,
-		startedAt: time.Now().UTC(),
+		db:         db,
+		auth:       authManager,
+		tenants:    service.NewTenantService(db),
+		users:      service.NewUserService(db),
+		nodes:      nodeService,
+		domains:    service.NewDomainService(db),
+		certs:      service.NewCertificateService(db, certificateCrypto),
+		proxyRules: service.NewProxyRuleService(db),
+		traffic:    service.NewTrafficService(db),
+		metrics:    promMetrics,
+		logger:     logger,
+		version:    version,
+		proxy:      proxyProvider,
+		proxyOpts:  opts,
+		startedAt:  time.Now().UTC(),
 	}
 	mux := http.NewServeMux()
+	server.registerM2A(mux)
 
 	mux.HandleFunc("/healthz", server.handleHealth)
 	mux.Handle("/metrics", promMetrics.Handler())
@@ -499,6 +538,8 @@ func (s *Server) serviceError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, "conflict", "resource conflict")
 	case errors.Is(err, service.ErrInvalidInput):
 		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+	case errors.Is(err, proxy.ErrUnprocessable):
+		writeError(w, http.StatusUnprocessableEntity, "unprocessable_entity", err.Error())
 	default:
 		s.internalError(w, err)
 	}

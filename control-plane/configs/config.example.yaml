@@ -17,3 +17,12 @@ node:
 log:
   level: info
   format: json
+proxy:
+  enabled: true
+  kind: builtin
+  listen: ":8081"
+  nps:
+    config_path: "data/nps/config.json"
+    binary_path: "/usr/bin/nps"
+    pid_file: "data/nps/nps.pid"
+    reload_strategy: "signal"

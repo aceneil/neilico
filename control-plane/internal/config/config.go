@@ -47,6 +47,7 @@ type Config struct {
 	Auth      Auth      `yaml:"auth"`
 	Bootstrap Bootstrap `yaml:"bootstrap"`
 	Node      Node      `yaml:"node"`
+	Proxy     Proxy     `yaml:"proxy"`
 	Log       Log       `yaml:"log"`
 }
 
@@ -63,7 +64,18 @@ func Default() Config {
 		},
 		Bootstrap: Bootstrap{DefaultTenant: "default"},
 		Node:      Node{HeartbeatTimeout: 60 * time.Second},
-		Log:       Log{Level: "info", Format: "json"},
+		Proxy: Proxy{
+			Enabled: true,
+			Kind:    "builtin",
+			Listen:  ":8081",
+			NPS: ProxyNPS{
+				ConfigPath:     "data/nps/config.json",
+				BinaryPath:     "/usr/bin/nps",
+				PIDFile:        "data/nps/nps.pid",
+				ReloadStrategy: "signal",
+			},
+		},
+		Log: Log{Level: "info", Format: "json"},
 	}
 }
 
@@ -103,11 +115,24 @@ func applyEnvironment(cfg *Config) error {
 		{"UMPP_BOOTSTRAP_DEFAULT_TENANT", &cfg.Bootstrap.DefaultTenant},
 		{"UMPP_LOG_LEVEL", &cfg.Log.Level},
 		{"UMPP_LOG_FORMAT", &cfg.Log.Format},
+		{"UMPP_PROXY_KIND", &cfg.Proxy.Kind},
+		{"UMPP_PROXY_LISTEN", &cfg.Proxy.Listen},
+		{"UMPP_NPS_CONFIG_PATH", &cfg.Proxy.NPS.ConfigPath},
+		{"UMPP_NPS_BINARY_PATH", &cfg.Proxy.NPS.BinaryPath},
+		{"UMPP_NPS_PID_FILE", &cfg.Proxy.NPS.PIDFile},
+		{"UMPP_NPS_RELOAD_STRATEGY", &cfg.Proxy.NPS.ReloadStrategy},
 	}
 	for _, item := range stringOverrides {
 		if value, ok := os.LookupEnv(item.key); ok {
 			*item.dst = value
 		}
+	}
+	if value, ok := os.LookupEnv("UMPP_PROXY_ENABLED"); ok {
+		enabled, err := strconv.ParseBool(value)
+		if err != nil {
+			return fmt.Errorf("UMPP_PROXY_ENABLED must be a boolean: %w", err)
+		}
+		cfg.Proxy.Enabled = enabled
 	}
 	if value, ok := os.LookupEnv("UMPP_SERVER_PORT"); ok {
 		port, err := strconv.Atoi(value)
@@ -162,5 +187,31 @@ func (c Config) Validate() error {
 	if c.Log.Format != "json" && c.Log.Format != "text" {
 		return fmt.Errorf("log.format must be json or text")
 	}
+	if c.Proxy.Kind != "builtin" && c.Proxy.Kind != "nps" {
+		return fmt.Errorf("proxy.kind must be builtin or nps")
+	}
+	if strings.TrimSpace(c.Proxy.Listen) == "" {
+		return fmt.Errorf("proxy.listen is required")
+	}
+	if strings.TrimSpace(c.Proxy.NPS.ConfigPath) == "" {
+		return fmt.Errorf("proxy.nps.config_path is required")
+	}
+	if c.Proxy.NPS.ReloadStrategy != "signal" && c.Proxy.NPS.ReloadStrategy != "file" {
+		return fmt.Errorf("proxy.nps.reload_strategy must be signal or file")
+	}
 	return nil
+}
+
+type ProxyNPS struct {
+	ConfigPath     string `yaml:"config_path"`
+	BinaryPath     string `yaml:"binary_path"`
+	PIDFile        string `yaml:"pid_file"`
+	ReloadStrategy string `yaml:"reload_strategy"`
+}
+
+type Proxy struct {
+	Enabled bool     `yaml:"enabled"`
+	Kind    string   `yaml:"kind"`
+	Listen  string   `yaml:"listen"`
+	NPS     ProxyNPS `yaml:"nps"`
 }
