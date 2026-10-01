@@ -1,0 +1,19 @@
+server:
+  host: "0.0.0.0"
+  port: 8080
+database:
+  driver: postgres
+  dsn: "postgres://umpp:change-me@localhost:5432/umpp?sslmode=disable"
+auth:
+  jwt_secret: "replace-with-a-long-random-secret"
+  access_ttl: 15m
+  refresh_ttl: 168h
+bootstrap:
+  admin_email: "admin@example.com"
+  admin_password: "replace-with-a-strong-password"
+  default_tenant: "default"
+node:
+  heartbeat_timeout: 60s
+log:
+  level: info
+  format: json

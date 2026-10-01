@@ -1,0 +1,18 @@
+BEGIN;
+
+DROP TABLE IF EXISTS traffic_logs;
+DROP TABLE IF EXISTS audit_logs;
+DROP TABLE IF EXISTS config_versions;
+DROP TABLE IF EXISTS relay_servers;
+DROP TABLE IF EXISTS subnet_routes;
+DROP TABLE IF EXISTS acl_rules;
+DROP TABLE IF EXISTS network_members;
+DROP TABLE IF EXISTS virtual_networks;
+DROP TABLE IF EXISTS nodes;
+DROP TABLE IF EXISTS proxy_rules;
+DROP TABLE IF EXISTS domains;
+DROP TABLE IF EXISTS certificates;
+DROP TABLE IF EXISTS users;
+DROP TABLE IF EXISTS tenants;
+
+COMMIT;
