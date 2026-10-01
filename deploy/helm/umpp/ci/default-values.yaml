@@ -1,0 +1,30 @@
+# CI-only values. Every credential remains a non-secret placeholder.
+replicaCount: 1
+controlApi:
+  image:
+    repository: localhost/umpp-control-api
+    tag: ci
+dashboard:
+  image:
+    repository: localhost/umpp-dashboard
+    tag: ci
+postgres:
+  image:
+    repository: postgres
+    tag: "16"
+redis:
+  image:
+    repository: redis
+    tag: "7"
+nats:
+  image:
+    repository: nats
+    tag: 2.11-alpine
+secrets:
+  postgresPassword: CHANGE_ME
+  jwtSecret: CHANGE_ME
+  bootstrapAdminPassword: CHANGE_ME
+externalDatabase:
+  host: CHANGE_ME
+podDisruptionBudget:
+  enabled: false

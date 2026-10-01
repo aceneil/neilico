@@ -1,0 +1,296 @@
+# Default values contain placeholders only. Replace every CHANGE_ME at install
+# time, or use the corresponding existingSecret instead of creating a Secret.
+nameOverride: ""
+fullnameOverride: ""
+
+# Number of control-api and dashboard Pods. HPA ignores this when enabled.
+replicaCount: 2
+
+image:
+  pullPolicy: IfNotPresent
+  pullSecrets: []
+
+global:
+  imageRegistry: ""
+  commonLabels: {}
+  commonAnnotations: {}
+
+podAnnotations: {}
+podLabels: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+controlApi:
+  image:
+    repository: umpp-control-api
+    tag: latest
+  service:
+    type: ClusterIP
+    annotations: {}
+    ports:
+      api: 8080
+      proxy: 8081
+      tls: 8443
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  securityContext:
+    runAsNonRoot: true
+    readOnlyRootFilesystem: true
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+    seccompProfile:
+      type: RuntimeDefault
+  env: []
+  command: ["/usr/local/bin/umpp-api"]
+  args: ["--config", "/app/configs/config.example.yaml"]
+  auth:
+    accessTtl: 15m
+    refreshTtl: 168h
+  bootstrap:
+    adminEmail: admin@example.com
+    defaultTenant: default
+  node:
+    heartbeatTimeout: 60s
+  proxy:
+    enabled: true
+    kind: builtin
+    listen: ":8081"
+    tls:
+      enabled: false
+      listen: ":8443"
+      minVersion: "1.2"
+    nps:
+      configPath: data/nps/config.json
+      binaryPath: /usr/bin/nps
+      pidFile: data/nps/nps.pid
+      reloadStrategy: signal
+
+dashboard:
+  image:
+    repository: umpp-dashboard
+    tag: latest
+  service:
+    type: ClusterIP
+    annotations: {}
+    port: 8080
+  resources:
+    requests:
+      cpu: 25m
+      memory: 32Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
+  env: []
+
+log:
+  level: info
+  format: json
+
+# V1-R1 ACME configuration. HTTP-01 must be reachable on acme.httpPort
+# externally when acme.enabled=true.
+acme:
+  enabled: false
+  directoryUrl: https://acme-v02.api.letsencrypt.org/directory
+  email: ""
+  challenge: http-01
+  httpPort: 80
+  renewBeforeDays: 30
+  checkInterval: 6h
+  keyType: ec256
+  agreeTos: false
+  autoRenew: true
+  caCertFile: ""
+
+# V1-R2 alert configuration and optional webhook. Webhook URL is held in the
+# Secret because it may contain credentials.
+alerts:
+  evaluationInterval: 1m
+  nodeOfflineAfter: 5m
+  certificateExpiringIn: 720h
+  certificateCriticalIn: 168h
+  p2pSuccessRateMinimum: 0.60
+  relaySpikeMultiplier: 3
+  relayBaselineWindow: 24h
+  resolvedRetention: 168h
+  webhook:
+    enabled: false
+    url: CHANGE_ME
+    timeout: 5s
+    retries: 3
+
+secrets:
+  # Set existingSecret to prevent templates/secret.yaml from being rendered.
+  create: true
+  existingSecret: ""
+  postgresPassword: CHANGE_ME
+  jwtSecret: CHANGE_ME
+  bootstrapAdminPassword: CHANGE_ME
+  keys:
+    postgresPassword: POSTGRES_PASSWORD
+    jwtSecret: UMPP_AUTH_JWT_SECRET
+    bootstrapAdminPassword: UMPP_BOOTSTRAP_ADMIN_PASSWORD
+    webhookUrl: UMPP_ALERTS_WEBHOOK_URL
+
+externalDatabase:
+  host: CHANGE_ME
+  port: 5432
+  user: umpp
+  database: umpp
+  sslmode: disable
+  passwordSecret:
+    name: ""
+    key: POSTGRES_PASSWORD
+
+externalRedis:
+  host: CHANGE_ME
+  port: 6379
+
+externalNATS:
+  host: CHANGE_ME
+  port: 4222
+
+# Development-only bundled PostgreSQL. Production must use a managed database
+# or an Operator. postgres.enabled is intentionally false by default.
+postgres:
+  enabled: false
+  image:
+    repository: postgres
+    tag: "16"
+  service:
+    annotations: {}
+    port: 5432
+  database: umpp
+  user: umpp
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+  persistence:
+    enabled: true
+    size: 8Gi
+    storageClass: ""
+
+# Development-only bundled Redis. Production should use Sentinel/Cluster.
+redis:
+  enabled: false
+  image:
+    repository: redis
+    tag: "7"
+  command: ["redis-server", "--appendonly", "yes"]
+  service:
+    annotations: {}
+    port: 6379
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+  persistence:
+    enabled: true
+    size: 2Gi
+    storageClass: ""
+
+# Development-only bundled NATS JetStream. Production should use a dedicated
+# NATS StatefulSet/Operator.
+nats:
+  enabled: false
+  image:
+    repository: nats
+    tag: 2.11-alpine
+  command: ["-js", "-m", "8222"]
+  service:
+    annotations: {}
+    clientPort: 4222
+    monitoringPort: 8222
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+  persistence:
+    enabled: true
+    size: 2Gi
+    storageClass: ""
+
+# Placeholder only. The real UMPP relay data plane is a V2 deliverable.
+relay:
+  enabled: false
+  exposure: hostNetwork
+  image:
+    repository: ghcr.io/wg-easy/wg-easy
+    tag: "15"
+  service:
+    annotations: {}
+    wireguardPort: 51820
+    turnPort: 3478
+    # 0 lets the Kubernetes control plane allocate a NodePort.
+    wireguardNodePort: 0
+    turnNodePort: 0
+  env:
+    - name: INSECURE
+      value: "true"
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: umpp.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+          service: dashboard
+        - path: /api
+          pathType: Prefix
+          service: controlApi
+  tls: []
+
+autoscaling:
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 80
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+networkPolicy:
+  enabled: false
+  allowExternalEgress: true
+  ingress: []
+  egress: []
+
+prometheus:
+  serviceMonitor:
+    enabled: false
+    interval: 30s
+    scrapeTimeout: 10s
+    labels: {}

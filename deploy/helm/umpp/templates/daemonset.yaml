@@ -1,0 +1,83 @@
+{{- if .Values.relay.enabled }}
+# PLACEHOLDER ONLY: wg-easy is not the UMPP relay data plane. The real relay
+# implementation is a V2 deliverable.
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: {{ include "umpp.relay.fullname" . }}
+  labels:
+    {{- include "umpp.componentLabels" (dict "root" . "component" "relay") | nindent 4 }}
+  annotations:
+    {{- include "umpp.annotations" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "umpp.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: relay
+  template:
+    metadata:
+      {{- include "umpp.podMetadata" (dict "root" . "component" "relay") | nindent 6 }}
+    spec:
+      serviceAccountName: {{ include "umpp.serviceAccountName" . }}
+      {{- with .Values.image.pullSecrets }}
+      imagePullSecrets:
+        {{- range . }}
+        - name: {{ . }}
+        {{- end }}
+      {{- end }}
+      hostNetwork: {{ eq .Values.relay.exposure "hostNetwork" }}
+      {{- if eq .Values.relay.exposure "hostNetwork" }}
+      dnsPolicy: ClusterFirstWithHostNet
+      {{- end }}
+      containers:
+        - name: relay
+          image: {{ include "umpp.image" (dict "root" . "image" .Values.relay.image) }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            {{- toYaml .Values.relay.env | nindent 12 }}
+          ports:
+            - name: wireguard
+              containerPort: {{ .Values.relay.service.wireguardPort }}
+              protocol: UDP
+            - name: turn
+              containerPort: {{ .Values.relay.service.turnPort }}
+              protocol: UDP
+            - name: placeholder-http
+              containerPort: 51821
+              protocol: TCP
+          readinessProbe:
+            tcpSocket:
+              port: placeholder-http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: placeholder-http
+            initialDelaySeconds: 20
+            periodSeconds: 20
+          resources:
+            {{- toYaml .Values.relay.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: true
+            capabilities:
+              add:
+                - NET_ADMIN
+              drop:
+                - ALL
+      securityContext:
+        sysctls:
+          - name: net.ipv4.ip_forward
+            value: "1"
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

@@ -32,7 +32,7 @@
 | ACME/TLS overlay | ✅ V1-R1 | Pebble RFC 8555 真实 HTTP-01、CA 信任、SNI TLS，`scripts/smoke-acme.sh` |
 | 告警体系 | ✅ V1-R2 | 五条 §15.2 规则、状态机/事件、log/webhook、告警 API 与 Dashboard |
 | 端到端冒烟 | ✅ M5 | `scripts/smoke.sh`，真实 Agent dry-run + builtin 反代 + metrics/audit 断言 |
-| Helm Chart | ⏳ 留给 V1 | 本预算不提供半成品 Chart，建议在 V1 做 PostgreSQL 外部依赖版本 |
+| Helm Chart | ✅ V1-R3 | `deploy/helm/umpp`，默认外部 PostgreSQL，含开发依赖开关、Secret/Ingress/HPA/PDB/NetworkPolicy/ServiceMonitor |
 
 ## 一键启动
 
@@ -62,6 +62,15 @@ bash scripts/smoke-down.sh --yes
 - Dashboard 登录页：`docs/assets/dashboard-login.png`（待补）
 - 节点/网络总览：`docs/assets/dashboard-overview.png`（待补）
 - 域名代理规则：`docs/assets/dashboard-proxy.png`（待补）
+
+## Kubernetes
+
+集群部署使用 `deploy/helm/umpp`；安装、外部 PostgreSQL/Redis/NATS、Secret、Ingress/ACME 与生产检查见 [Chart README](deploy/helm/umpp/README.md) 和 [运维手册](docs/OPS.md#kubernetes-部署)。离线断言可运行：
+
+```bash
+export PATH="$HOME/.local/bin:$PATH"
+cd deploy/helm && bash umpp/ci/verify.sh
+```
 
 ## 开发状态
 

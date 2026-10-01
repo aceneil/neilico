@@ -1,0 +1,98 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "umpp.fullname" . }}-config
+  labels:
+    {{- include "umpp.componentLabels" (dict "root" . "component" "config") | nindent 4 }}
+  annotations:
+    {{- include "umpp.annotations" . | nindent 4 }}
+data:
+  config.yaml: |
+    server:
+      host: "0.0.0.0"
+      port: {{ .Values.controlApi.service.ports.api }}
+    database:
+      driver: postgres
+      dsn: ""
+    auth:
+      jwt_secret: ""
+      access_ttl: {{ .Values.controlApi.auth.accessTtl | quote }}
+      refresh_ttl: {{ .Values.controlApi.auth.refreshTtl | quote }}
+    bootstrap:
+      admin_email: {{ .Values.controlApi.bootstrap.adminEmail | quote }}
+      admin_password: ""
+      default_tenant: {{ .Values.controlApi.bootstrap.defaultTenant | quote }}
+    node:
+      heartbeat_timeout: {{ .Values.controlApi.node.heartbeatTimeout | quote }}
+    log:
+      level: {{ .Values.log.level | quote }}
+      format: {{ .Values.log.format | quote }}
+    acme:
+      enabled: {{ .Values.acme.enabled }}
+      directory_url: {{ .Values.acme.directoryUrl | quote }}
+      email: {{ .Values.acme.email | quote }}
+      challenge: {{ .Values.acme.challenge | quote }}
+      http_port: {{ .Values.acme.httpPort }}
+      renew_before_days: {{ .Values.acme.renewBeforeDays }}
+      check_interval: {{ .Values.acme.checkInterval | quote }}
+      key_type: {{ .Values.acme.keyType | quote }}
+      agree_tos: {{ .Values.acme.agreeTos }}
+      auto_renew: {{ .Values.acme.autoRenew }}
+      ca_cert_file: {{ .Values.acme.caCertFile | quote }}
+    proxy:
+      enabled: {{ .Values.controlApi.proxy.enabled }}
+      kind: {{ .Values.controlApi.proxy.kind | quote }}
+      listen: {{ .Values.controlApi.proxy.listen | quote }}
+      tls:
+        enabled: {{ .Values.controlApi.proxy.tls.enabled }}
+        listen: {{ .Values.controlApi.proxy.tls.listen | quote }}
+        min_version: {{ .Values.controlApi.proxy.tls.minVersion | quote }}
+      nps:
+        config_path: {{ .Values.controlApi.proxy.nps.configPath | quote }}
+        binary_path: {{ .Values.controlApi.proxy.nps.binaryPath | quote }}
+        pid_file: {{ .Values.controlApi.proxy.nps.pidFile | quote }}
+        reload_strategy: {{ .Values.controlApi.proxy.nps.reloadStrategy | quote }}
+    alerts:
+      evaluation_interval: {{ .Values.alerts.evaluationInterval | quote }}
+      node_offline_after: {{ .Values.alerts.nodeOfflineAfter | quote }}
+      certificate_expiring_in: {{ .Values.alerts.certificateExpiringIn | quote }}
+      certificate_critical_in: {{ .Values.alerts.certificateCriticalIn | quote }}
+      p2p_success_rate_minimum: {{ .Values.alerts.p2pSuccessRateMinimum }}
+      relay_spike_multiplier: {{ .Values.alerts.relaySpikeMultiplier }}
+      relay_baseline_window: {{ .Values.alerts.relayBaselineWindow | quote }}
+      resolved_retention: {{ .Values.alerts.resolvedRetention | quote }}
+      webhook_url: ""
+      webhook_timeout: {{ .Values.alerts.webhook.timeout | quote }}
+      webhook_retries: {{ .Values.alerts.webhook.retries }}
+  default.conf: |
+    server {
+      listen {{ .Values.dashboard.service.port }};
+      server_name _;
+      root /usr/share/nginx/html;
+      index index.html;
+
+      location / {
+        try_files $uri $uri/ /index.html;
+      }
+
+      location /api/ {
+        proxy_pass http://{{ include "umpp.controlApi.fullname" . }}:{{ .Values.controlApi.service.ports.api }};
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "";
+      }
+
+      location = /healthz {
+        proxy_pass http://{{ include "umpp.controlApi.fullname" . }}:{{ .Values.controlApi.service.ports.api }}/healthz;
+        proxy_set_header Host $host;
+      }
+
+      location = /metrics {
+        proxy_pass http://{{ include "umpp.controlApi.fullname" . }}:{{ .Values.controlApi.service.ports.api }}/metrics;
+        proxy_set_header Host $host;
+      }
+    }

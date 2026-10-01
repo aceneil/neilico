@@ -1,0 +1,23 @@
+{{- if .Values.prometheus.serviceMonitor.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "umpp.controlApi.fullname" . }}
+  labels:
+    {{- include "umpp.componentLabels" (dict "root" . "component" "control-api") | nindent 4 }}
+    {{- with .Values.prometheus.serviceMonitor.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  annotations:
+    {{- include "umpp.annotations" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "umpp.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: control-api
+  endpoints:
+    - port: api
+      path: /metrics
+      interval: {{ .Values.prometheus.serviceMonitor.interval }}
+      scrapeTimeout: {{ .Values.prometheus.serviceMonitor.scrapeTimeout }}
+{{- end }}

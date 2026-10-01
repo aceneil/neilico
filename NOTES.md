@@ -18,6 +18,7 @@ UMPP（Unified Mesh & Proxy Platform）：统一「内网穿透 + Mesh 组网」
 | `cli/` | `umppctl` 命令行 |
 | `dashboard/` | Vue3 + Vite + Ant Design Vue 管理后台 |
 | `deploy/docker-compose/` | 单机一键部署栈 |
+| `deploy/helm/umpp/` | Kubernetes Helm Chart（默认外部 PostgreSQL，含开发依赖/relay 占位） |
 | `scripts/` | `smoke.sh`、`smoke-down.sh`，退出码即判据 |
 
 ## 关键决策（详见 PLAN.md §2）
@@ -39,7 +40,7 @@ UMPP（Unified Mesh & Proxy Platform）：统一「内网穿透 + Mesh 组网」
 | M4b 补齐读接口 | ✅ | `ce43379` | 新增 `GET /api/v1/audit-logs`、`GET /api/v1/nodes/{id}/metrics`、`relay-servers` CRUD（M4 据实报告这些接口后端从未实现，避免前端造假数据）；Dashboard 对应页面接通 |
 | **M5 部署+文档+冒烟** | ✅ | `8e54d34` | Compose + Dockerfile + `scripts/smoke.sh`（12/12 PASS）+ API/USER/OPS/README；smoke 用真实 Agent dry-run |
 | **V1-R2 告警体系+指标补全** | ✅ | （未提交） | 五条规则、状态机/事件、000007、log/webhook notifier、告警 API、Dashboard `/alerts`、指标数据源说明 |
-| Helm Chart | ⏳ 留给 V1 | — | 本预算不提供半成品，建议带 PostgreSQL 外部依赖说明 |
+| **V1-R3 Helm Chart** | ✅ | （未提交） | `deploy/helm/umpp`：control-api/dashboard Deployment、外部 PG 默认、开发 PG/Redis/NATS StatefulSet、relay 占位、Secret/Ingress/HPA/PDB/NetworkPolicy/ServiceMonitor；`ci/verify.sh` 离线断言 |
 
 ### 当前运行状态（2026-10-02 01:5x 实测）
 - **整个栈仍在运行**（`Up 3 hours (healthy)`）：API `:18080`、内置反代 `:18081`、Dashboard `:13000`、PG `:15432`、Redis `:16379`、NATS `:14222`、relay 占位 UDP `:51820/:3478`
@@ -83,6 +84,9 @@ bash scripts/smoke.sh
 bash scripts/smoke-acme.sh
 # 清理（会删 pgdata，必须显式确认）
 bash scripts/smoke-down.sh --yes
+# Helm 离线 lint/render/schema/secret 断言
+export PATH="$HOME/.local/bin:$PATH"
+cd deploy/helm && bash umpp/ci/verify.sh
 ```
 
 ## 坑与注意
@@ -92,3 +96,5 @@ bash scripts/smoke-down.sh --yes
 - Compose relay 是 **wg-easy 占位**，不是中继数据面；不要把 3478/udp 当作已实现 TURN。当前宿主缺少 iptables NAT 模块时 wg-easy 会记录接口启动错误，健康检查只验证占位 Web 监听。
 - `.env` 已在 `.gitignore`；只提交 `.env.example` 占位符，不要提交真实 JWT/密码/Agent 私钥。
 - ACME 配置默认关闭；只有 `enabled=true` 且显式 `agree_tos=true` 才允许 order。`dns-01` 与 EAB 保留接口位，当前返回 `ErrNotImplemented`。
+- Helm 默认必须接外部 PostgreSQL；`postgres/redis/nats.enabled=true` 只供开发。`secrets.existingSecret` 启用时不渲染 Secret。Chart 详细字段、TLS 二选一和生产限制见 `deploy/helm/umpp/README.md`。
+- Helm `verify.sh` 只验证离线渲染，不连接集群；预发布仍需验证 LB/Ingress、UDP、滚动升级、PVC/备份恢复与 NetworkPolicy。

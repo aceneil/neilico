@@ -1,0 +1,312 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "umpp.controlApi.fullname" . }}
+  labels:
+    {{- include "umpp.componentLabels" (dict "root" . "component" "control-api") | nindent 4 }}
+  annotations:
+    {{- include "umpp.annotations" . | nindent 4 }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "umpp.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: control-api
+  template:
+    metadata:
+      {{- include "umpp.podMetadata" (dict "root" . "component" "control-api") | nindent 6 }}
+    spec:
+      serviceAccountName: {{ include "umpp.serviceAccountName" . }}
+      {{- with .Values.image.pullSecrets }}
+      imagePullSecrets:
+        {{- range . }}
+        - name: {{ . }}
+        {{- end }}
+      {{- end }}
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: control-api
+          image: {{ include "umpp.image" (dict "root" . "image" .Values.controlApi.image) }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command:
+            {{- toYaml .Values.controlApi.command | nindent 12 }}
+          args:
+            {{- toYaml .Values.controlApi.args | nindent 12 }}
+          ports:
+            - name: api
+              containerPort: {{ .Values.controlApi.service.ports.api }}
+              protocol: TCP
+            - name: proxy
+              containerPort: {{ include "umpp.proxyPort" . }}
+              protocol: TCP
+            - name: tls
+              containerPort: {{ include "umpp.tlsPort" . }}
+              protocol: TCP
+            {{- if and .Values.acme.enabled (eq .Values.acme.challenge "http-01") }}
+            - name: acme-http
+              containerPort: {{ .Values.acme.httpPort }}
+              protocol: TCP
+            {{- end }}
+          env:
+            - name: UMPP_SERVER_HOST
+              value: "0.0.0.0"
+            - name: UMPP_SERVER_PORT
+              value: {{ .Values.controlApi.service.ports.api | quote }}
+            - name: UMPP_DATABASE_DRIVER
+              value: postgres
+            - name: POSTGRES_HOST
+              value: {{ include "umpp.postgresHost" . | quote }}
+            - name: POSTGRES_PORT
+              value: {{ include "umpp.postgresPort" . | quote }}
+            - name: POSTGRES_DB
+              value: {{ include "umpp.postgresDatabase" . | quote }}
+            - name: POSTGRES_USER
+              value: {{ include "umpp.postgresUser" . | quote }}
+            - name: POSTGRES_SSLMODE
+              value: {{ .Values.externalDatabase.sslmode | quote }}
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "umpp.externalDatabaseSecretName" . }}
+                  key: {{ include "umpp.externalDatabasePasswordKey" . }}
+            - name: UMPP_DATABASE_DSN
+              value: "postgres://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@$(POSTGRES_HOST):$(POSTGRES_PORT)/$(POSTGRES_DB)?sslmode=$(POSTGRES_SSLMODE)"
+            - name: UMPP_AUTH_JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "umpp.secretName" . }}
+                  key: {{ .Values.secrets.keys.jwtSecret }}
+            - name: UMPP_BOOTSTRAP_ADMIN_EMAIL
+              value: {{ .Values.controlApi.bootstrap.adminEmail | quote }}
+            - name: UMPP_BOOTSTRAP_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "umpp.secretName" . }}
+                  key: {{ .Values.secrets.keys.bootstrapAdminPassword }}
+            - name: UMPP_BOOTSTRAP_DEFAULT_TENANT
+              value: {{ .Values.controlApi.bootstrap.defaultTenant | quote }}
+            - name: UMPP_AUTH_ACCESS_TTL
+              value: {{ .Values.controlApi.auth.accessTtl | quote }}
+            - name: UMPP_AUTH_REFRESH_TTL
+              value: {{ .Values.controlApi.auth.refreshTtl | quote }}
+            - name: UMPP_NODE_HEARTBEAT_TIMEOUT
+              value: {{ .Values.controlApi.node.heartbeatTimeout | quote }}
+            - name: UMPP_LOG_LEVEL
+              value: {{ .Values.log.level | quote }}
+            - name: UMPP_LOG_FORMAT
+              value: {{ .Values.log.format | quote }}
+            - name: UMPP_PROXY_ENABLED
+              value: {{ .Values.controlApi.proxy.enabled | quote }}
+            - name: UMPP_PROXY_KIND
+              value: {{ .Values.controlApi.proxy.kind | quote }}
+            - name: UMPP_PROXY_LISTEN
+              value: {{ .Values.controlApi.proxy.listen | quote }}
+            - name: UMPP_PROXY_TLS_ENABLED
+              value: {{ .Values.controlApi.proxy.tls.enabled | quote }}
+            - name: UMPP_PROXY_TLS_LISTEN
+              value: {{ .Values.controlApi.proxy.tls.listen | quote }}
+            - name: UMPP_PROXY_TLS_MIN_VERSION
+              value: {{ .Values.controlApi.proxy.tls.minVersion | quote }}
+            - name: UMPP_NPS_CONFIG_PATH
+              value: {{ .Values.controlApi.proxy.nps.configPath | quote }}
+            - name: UMPP_NPS_BINARY_PATH
+              value: {{ .Values.controlApi.proxy.nps.binaryPath | quote }}
+            - name: UMPP_NPS_PID_FILE
+              value: {{ .Values.controlApi.proxy.nps.pidFile | quote }}
+            - name: UMPP_NPS_RELOAD_STRATEGY
+              value: {{ .Values.controlApi.proxy.nps.reloadStrategy | quote }}
+            - name: UMPP_ACME_ENABLED
+              value: {{ .Values.acme.enabled | quote }}
+            - name: UMPP_ACME_DIRECTORY_URL
+              value: {{ .Values.acme.directoryUrl | quote }}
+            - name: UMPP_ACME_EMAIL
+              value: {{ .Values.acme.email | quote }}
+            - name: UMPP_ACME_CHALLENGE
+              value: {{ .Values.acme.challenge | quote }}
+            - name: UMPP_ACME_HTTP_PORT
+              value: {{ .Values.acme.httpPort | quote }}
+            - name: UMPP_ACME_RENEW_BEFORE_DAYS
+              value: {{ .Values.acme.renewBeforeDays | quote }}
+            - name: UMPP_ACME_CHECK_INTERVAL
+              value: {{ .Values.acme.checkInterval | quote }}
+            - name: UMPP_ACME_KEY_TYPE
+              value: {{ .Values.acme.keyType | quote }}
+            - name: UMPP_ACME_AGREE_TOS
+              value: {{ .Values.acme.agreeTos | quote }}
+            - name: UMPP_ACME_AUTO_RENEW
+              value: {{ .Values.acme.autoRenew | quote }}
+            - name: UMPP_ACME_CA_CERT_FILE
+              value: {{ .Values.acme.caCertFile | quote }}
+            - name: UMPP_ALERTS_EVALUATION_INTERVAL
+              value: {{ .Values.alerts.evaluationInterval | quote }}
+            - name: UMPP_ALERTS_NODE_OFFLINE_AFTER
+              value: {{ .Values.alerts.nodeOfflineAfter | quote }}
+            - name: UMPP_ALERTS_CERTIFICATE_EXPIRING_IN
+              value: {{ .Values.alerts.certificateExpiringIn | quote }}
+            - name: UMPP_ALERTS_CERTIFICATE_CRITICAL_IN
+              value: {{ .Values.alerts.certificateCriticalIn | quote }}
+            - name: UMPP_ALERTS_P2P_SUCCESS_RATE_MINIMUM
+              value: {{ .Values.alerts.p2pSuccessRateMinimum | quote }}
+            - name: UMPP_ALERTS_RELAY_SPIKE_MULTIPLIER
+              value: {{ .Values.alerts.relaySpikeMultiplier | quote }}
+            - name: UMPP_ALERTS_RELAY_BASELINE_WINDOW
+              value: {{ .Values.alerts.relayBaselineWindow | quote }}
+            - name: UMPP_ALERTS_RESOLVED_RETENTION
+              value: {{ .Values.alerts.resolvedRetention | quote }}
+            {{- if .Values.alerts.webhook.enabled }}
+            - name: UMPP_ALERTS_WEBHOOK_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "umpp.secretName" . }}
+                  key: {{ .Values.secrets.keys.webhookUrl }}
+            {{- else }}
+            - name: UMPP_ALERTS_WEBHOOK_URL
+              value: ""
+            {{- end }}
+            - name: UMPP_ALERTS_WEBHOOK_TIMEOUT
+              value: {{ .Values.alerts.webhook.timeout | quote }}
+            - name: UMPP_ALERTS_WEBHOOK_RETRIES
+              value: {{ .Values.alerts.webhook.retries | quote }}
+            {{- with .Values.controlApi.env }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: api
+            initialDelaySeconds: 15
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: api
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources:
+            {{- toYaml .Values.controlApi.resources | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.controlApi.securityContext | nindent 12 }}
+          volumeMounts:
+            - name: config
+              mountPath: /app/configs/config.example.yaml
+              subPath: config.yaml
+              readOnly: true
+            - name: data
+              mountPath: /app/data
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "umpp.fullname" . }}-config
+        - name: data
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "umpp.dashboard.fullname" . }}
+  labels:
+    {{- include "umpp.componentLabels" (dict "root" . "component" "dashboard") | nindent 4 }}
+  annotations:
+    {{- include "umpp.annotations" . | nindent 4 }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "umpp.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: dashboard
+  template:
+    metadata:
+      {{- include "umpp.podMetadata" (dict "root" . "component" "dashboard") | nindent 6 }}
+    spec:
+      serviceAccountName: {{ include "umpp.serviceAccountName" . }}
+      {{- with .Values.image.pullSecrets }}
+      imagePullSecrets:
+        {{- range . }}
+        - name: {{ . }}
+        {{- end }}
+      {{- end }}
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: dashboard
+          image: {{ include "umpp.image" (dict "root" . "image" .Values.dashboard.image) }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.dashboard.service.port }}
+              protocol: TCP
+          env:
+            {{- with .Values.dashboard.env }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 3
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 5
+            timeoutSeconds: 3
+          resources:
+            {{- toYaml .Values.dashboard.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: nginx-config
+              mountPath: /etc/nginx/conf.d/default.conf
+              subPath: default.conf
+              readOnly: true
+      volumes:
+        - name: nginx-config
+          configMap:
+            name: {{ include "umpp.fullname" . }}-config
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

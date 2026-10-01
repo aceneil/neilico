@@ -38,6 +38,46 @@ M2b 当前只生成 WireGuard 配置和维护 relay 元数据；Compose 的 `rel
 
 生产环境只暴露 Dashboard/API/代理和必要 UDP，数据库、Redis、NATS 应绑定内网或私有 Docker network。
 
+## Kubernetes 部署
+
+Kubernetes 部署使用 [`deploy/helm/umpp`](../deploy/helm/umpp/README.md)，与 Docker Compose 保持相同组件/端口/环境变量语义：`control-api` 为 Deployment（8080 API、8081 反代、8443 TLS），`dashboard` 为 Deployment，PostgreSQL/Redis/NATS 默认使用外部实例，relay 为 UDP 51820/3478 的 wg-easy 占位 DaemonSet。
+
+### 安装、升级与卸载
+
+```bash
+export PATH="$HOME/.local/bin:$PATH"
+cd deploy/helm
+helm lint ./umpp --values ./umpp/ci/default-values.yaml
+helm upgrade --install umpp ./umpp \
+  --namespace umpp --create-namespace \
+  --values /secure/umpp-values.yaml
+helm status umpp --namespace umpp
+helm history umpp --namespace umpp
+helm uninstall umpp --namespace umpp
+```
+
+Chart 的 `values.yaml` 只包含 `CHANGE_ME` 占位符。生产优先设置 `secrets.existingSecret`，或使用 `secrets.create=true` + `--set-file` 注入 `POSTGRES_PASSWORD`、`UMPP_AUTH_JWT_SECRET`、`UMPP_BOOTSTRAP_ADMIN_PASSWORD`。外部数据库密码可用 `externalDatabase.passwordSecret.name/key` 单独引用。ConfigMap 和 Chart 生成的 Secret 带 checksum annotation，值变化会滚动 Pod。
+
+### 外部依赖
+
+- 默认 `postgres.enabled=false`，安装前准备 PostgreSQL 16，并设置 `externalDatabase.host/port/user/database/sslmode/passwordSecret`。控制面启动时自动迁移 schema，账号需要 DDL 权限。
+- `redis.enabled=false`、`nats.enabled=false` 时由外部实例提供。生产 Redis 使用 Sentinel/Cluster，NATS 使用独立 StatefulSet/Operator；`postgres/redis/nats.enabled=true` 创建的单副本 StatefulSet + PVC **仅供开发**。
+- `control-api` 当前实现没有 Redis/NATS 连接环境变量，Chart 不添加 compose 中不存在的变量。
+
+### Ingress/TLS 二选一
+
+1. **cert-manager**：设置 `ingress.enabled=true`、IngressClass、hosts、issuer annotation 和 `ingress.tls`，由 cert-manager 终止 Dashboard/API TLS。
+2. **UMPP 自带 ACME**：设置 `acme.enabled=true/agreeTos=true` 与 directory/email，并启用 `controlApi.proxy.tls.*`；把 ACME HTTP-01 端口（生产通常 80）和 8443 以 LoadBalancer/四层入口暴露。V1 仅 HTTP-01。
+
+同一域名不要让两套机制竞争证书。生产反代/ACME/UDP 需要分别规划 L4 入口；不连接测试集群时，`verify.sh` 只做 Helm 离线渲染校验。
+
+### 生产检查
+
+- 至少两个 control-api/dashboard 副本，启用 HPA/PDB、资源限制、PodSecurity、NetworkPolicy、可信镜像仓库与反亲和。
+- Prometheus 抓取 Service `8080/metrics`；V1-R2 的 P2P/中继/heartbeat latency 指标仍无真实采集源，保持 0。
+- PostgreSQL 备份采用托管快照或 `pg_dump`，升级前同时备份 Secret/TLS/Agent state。卸载不会自动删除开发 StatefulSet PVC。
+- relay 是占位实现，不是 UMPP 中继数据面；不要把 UDP 3478 当作已实现 TURN。
+
 ## 备份与恢复
 
 ```bash

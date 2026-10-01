@@ -1,0 +1,28 @@
+UMPP {{ .Chart.AppVersion }} has been rendered as release {{ .Release.Name }}.
+
+Control API:
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "umpp.controlApi.fullname" . }} 18080:{{ .Values.controlApi.service.ports.api }}
+  curl http://127.0.0.1:18080/healthz
+
+Dashboard:
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "umpp.dashboard.fullname" . }} 13000:{{ .Values.dashboard.service.port }}
+  open http://127.0.0.1:13000/
+
+{{- if .Values.ingress.enabled }}
+Ingress is enabled for:
+{{- range .Values.ingress.hosts }}
+  - {{ .host }}
+{{- end }}
+{{- else }}
+Ingress is disabled. Use port-forward or configure ingress.enabled=true.
+{{- end }}
+
+{{- if .Values.postgres.enabled }}
+WARNING: bundled PostgreSQL is for development only. Production requires a
+managed database or PostgreSQL Operator.
+{{- else }}
+External PostgreSQL: {{ include "umpp.postgresHost" . }}:{{ include "umpp.postgresPort" . }}
+{{- end }}
+
+Secrets are placeholders or external references. Replace all CHANGE_ME values
+before a production installation and never commit rendered secrets.

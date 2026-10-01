@@ -1,0 +1,161 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "umpp.controlApi.fullname" . }}
+  labels:
+    {{- include "umpp.componentLabels" (dict "root" . "component" "control-api") | nindent 4 }}
+  annotations:
+    {{- include "umpp.annotations" . | nindent 4 }}
+    {{- with .Values.controlApi.service.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  type: {{ .Values.controlApi.service.type }}
+  selector:
+    {{- include "umpp.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: control-api
+  ports:
+    - name: api
+      port: {{ .Values.controlApi.service.ports.api }}
+      targetPort: api
+      protocol: TCP
+    - name: proxy
+      port: {{ .Values.controlApi.service.ports.proxy }}
+      targetPort: proxy
+      protocol: TCP
+    - name: tls
+      port: {{ .Values.controlApi.service.ports.tls }}
+      targetPort: tls
+      protocol: TCP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "umpp.dashboard.fullname" . }}
+  labels:
+    {{- include "umpp.componentLabels" (dict "root" . "component" "dashboard") | nindent 4 }}
+  annotations:
+    {{- include "umpp.annotations" . | nindent 4 }}
+    {{- with .Values.dashboard.service.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  type: {{ .Values.dashboard.service.type }}
+  selector:
+    {{- include "umpp.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: dashboard
+  ports:
+    - name: http
+      port: {{ .Values.dashboard.service.port }}
+      targetPort: http
+      protocol: TCP
+{{- if .Values.postgres.enabled }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "umpp.postgres.fullname" . }}
+  labels:
+    {{- include "umpp.componentLabels" (dict "root" . "component" "postgres") | nindent 4 }}
+  annotations:
+    {{- include "umpp.annotations" . | nindent 4 }}
+    {{- with .Values.postgres.service.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  clusterIP: None
+  selector:
+    {{- include "umpp.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: postgres
+  ports:
+    - name: postgres
+      port: {{ .Values.postgres.service.port }}
+      targetPort: postgres
+      protocol: TCP
+{{- end }}
+{{- if .Values.redis.enabled }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "umpp.redis.fullname" . }}
+  labels:
+    {{- include "umpp.componentLabels" (dict "root" . "component" "redis") | nindent 4 }}
+  annotations:
+    {{- include "umpp.annotations" . | nindent 4 }}
+    {{- with .Values.redis.service.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  clusterIP: None
+  selector:
+    {{- include "umpp.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: redis
+  ports:
+    - name: redis
+      port: {{ .Values.redis.service.port }}
+      targetPort: redis
+      protocol: TCP
+{{- end }}
+{{- if .Values.nats.enabled }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "umpp.nats.fullname" . }}
+  labels:
+    {{- include "umpp.componentLabels" (dict "root" . "component" "nats") | nindent 4 }}
+  annotations:
+    {{- include "umpp.annotations" . | nindent 4 }}
+    {{- with .Values.nats.service.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  clusterIP: None
+  selector:
+    {{- include "umpp.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: nats
+  ports:
+    - name: client
+      port: {{ .Values.nats.service.clientPort }}
+      targetPort: client
+      protocol: TCP
+    - name: monitoring
+      port: {{ .Values.nats.service.monitoringPort }}
+      targetPort: monitoring
+      protocol: TCP
+{{- end }}
+{{- if and .Values.relay.enabled (eq .Values.relay.exposure "nodePort") }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "umpp.relay.fullname" . }}
+  labels:
+    {{- include "umpp.componentLabels" (dict "root" . "component" "relay") | nindent 4 }}
+  annotations:
+    {{- include "umpp.annotations" . | nindent 4 }}
+    {{- with .Values.relay.service.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  type: NodePort
+  selector:
+    {{- include "umpp.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: relay
+  ports:
+    - name: wireguard
+      port: {{ .Values.relay.service.wireguardPort }}
+      targetPort: wireguard
+      protocol: UDP
+      {{- if gt (int .Values.relay.service.wireguardNodePort) 0 }}
+      nodePort: {{ .Values.relay.service.wireguardNodePort }}
+      {{- end }}
+    - name: turn
+      port: {{ .Values.relay.service.turnPort }}
+      targetPort: turn
+      protocol: UDP
+      {{- if gt (int .Values.relay.service.turnNodePort) 0 }}
+      nodePort: {{ .Values.relay.service.turnNodePort }}
+      {{- end }}
+{{- end }}
