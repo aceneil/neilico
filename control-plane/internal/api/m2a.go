@@ -10,13 +10,24 @@ import (
 	"umpp/control-plane/internal/auth"
 	"umpp/control-plane/internal/middleware"
 	"umpp/control-plane/internal/service"
+	acmeclient "umpp/control-plane/internal/service/cert/acme"
 	"umpp/control-plane/internal/service/proxy"
 )
 
 type ProxyOptions struct {
-	Enabled bool   `json:"enabled"`
-	Kind    string `json:"kind"`
-	Listen  string `json:"listen"`
+	Enabled          bool                `json:"enabled"`
+	Kind             string              `json:"kind"`
+	Listen           string              `json:"listen"`
+	TLS              ProxyTLSOptions     `json:"tls"`
+	ACME             acmeclient.Client   `json:"-"`
+	ACMEOptions      service.ACMEOptions `json:"-"`
+	ChallengeHandler http.Handler        `json:"-"`
+}
+
+type ProxyTLSOptions struct {
+	Enabled    bool   `json:"enabled"`
+	Listen     string `json:"listen"`
+	MinVersion string `json:"min_version"`
 }
 
 func (s *Server) registerM2A(mux *http.ServeMux) {
@@ -143,20 +154,37 @@ func (s *Server) handleCertificates(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, http.StatusOK, result)
 	case http.MethodPost:
-		if !canManageProxy(principal.Role) {
-			writeError(w, http.StatusForbidden, "forbidden", "insufficient role")
+		if !canManageCertificates(principal.Role) {
+			writeError(w, http.StatusForbidden, "forbidden", "certificate administrator role required")
 			return
 		}
 		var input service.CertificateInput
 		if !s.decodeRequest(w, r, &input) {
 			return
 		}
-		item, err := s.certs.Import(r.Context(), principal.TenantID, input)
+		if input.Issuer == "" {
+			item, err := s.certs.Import(r.Context(), principal.TenantID, input)
+			if err != nil {
+				s.serviceError(w, err)
+				return
+			}
+			writeJSON(w, http.StatusCreated, item)
+			return
+		}
+		if input.Issuer != acmeclient.Issuer {
+			writeError(w, http.StatusBadRequest, "invalid_request", "issuer must be acme or omitted for PEM import")
+			return
+		}
+		if input.CertPEM != "" || input.KeyPEM != "" {
+			writeError(w, http.StatusBadRequest, "invalid_request", "cert_pem and key_pem must be omitted for ACME issuance")
+			return
+		}
+		item, err := s.certs.RequestACME(r.Context(), principal.TenantID, input)
 		if err != nil {
 			s.serviceError(w, err)
 			return
 		}
-		writeJSON(w, http.StatusCreated, item)
+		writeJSON(w, http.StatusAccepted, map[string]any{"id": item.ID, "status": item.Status})
 	default:
 		s.methodNotAllowed(w, http.MethodGet, http.MethodPost)
 	}
@@ -168,22 +196,31 @@ func (s *Server) handleCertificateItem(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "unauthorized", "valid access token required")
 		return
 	}
-	id, err := parseID(strings.TrimPrefix(r.URL.Path, "/api/v1/certificates/"))
+	parts := strings.Split(strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/v1/certificates/"), "/"), "/")
+	if len(parts) == 0 || len(parts) > 2 {
+		writeError(w, http.StatusNotFound, "not_found", "resource not found")
+		return
+	}
+	id, err := parseID(parts[0])
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_id", "certificate ID must be a UUID")
 		return
 	}
-	switch r.Method {
-	case http.MethodGet:
+	action := ""
+	if len(parts) == 2 {
+		action = parts[1]
+	}
+	switch {
+	case action == "" && r.Method == http.MethodGet:
 		item, err := s.certs.Get(r.Context(), id, s.userScope(principal))
 		if err != nil {
 			s.serviceError(w, err)
 			return
 		}
 		writeJSON(w, http.StatusOK, item)
-	case http.MethodDelete:
-		if !canManageProxy(principal.Role) {
-			writeError(w, http.StatusForbidden, "forbidden", "insufficient role")
+	case action == "" && r.Method == http.MethodDelete:
+		if !canManageCertificates(principal.Role) {
+			writeError(w, http.StatusForbidden, "forbidden", "certificate administrator role required")
 			return
 		}
 		if err := s.certs.Delete(r.Context(), id, s.userScope(principal)); err != nil {
@@ -192,8 +229,33 @@ func (s *Server) handleCertificateItem(w http.ResponseWriter, r *http.Request) {
 		}
 		s.reloadProxy(r)
 		w.WriteHeader(http.StatusNoContent)
-	default:
+	case action == "renew" && r.Method == http.MethodPost:
+		if !canManageCertificates(principal.Role) {
+			writeError(w, http.StatusForbidden, "forbidden", "certificate administrator role required")
+			return
+		}
+		item, err := s.certs.Renew(r.Context(), id, s.userScope(principal))
+		if err != nil {
+			s.serviceError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusAccepted, map[string]any{"id": item.ID, "status": "pending"})
+	case action == "revoke" && r.Method == http.MethodPost:
+		if !canManageCertificates(principal.Role) {
+			writeError(w, http.StatusForbidden, "forbidden", "certificate administrator role required")
+			return
+		}
+		if err := s.certs.Revoke(r.Context(), id, s.userScope(principal)); err != nil {
+			s.serviceError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusAccepted, map[string]any{"id": id, "status": "revoked"})
+	case action == "renew" || action == "revoke":
+		s.methodNotAllowed(w, http.MethodPost)
+	case action == "":
 		s.methodNotAllowed(w, http.MethodGet, http.MethodDelete)
+	default:
+		writeError(w, http.StatusNotFound, "not_found", "resource not found")
 	}
 }
 
@@ -459,4 +521,8 @@ func (s *Server) decodeRequestArray(w http.ResponseWriter, r *http.Request, dst 
 
 func canManageProxy(role string) bool {
 	return auth.RoleAllowed(role, auth.RolePlatformAdmin, auth.RoleTenantAdmin, auth.RoleOps)
+}
+
+func canManageCertificates(role string) bool {
+	return auth.RoleAllowed(role, auth.RolePlatformAdmin, auth.RoleTenantAdmin)
 }

@@ -21,7 +21,7 @@
 
 | 组件/交付物 | 状态 | 说明 |
 | :--- | :--- | :--- |
-| `control-plane/` | ✅ M1–M2b/M4b | REST API、JWT/RBAC、租户隔离、配置版本、内置反代、metrics |
+| `control-plane/` | ✅ M1–M2b/M4b/V1-R1 | REST API、JWT/RBAC、租户隔离、配置版本、ACME 自动签发/续期、SNI TLS、metrics |
 | `agent/` | ✅ M3 | 注册/心跳/配置轮询、WireGuard shell applier、dry-run、指标、Dockerfile |
 | `cli/` | ✅ M3 | `umppctl` 登录、节点、网络、域名、状态 |
 | `dashboard/` | ✅ M4 | Vue 3 + Ant Design Vue + ECharts |
@@ -29,6 +29,7 @@
 | Mesh 配置生成 | ✅ MVP | WireGuard 配置生成、ACL/子网路由、版本化下发 |
 | relay 数据面 | ⚠️ 占位 | 代码只有 relay 元数据 CRUD；Compose 使用 wg-easy 占位，3478/udp 预留，留给 V1 |
 | Docker Compose | ✅ M5 | PostgreSQL/Redis/NATS/control-api/dashboard/relay，非 root 镜像、healthcheck、日志限制 |
+| ACME/TLS overlay | ✅ V1-R1 | Pebble RFC 8555 真实 HTTP-01、CA 信任、SNI TLS，`scripts/smoke-acme.sh` |
 | 端到端冒烟 | ✅ M5 | `scripts/smoke.sh`，真实 Agent dry-run + builtin 反代 + metrics/audit 断言 |
 | Helm Chart | ⏳ 留给 V1 | 本预算不提供半成品 Chart，建议在 V1 做 PostgreSQL 外部依赖版本 |
 
@@ -44,11 +45,13 @@ docker compose up -d --build
 curl -fsS http://127.0.0.1:18080/healthz
 ```
 
-Dashboard: `http://127.0.0.1:13000` · Control API: `http://127.0.0.1:18080` · Builtin proxy: `http://127.0.0.1:18081`
+Dashboard: `http://127.0.0.1:13000` · Control API: `http://127.0.0.1:18080` · Builtin proxy: `http://127.0.0.1:18081` · ACME/TLS overlay: TLS `18443`, HTTP-01 `18082`, Pebble `14000/8055`
 
 ```bash
 # 端到端冒烟（退出码即判据）
 bash scripts/smoke.sh
+# ACME/Pebble 真实协议冒烟（只用 Pebble，禁止 LE 生产）
+bash scripts/smoke-acme.sh
 # 破坏性清理（需明确 --yes，会删除 pgdata）
 bash scripts/smoke-down.sh --yes
 ```

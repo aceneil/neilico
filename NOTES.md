@@ -13,7 +13,7 @@ UMPP（Unified Mesh & Proxy Platform）：统一「内网穿透 + Mesh 组网」
 | `docs/API.md` | 真实 REST 路由、认证、curl、错误码 |
 | `docs/USER_GUIDE.md` | 部署、Agent、网络、域名、FAQ |
 | `docs/OPS.md` | 架构、端口、备份恢复、升级、监控告警、排障 |
-| `control-plane/` | Go 控制面 API（stdlib HTTP + GORM + PostgreSQL16） |
+| `control-plane/` | Go 控制面 API（stdlib HTTP + GORM + PostgreSQL16；含 ACME 生命周期和 SNI TLS） |
 | `agent/` | Go Agent（注册/心跳/拉配置/应用 WireGuard/子网路由） |
 | `cli/` | `umppctl` 命令行 |
 | `dashboard/` | Vue3 + Vite + Ant Design Vue 管理后台 |
@@ -43,6 +43,7 @@ UMPP（Unified Mesh & Proxy Platform）：统一「内网穿透 + Mesh 组网」
 ### 当前运行状态（2026-10-02 01:5x 实测）
 - **整个栈仍在运行**（`Up 3 hours (healthy)`）：API `:18080`、内置反代 `:18081`、Dashboard `:13000`、PG `:15432`、Redis `:16379`、NATS `:14222`、relay 占位 UDP `:51820/:3478`
   （8080/3000/5432/6379/4222 被本机既有容器占用，故整体改端口）
+- **V1-R1 ACME/Pebble overlay 额外端口**：TLS `18443->8443`、HTTP-01 `18082->5002`、Pebble directory `14000`、Pebble management `8055`；挑战测试 DNS 只在 Compose 网络内提供 A 记录，HTTP-01 响应来自 control-plane。
 - 独立在线验证脚本：`bash scripts/verify-live.sh`（只打印状态与计数，不回显任何密钥）
   实测结果：healthz `status=ok db=up`；8 节点注册过（smoke 结束后 offline，属预期）；4 网络 / 3 域名 / 3 代理规则；`audit-logs total=61`；
   `umpp_proxy_requests_total{domain="smoke-…",status="200"} 1` ← **反代真的服务过 200**；Dashboard 13000 → 200
@@ -74,6 +75,8 @@ cd dashboard && npm ci && npm run dev
 cd deploy/docker-compose && docker compose up -d --build
 # 端到端冒烟
 bash scripts/smoke.sh
+# ACME/Pebble 真实协议冒烟（只用 Pebble，不用 LE 生产）
+bash scripts/smoke-acme.sh
 # 清理（会删 pgdata，必须显式确认）
 bash scripts/smoke-down.sh --yes
 ```
@@ -84,3 +87,4 @@ bash scripts/smoke-down.sh --yes
 - Agent 应用 WireGuard 需要 root + `wg` 或 wgctrl；无权限环境下必须能「dry-run 打印配置」而不报错。
 - Compose relay 是 **wg-easy 占位**，不是中继数据面；不要把 3478/udp 当作已实现 TURN。当前宿主缺少 iptables NAT 模块时 wg-easy 会记录接口启动错误，健康检查只验证占位 Web 监听。
 - `.env` 已在 `.gitignore`；只提交 `.env.example` 占位符，不要提交真实 JWT/密码/Agent 私钥。
+- ACME 配置默认关闭；只有 `enabled=true` 且显式 `agree_tos=true` 才允许 order。`dns-01` 与 EAB 保留接口位，当前返回 `ErrNotImplemented`。

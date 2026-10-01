@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -18,6 +19,7 @@ import (
 	"umpp/control-plane/internal/models"
 	"umpp/control-plane/internal/service"
 	"umpp/control-plane/internal/service/cert"
+	acmeclient "umpp/control-plane/internal/service/cert/acme"
 	configservice "umpp/control-plane/internal/service/config"
 	"umpp/control-plane/internal/service/proxy"
 )
@@ -47,6 +49,17 @@ type Server struct {
 	startedAt     time.Time
 }
 
+// Handler couples the middleware-wrapped HTTP handler with lifecycle controls
+// used by cmd/api.
+type Handler struct {
+	http.Handler
+	server *Server
+}
+
+func (h *Handler) StartCertificateLifecycle(ctx context.Context) {
+	h.server.certs.Start(ctx)
+}
+
 func New(
 	db *gorm.DB,
 	authManager *auth.Manager,
@@ -54,7 +67,7 @@ func New(
 	promMetrics *metrics.Metrics,
 	logger *slog.Logger,
 	version string,
-) http.Handler {
+) *Handler {
 	return NewWithProxy(db, authManager, nodeService, promMetrics, logger, version, nil, ProxyOptions{
 		Enabled: true,
 		Kind:    "builtin",
@@ -71,7 +84,7 @@ func NewWithProxy(
 	version string,
 	proxyProvider proxy.Provider,
 	opts ProxyOptions,
-) http.Handler {
+) *Handler {
 	if proxyProvider == nil {
 		proxyProvider = proxy.NewBuiltin(db, authManager, logger, promMetrics)
 	}
@@ -80,6 +93,20 @@ func NewWithProxy(
 		panic(err)
 	}
 	nodeService.ConfigureKeyCrypto(certificateCrypto)
+	if opts.ACME == nil {
+		opts.ACME = acmeclient.New(acmeclient.Config{
+			Enabled:   false,
+			Challenge: acmeclient.ChallengeHTTP01,
+		}, nil)
+	}
+	configManager := configservice.New(db, certificateCrypto, promMetrics)
+	certificateService := service.NewCertificateService(db, certificateCrypto)
+	var certificateInvalidator service.CertificateCacheInvalidator
+	if builtin, ok := proxyProvider.(*proxy.Builtin); ok {
+		builtin.ConfigureCertificateSource(certificateCrypto, opts.ChallengeHandler)
+		certificateInvalidator = builtin
+	}
+	certificateService.ConfigureACME(opts.ACME, opts.ACMEOptions, promMetrics, configManager, certificateInvalidator, logger)
 	server := &Server{
 		db:            db,
 		auth:          authManager,
@@ -87,14 +114,14 @@ func NewWithProxy(
 		users:         service.NewUserService(db),
 		nodes:         nodeService,
 		domains:       service.NewDomainService(db),
-		certs:         service.NewCertificateService(db, certificateCrypto),
+		certs:         certificateService,
 		proxyRules:    service.NewProxyRuleService(db),
 		auditLogs:     service.NewAuditLogService(db),
 		relays:        service.NewRelayServerService(db),
 		observability: service.NewObservabilityService(db),
 		traffic:       service.NewTrafficService(db),
 		networks:      service.NewNetworkService(db, certificateCrypto),
-		configs:       configservice.New(db, certificateCrypto, promMetrics),
+		configs:       configManager,
 		metrics:       promMetrics,
 		logger:        logger,
 		version:       version,
@@ -126,7 +153,7 @@ func NewWithProxy(
 	var handler http.Handler = mux
 	handler = middleware.Audit(db, logger, handler)
 	handler = middleware.Metrics(promMetrics, handler)
-	return handler
+	return &Handler{Handler: handler, server: server}
 }
 
 func (s *Server) requireRole(next http.HandlerFunc, roles ...string) http.Handler {
@@ -543,6 +570,26 @@ func (s *Server) decodeRequest(w http.ResponseWriter, r *http.Request, dst any) 
 }
 
 func (s *Server) serviceError(w http.ResponseWriter, err error) {
+	if errors.Is(err, service.ErrOrderInFlight) {
+		writeError(w, http.StatusConflict, "order_in_flight", err.Error())
+		return
+	}
+	var acmeErr *acmeclient.Error
+	if errors.As(err, &acmeErr) {
+		status := http.StatusUnprocessableEntity
+		switch acmeErr.Code {
+		case "acme_disabled", "acme_tos_not_accepted":
+			status = http.StatusConflict
+		case "acme_revoke_not_implemented":
+			status = http.StatusNotImplemented
+		}
+		writeError(w, status, acmeErr.Code, acmeErr.Error())
+		return
+	}
+	if errors.Is(err, acmeclient.ErrNotImplemented) {
+		writeError(w, http.StatusNotImplemented, "not_implemented", err.Error())
+		return
+	}
 	switch {
 	case errors.Is(err, service.ErrNotFound):
 		writeError(w, http.StatusNotFound, "not_found", "resource not found")

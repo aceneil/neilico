@@ -19,6 +19,7 @@ import (
 	"umpp/control-plane/internal/db"
 	"umpp/control-plane/internal/metrics"
 	"umpp/control-plane/internal/service"
+	acmeclient "umpp/control-plane/internal/service/cert/acme"
 	"umpp/control-plane/internal/service/proxy"
 	"umpp/control-plane/internal/service/proxy/nps"
 )
@@ -92,11 +93,49 @@ func run() error {
 	if err := proxyProvider.Reload(ctx); err != nil {
 		return fmt.Errorf("initial proxy provider reload: %w", err)
 	}
+	challengeStore := acmeclient.NewChallengeStore(15 * time.Minute)
+	acmeTransport := acmeclient.NewX509Transport(acmeclient.Config{
+		Enabled:      cfg.ACME.Enabled,
+		DirectoryURL: cfg.ACME.DirectoryURL,
+		Email:        cfg.ACME.Email,
+		Challenge:    cfg.ACME.Challenge,
+		HTTPPort:     cfg.ACME.HTTPPort,
+		KeyType:      cfg.ACME.KeyType,
+		AgreeTOS:     cfg.ACME.AgreeTOS,
+		CACertFile:   cfg.ACME.CACertFile,
+	})
+	acmeClient := acmeclient.New(acmeclient.Config{
+		Enabled:      cfg.ACME.Enabled,
+		DirectoryURL: cfg.ACME.DirectoryURL,
+		Email:        cfg.ACME.Email,
+		Challenge:    cfg.ACME.Challenge,
+		HTTPPort:     cfg.ACME.HTTPPort,
+		KeyType:      cfg.ACME.KeyType,
+		AgreeTOS:     cfg.ACME.AgreeTOS,
+		CACertFile:   cfg.ACME.CACertFile,
+	}, acmeTransport)
 	handler := api.NewWithProxy(handle, manager, nodeService, promMetrics, logger, version, proxyProvider, api.ProxyOptions{
 		Enabled: cfg.Proxy.Enabled,
 		Kind:    cfg.Proxy.Kind,
 		Listen:  cfg.Proxy.Listen,
+		TLS: api.ProxyTLSOptions{
+			Enabled:    cfg.Proxy.TLS.Enabled,
+			Listen:     cfg.Proxy.TLS.Listen,
+			MinVersion: cfg.Proxy.TLS.MinVersion,
+		},
+		ACME: acmeClient,
+		ACMEOptions: service.ACMEOptions{
+			AutoRenew:       cfg.ACME.AutoRenew,
+			RenewBefore:     time.Duration(cfg.ACME.RenewBeforeDays) * 24 * time.Hour,
+			CheckInterval:   cfg.ACME.CheckInterval,
+			ChallengeSolver: challengeStore,
+		},
+		ChallengeHandler: challengeStore.Handler(),
 	})
+	go handler.StartCertificateLifecycle(ctx)
+	if cfg.ACME.Enabled {
+		go challengeStore.RunCleanup(ctx, time.Minute)
+	}
 	server := &http.Server{
 		Addr:              fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port),
 		Handler:           handler,
@@ -110,6 +149,20 @@ func run() error {
 		logger.Info("UMPP API listening", "address", server.Addr, "version", version)
 		serverErrors <- server.ListenAndServe()
 	}()
+
+	var challengeServer *http.Server
+	challengeErrors := make(chan error, 1)
+	if cfg.ACME.Enabled && cfg.ACME.Challenge == acmeclient.ChallengeHTTP01 {
+		challengeServer = &http.Server{
+			Addr:              fmt.Sprintf(":%d", cfg.ACME.HTTPPort),
+			Handler:           challengeStore.Handler(),
+			ReadHeaderTimeout: 5 * time.Second,
+		}
+		go func() {
+			logger.Info("UMPP ACME HTTP-01 challenge listening", "address", challengeServer.Addr)
+			challengeErrors <- challengeServer.ListenAndServe()
+		}()
+	}
 
 	var proxyServer *http.Server
 	proxyErrors := make(chan error, 1)
@@ -128,18 +181,42 @@ func run() error {
 		}()
 	}
 
+	var tlsServer *http.Server
+	tlsErrors := make(chan error, 1)
+	if cfg.Proxy.TLS.Enabled {
+		if builtinProvider == nil {
+			return fmt.Errorf("proxy.tls.enabled requires proxy.kind=builtin")
+		}
+		tlsServer = &http.Server{
+			Addr:              cfg.Proxy.TLS.Listen,
+			Handler:           builtinProvider,
+			TLSConfig:         builtinProvider.TLSConfig(cfg.Proxy.TLS.MinVersion),
+			ReadHeaderTimeout: 5 * time.Second,
+			ReadTimeout:       30 * time.Second,
+			WriteTimeout:      30 * time.Second,
+			IdleTimeout:       120 * time.Second,
+		}
+		go func() {
+			logger.Info("UMPP proxy TLS listening", "address", tlsServer.Addr, "min_version", cfg.Proxy.TLS.MinVersion)
+			tlsErrors <- tlsServer.ListenAndServeTLS("", "")
+		}()
+	}
+
 	reloadSignals := make(chan os.Signal, 1)
 	signal.Notify(reloadSignals, syscall.SIGHUP)
 	defer signal.Stop(reloadSignals)
 	shutdown := func() error {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		if proxyServer != nil {
-			if err := proxyServer.Shutdown(shutdownCtx); err != nil {
+		for _, listener := range []*http.Server{tlsServer, proxyServer, challengeServer, server} {
+			if listener == nil {
+				continue
+			}
+			if err := listener.Shutdown(shutdownCtx); err != nil {
 				return err
 			}
 		}
-		return server.Shutdown(shutdownCtx)
+		return nil
 	}
 	for {
 		select {
@@ -155,6 +232,16 @@ func run() error {
 			}
 			return err
 		case err := <-proxyErrors:
+			if errors.Is(err, http.ErrServerClosed) {
+				continue
+			}
+			return err
+		case err := <-tlsErrors:
+			if errors.Is(err, http.ErrServerClosed) {
+				continue
+			}
+			return err
+		case err := <-challengeErrors:
 			if errors.Is(err, http.ErrServerClosed) {
 				continue
 			}

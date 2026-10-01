@@ -3,6 +3,8 @@ package proxy
 import (
 	"bufio"
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"log/slog"
 	"net"
@@ -20,16 +22,28 @@ import (
 	"gorm.io/gorm"
 
 	"umpp/control-plane/internal/auth"
+	"umpp/control-plane/internal/models"
+	certservice "umpp/control-plane/internal/service/cert"
+	acmepkg "umpp/control-plane/internal/service/cert/acme"
 )
 
 type Builtin struct {
-	db       *gorm.DB
-	auth     *auth.Manager
-	observer Observer
-	logger   *slog.Logger
-	routes   atomic.Pointer[RouteSet]
-	mu       sync.RWMutex
-	state    State
+	db            *gorm.DB
+	auth          *auth.Manager
+	observer      Observer
+	logger        *slog.Logger
+	routes        atomic.Pointer[RouteSet]
+	mu            sync.RWMutex
+	state         State
+	certCrypto    *certservice.Crypto
+	challenge     http.Handler
+	certificateMu sync.RWMutex
+	certificates  map[string]cachedCertificate
+}
+
+type cachedCertificate struct {
+	certificate tls.Certificate
+	expiresAt   time.Time
 }
 
 func NewBuiltin(db *gorm.DB, authManager *auth.Manager, logger *slog.Logger, observer Observer) *Builtin {
@@ -37,11 +51,12 @@ func NewBuiltin(db *gorm.DB, authManager *auth.Manager, logger *slog.Logger, obs
 		logger = slog.Default()
 	}
 	provider := &Builtin{
-		db:       db,
-		auth:     authManager,
-		observer: observer,
-		logger:   logger,
-		state:    State{Kind: "builtin", Status: "unknown", UpdatedAt: time.Now().UTC()},
+		db:           db,
+		auth:         authManager,
+		observer:     observer,
+		logger:       logger,
+		state:        State{Kind: "builtin", Status: "unknown", UpdatedAt: time.Now().UTC()},
+		certificates: make(map[string]cachedCertificate),
 	}
 	provider.routes.Store(&RouteSet{byHost: map[string][]Route{}, Routes: []Route{}})
 	return provider
@@ -89,7 +104,41 @@ func (p *Builtin) State() State {
 	return p.state
 }
 
+// ConfigureCertificateSource installs encrypted key decoding and the HTTP-01
+// challenge handler. The challenge handler is intentionally checked before all
+// reverse-proxy routing, independent of Host.
+func (p *Builtin) ConfigureCertificateSource(crypto *certservice.Crypto, challenge http.Handler) {
+	p.certificateMu.Lock()
+	p.certCrypto = crypto
+	p.challenge = challenge
+	p.certificates = make(map[string]cachedCertificate)
+	p.certificateMu.Unlock()
+}
+
+// TLSConfig returns the SNI-aware TLS configuration for the built-in proxy.
+func (p *Builtin) TLSConfig(minVersion string) *tls.Config {
+	version := uint16(tls.VersionTLS12)
+	if minVersion == "1.3" {
+		version = tls.VersionTLS13
+	}
+	return &tls.Config{
+		MinVersion:     version,
+		GetCertificate: p.GetCertificate,
+	}
+}
+
 func (p *Builtin) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if acmepkg.IsChallengePath(r.URL.Path) {
+		p.certificateMu.RLock()
+		challenge := p.challenge
+		p.certificateMu.RUnlock()
+		if challenge != nil {
+			challenge.ServeHTTP(w, r)
+			return
+		}
+		http.NotFound(w, r)
+		return
+	}
 	domain := normalizeHost(r.Host)
 	route := p.routes.Load().Lookup(domain, r.URL.Path)
 	if route == nil {
@@ -146,6 +195,93 @@ func (p *Builtin) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	proxy.ServeHTTP(recorder, r)
 	p.observe(domain, recorder.status)
+}
+
+// GetCertificate selects only the exact active, unexpired certificate for the
+// requested SNI. It never falls back to another domain's certificate.
+func (p *Builtin) GetCertificate(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
+	domain := normalizeHost(hello.ServerName)
+	if domain == "" {
+		p.observeTLS("failure")
+		return nil, errors.New("SNI server name is required")
+	}
+	if cached, ok := p.cachedCertificate(domain); ok {
+		p.observeTLS("success")
+		return &cached, nil
+	}
+	p.certificateMu.RLock()
+	crypto := p.certCrypto
+	p.certificateMu.RUnlock()
+	if crypto == nil {
+		p.observeTLS("failure")
+		return nil, errors.New("certificate source is not configured")
+	}
+	var item models.Certificate
+	now := time.Now().UTC()
+	err := p.db.WithContext(hello.Context()).Where(
+		"domain = ? AND status = ? AND expires_at > ?", domain, "active", now,
+	).Order("expires_at DESC, renewed_at DESC, created_at DESC").First(&item).Error
+	if err != nil {
+		p.observeTLS("failure")
+		return nil, errors.New("no active certificate for SNI " + domain)
+	}
+	keyPEM, err := crypto.Decrypt(item.KeyPEM)
+	if err != nil {
+		p.observeTLS("failure")
+		return nil, errors.New("decrypt certificate for SNI " + domain)
+	}
+	parsed, err := tls.X509KeyPair([]byte(item.CertPEM), []byte(keyPEM))
+	if err != nil {
+		p.observeTLS("failure")
+		return nil, errors.New("parse certificate for SNI " + domain)
+	}
+	if len(parsed.Certificate) == 0 {
+		p.observeTLS("failure")
+		return nil, errors.New("certificate chain for SNI " + domain + " is empty")
+	}
+	leaf, err := x509.ParseCertificate(parsed.Certificate[0])
+	if err != nil || leaf.VerifyHostname(domain) != nil {
+		p.observeTLS("failure")
+		return nil, errors.New("certificate does not match SNI " + domain)
+	}
+	parsed.Leaf = leaf
+	expiresAt := leaf.NotAfter
+	if item.ExpiresAt != nil && item.ExpiresAt.Before(expiresAt) {
+		expiresAt = *item.ExpiresAt
+	}
+	p.certificateMu.Lock()
+	p.certificates[domain] = cachedCertificate{certificate: parsed, expiresAt: expiresAt}
+	p.certificateMu.Unlock()
+	p.observeTLS("success")
+	return &parsed, nil
+}
+
+func (p *Builtin) cachedCertificate(domain string) (tls.Certificate, bool) {
+	p.certificateMu.RLock()
+	entry, ok := p.certificates[domain]
+	p.certificateMu.RUnlock()
+	if !ok || !time.Now().Add(30*time.Second).Before(entry.expiresAt) {
+		if ok {
+			p.InvalidateCertificate(domain)
+		}
+		return tls.Certificate{}, false
+	}
+	return entry.certificate, true
+}
+
+// InvalidateCertificate makes a renewed or replaced certificate immediately
+// visible without restarting the TLS listener.
+func (p *Builtin) InvalidateCertificate(domain string) {
+	domain = normalizeHost(domain)
+	p.certificateMu.Lock()
+	delete(p.certificates, domain)
+	p.certificateMu.Unlock()
+}
+
+func (p *Builtin) observeTLS(result string) {
+	if observer, ok := p.observer.(interface{ ObserveTLSHandshake(string) }); ok {
+		observer.ObserveTLSHandshake(result)
+	}
 }
 
 func (p *Builtin) observe(domain string, status int) {

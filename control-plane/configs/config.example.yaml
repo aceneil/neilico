@@ -17,10 +17,27 @@ node:
 log:
   level: info
   format: json
+acme:
+  enabled: false
+  directory_url: "https://acme-v02.api.letsencrypt.org/directory"
+  email: ""
+  challenge: "http-01"
+  http_port: 80
+  renew_before_days: 30
+  check_interval: "6h"
+  key_type: "ec256"
+  agree_tos: false
+  auto_renew: true
+  ca_cert_file: ""
+
 proxy:
   enabled: true
   kind: builtin
   listen: ":8081"
+  tls:
+    enabled: false
+    listen: ":8443"
+    min_version: "1.2"
   nps:
     config_path: "data/nps/config.json"
     binary_path: "/usr/bin/nps"

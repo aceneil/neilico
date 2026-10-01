@@ -3,6 +3,7 @@ package metrics
 import (
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -12,14 +13,19 @@ import (
 )
 
 type Metrics struct {
-	registry        *prometheus.Registry
-	httpRequests    *prometheus.CounterVec
-	nodesOnline     prometheus.GaugeFunc
-	proxyRequests   *prometheus.CounterVec
-	proxyProviderUp *prometheus.GaugeVec
-	tunnelUp        *prometheus.GaugeVec
-	configVersion   *prometheus.GaugeVec
-	aclDenied       prometheus.Counter
+	registry            *prometheus.Registry
+	httpRequests        *prometheus.CounterVec
+	nodesOnline         prometheus.GaugeFunc
+	proxyRequests       *prometheus.CounterVec
+	proxyProviderUp     *prometheus.GaugeVec
+	tunnelUp            *prometheus.GaugeVec
+	configVersion       *prometheus.GaugeVec
+	aclDenied           prometheus.Counter
+	acmeOrders          *prometheus.CounterVec
+	acmeOrderDuration   prometheus.Histogram
+	certificateExpiry   *prometheus.GaugeVec
+	certificateRenewals *prometheus.CounterVec
+	tlsHandshakes       *prometheus.CounterVec
 }
 
 func New(db *gorm.DB) *Metrics {
@@ -58,18 +64,44 @@ func New(db *gorm.DB) *Metrics {
 		Name: "umpp_acl_denied_total",
 		Help: "Total UMPP traffic decisions denied by ACL policy.",
 	})
+	acmeOrders := prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "umpp_acme_orders_total",
+		Help: "Total ACME certificate orders by result.",
+	}, []string{"result"})
+	acmeOrderDuration := prometheus.NewHistogram(prometheus.HistogramOpts{
+		Name:    "umpp_acme_order_duration_seconds",
+		Help:    "Duration of ACME certificate order attempts in seconds.",
+		Buckets: prometheus.DefBuckets,
+	})
+	certificateExpiry := prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "umpp_certificate_expiry_days",
+		Help: "Days until each managed domain certificate expires.",
+	}, []string{"domain"})
+	certificateRenewals := prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "umpp_certificate_renewals_total",
+		Help: "Total automatic or manual certificate renewals by result.",
+	}, []string{"result"})
+	tlsHandshakes := prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "umpp_tls_handshakes_total",
+		Help: "Total TLS handshakes served by the built-in proxy by result.",
+	}, []string{"result"})
 	proxyProviderUp.WithLabelValues("builtin").Set(0)
 	proxyProviderUp.WithLabelValues("nps").Set(0)
-	registry.MustRegister(httpRequests, nodesOnline, proxyRequests, proxyProviderUp, tunnelUp, configVersion, aclDenied)
+	registry.MustRegister(httpRequests, nodesOnline, proxyRequests, proxyProviderUp, tunnelUp, configVersion, aclDenied, acmeOrders, acmeOrderDuration, certificateExpiry, certificateRenewals, tlsHandshakes)
 	return &Metrics{
-		registry:        registry,
-		httpRequests:    httpRequests,
-		nodesOnline:     nodesOnline,
-		proxyRequests:   proxyRequests,
-		proxyProviderUp: proxyProviderUp,
-		tunnelUp:        tunnelUp,
-		configVersion:   configVersion,
-		aclDenied:       aclDenied,
+		registry:            registry,
+		httpRequests:        httpRequests,
+		nodesOnline:         nodesOnline,
+		proxyRequests:       proxyRequests,
+		proxyProviderUp:     proxyProviderUp,
+		tunnelUp:            tunnelUp,
+		configVersion:       configVersion,
+		aclDenied:           aclDenied,
+		acmeOrders:          acmeOrders,
+		acmeOrderDuration:   acmeOrderDuration,
+		certificateExpiry:   certificateExpiry,
+		certificateRenewals: certificateRenewals,
+		tlsHandshakes:       tlsHandshakes,
 	}
 }
 
@@ -107,4 +139,21 @@ func (m *Metrics) SetProxyProviderUp(kind string, up bool) {
 		value = 1
 	}
 	m.proxyProviderUp.WithLabelValues(kind).Set(value)
+}
+
+func (m *Metrics) ObserveACMEOrder(result string, duration time.Duration) {
+	m.acmeOrders.WithLabelValues(result).Inc()
+	m.acmeOrderDuration.Observe(duration.Seconds())
+}
+
+func (m *Metrics) SetCertificateExpiry(domain string, days float64) {
+	m.certificateExpiry.WithLabelValues(domain).Set(days)
+}
+
+func (m *Metrics) ObserveCertificateRenewal(result string) {
+	m.certificateRenewals.WithLabelValues(result).Inc()
+}
+
+func (m *Metrics) ObserveTLSHandshake(result string) {
+	m.tlsHandshakes.WithLabelValues(result).Inc()
 }

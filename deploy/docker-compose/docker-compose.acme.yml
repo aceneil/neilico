@@ -1,0 +1,81 @@
+# V1-R1 ACME/Pebble overlay. The base stack remains unchanged; use:
+#   docker compose -f docker-compose.yml -f docker-compose.acme.yml ...
+#
+# Host ports were checked against the current Docker host and use 14000 for
+# Pebble ACME, 8055 for its management surface, 18082 for HTTP-01 and 18443
+# for SNI TLS. The challenge test DNS service is internal-only and redirects
+# test hostnames to control-api; Pebble still performs real HTTP-01 fetches.
+services:
+  pebble:
+    image: ghcr.io/letsencrypt/pebble:latest
+    command: ["-config", "/etc/pebble/pebble-config.json", "-strict", "-dnsserver", "pebble-challtestsrv:8053"]
+    environment:
+      PEBBLE_VA_NOSLEEP: "1"
+      PEBBLE_VA_ALWAYS_VALID: "0"
+    ports:
+      - "${PEBBLE_PORT:-14000}:14000"
+      - "${PEBBLE_MANAGEMENT_PORT:-8055}:15000"
+    volumes:
+      - ./pebble-config.json:/etc/pebble/pebble-config.json:ro
+      - pebble-certs:/test/certs
+    depends_on:
+      pebble-challtestsrv:
+        condition: service_started
+      control-api:
+        condition: service_started
+    networks:
+      default:
+        ipv4_address: 100.64.251.21
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # DNS-only test support. It maps arbitrary Pebble validation names to the
+  # fixed control-api address. It never answers ACME challenges itself.
+  pebble-challtestsrv:
+    image: ghcr.io/letsencrypt/pebble-challtestsrv:latest
+    command: ["-defaultIPv4", "100.64.251.10", "-defaultIPv6", ""]
+    networks:
+      default:
+        ipv4_address: 100.64.251.20
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  control-api:
+    environment:
+      UMPP_ACME_ENABLED: "true"
+      UMPP_ACME_AGREE_TOS: "true"
+      UMPP_ACME_AUTO_RENEW: "true"
+      UMPP_ACME_DIRECTORY_URL: "https://pebble:14000/dir"
+      UMPP_ACME_EMAIL: "acme-smoke@example.com"
+      UMPP_ACME_CHALLENGE: "http-01"
+      UMPP_ACME_HTTP_PORT: "5002"
+      UMPP_ACME_RENEW_BEFORE_DAYS: "30"
+      UMPP_ACME_CHECK_INTERVAL: "1h"
+      UMPP_ACME_KEY_TYPE: "ec256"
+      UMPP_ACME_CA_CERT_FILE: "/pebble-certs/pebble.minica.pem"
+      UMPP_PROXY_TLS_ENABLED: "true"
+      UMPP_PROXY_TLS_LISTEN: ":8443"
+      UMPP_PROXY_TLS_MIN_VERSION: "1.2"
+    ports:
+      - "${ACME_HTTP_PORT:-18082}:5002"
+      - "${PROXY_TLS_PORT:-18443}:8443"
+    volumes:
+      - pebble-certs:/pebble-certs:ro
+    networks:
+      default:
+        ipv4_address: 100.64.251.10
+
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 100.64.251.0/24
+
+volumes:
+  pebble-certs:

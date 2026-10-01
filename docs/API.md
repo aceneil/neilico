@@ -48,8 +48,10 @@
 | POST | `/api/v1/nodes/{id}/traffic` | agent_token | 流量增量上报 |
 | GET/POST | `/api/v1/domains` | JWT；写需 proxy 管理权限 | 域名列表/创建 |
 | GET/PUT/DELETE | `/api/v1/domains/{id}` | JWT，按 tenant scope | 域名详情/更新/删除 |
-| GET/POST | `/api/v1/certificates` | JWT；写需 proxy 管理权限 | 证书列表/导入 |
-| GET/DELETE | `/api/v1/certificates/{id}` | JWT，按 tenant scope | 证书详情/删除 |
+| GET/POST | `/api/v1/certificates` | JWT；GET 可只读，POST 需 platform/tenant admin | 证书列表、手工 PEM 导入或异步 ACME 签发 |
+| GET/DELETE | `/api/v1/certificates/{id}` | JWT，按 tenant scope；DELETE 需 admin | 证书详情/删除（仍被 domain 引用时 409） |
+| POST | `/api/v1/certificates/{id}/renew` | platform/tenant admin，按 tenant scope | 手动触发续期；返回 202，single-flight |
+| POST | `/api/v1/certificates/{id}/revoke` | platform/tenant admin，按 tenant scope | 撤销路由；V1-R1 实现明确返回 501 |
 | GET/POST | `/api/v1/proxy-rules` | JWT；写需 proxy 管理权限 | 反代规则列表/创建 |
 | GET/PUT/DELETE | `/api/v1/proxy-rules/{id}` | JWT，按 tenant scope | 反代规则详情/更新/删除 |
 | GET | `/api/v1/proxy/providers` | JWT | ProxyProvider 状态 |
@@ -118,6 +120,27 @@ curl -sS http://127.0.0.1:18080/api/v1/agent/config?node_id=<node-id>\&version=0
   -H "Authorization: Bearer <agent-token>"
 ```
 
+### ACME 自动签发
+
+手工 PEM 导入继续使用 `{cert_pem,key_pem}`。ACME 使用 `issuer:"acme"` 和域名，服务端异步执行 order：
+
+```bash
+curl -sS -X POST http://127.0.0.1:18080/api/v1/certificates \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"issuer":"acme","domain":"nas.example.com"}'
+# 202 {"id":"<certificate-id>","status":"pending"}
+
+curl -sS "http://127.0.0.1:18080/api/v1/certificates/<certificate-id>" \
+  -H "Authorization: Bearer $TOKEN"
+# 可轮询 status=pending|active|failed；响应永不包含 key_pem
+
+curl -sS -X POST "http://127.0.0.1:18080/api/v1/certificates/<certificate-id>/renew" \
+  -H "Authorization: Bearer $TOKEN"
+# 202；同证书已有 order 时返回 409 order_in_flight
+```
+
+证书资源包含 `issuer`、`status`、`cert_pem`、`expires_at`、`renewed_at`、`renew_count`、`challenge_type`、`auto_renew`、`last_error`、`next_attempt_at`。`key_pem` 永远使用 `json:"-"`，不会出现在列表、详情、创建或续期响应中。手工导入记录为 `status=active`、`auto_renew=false`；ACME 记录初始为 `status=pending`。
+
 ### 域名反代
 
 ```bash
@@ -139,8 +162,9 @@ curl -sS -X POST http://127.0.0.1:18080/api/v1/proxy-rules \
 | 403 | `forbidden` | 角色或 tenant scope 不足 |
 | 404 | `not_found` | 资源不存在或不属于当前 tenant |
 | 405 | `method_not_allowed` | 路由不支持该方法，响应含 `Allow` |
-| 409 | `conflict` | 唯一域名/租户/成员冲突或仍有引用 |
-| 422 | `unprocessable_entity` | 代理目标无法解析、节点没有虚拟 IP |
+| 409 | `conflict` / `order_in_flight` / `acme_disabled` / `acme_tos_not_accepted` | 资源引用、并发 order，或 ACME 未启用/未同意 TOS |
+| 422 | `unprocessable_entity` / `acme_order_failed` | 代理目标无法解析、节点没有虚拟 IP、ACME order 失败 |
 | 500 | `internal_error` | 服务端错误，查看控制面日志 |
+| 501 | `not_implemented` / `acme_revoke_not_implemented` | DNS-01、EAB 或证书撤销接口位尚未实现 |
 
 `GET /api/v1/agent/config` 在客户端 `version` 等于服务端最新版本时返回 `304 Not Modified`，响应体为 `{"not_modified":true,"version":N}`；落后、超前或未知版本会返回 `200` 最新期望配置。

@@ -51,13 +51,22 @@ type Node struct {
 }
 
 type Certificate struct {
-	ID        uuid.UUID  `gorm:"type:uuid;primaryKey" json:"id"`
-	TenantID  uuid.UUID  `gorm:"type:uuid;not null;index" json:"tenant_id"`
-	Domain    string     `gorm:"type:varchar(255);not null;index" json:"domain"`
-	Issuer    string     `gorm:"type:varchar(255);not null" json:"issuer"`
-	CertPEM   string     `gorm:"type:text;not null" json:"cert_pem"`
-	KeyPEM    string     `gorm:"type:text;not null" json:"-"`
-	ExpiresAt *time.Time `gorm:"type:timestamp" json:"expires_at"`
+	ID              uuid.UUID  `gorm:"type:uuid;primaryKey" json:"id"`
+	TenantID        uuid.UUID  `gorm:"type:uuid;not null;index" json:"tenant_id"`
+	Domain          string     `gorm:"type:varchar(255);not null;index" json:"domain"`
+	Issuer          string     `gorm:"type:varchar(255);not null" json:"issuer"`
+	CertPEM         string     `gorm:"type:text;not null;default:''" json:"cert_pem"`
+	KeyPEM          string     `gorm:"type:text;not null;default:''" json:"-"`
+	ExpiresAt       *time.Time `gorm:"type:timestamp" json:"expires_at"`
+	Status          string     `gorm:"type:varchar(32);not null;default:active;index" json:"status"`
+	LastError       string     `gorm:"type:text;not null;default:''" json:"last_error"`
+	RenewedAt       *time.Time `gorm:"type:timestamp" json:"renewed_at"`
+	RenewCount      int        `gorm:"not null;default:0" json:"renew_count"`
+	ChallengeType   string     `gorm:"type:varchar(32);not null;default:''" json:"challenge_type"`
+	AutoRenew       bool       `gorm:"not null;default:true" json:"auto_renew"`
+	NextAttemptAt   *time.Time `gorm:"type:timestamp" json:"next_attempt_at,omitempty"`
+	RenewalFailures int        `gorm:"not null;default:0" json:"-"`
+	CreatedAt       time.Time  `gorm:"type:timestamp;not null;default:CURRENT_TIMESTAMP;index" json:"created_at"`
 
 	Tenant *Tenant `gorm:"foreignKey:TenantID;constraint:OnDelete:RESTRICT,OnUpdate:CASCADE" json:"-"`
 }
