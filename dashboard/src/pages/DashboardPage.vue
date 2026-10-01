@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import {
   AlertOutlined,
   CloudServerOutlined,
@@ -7,6 +8,8 @@ import {
   DeploymentUnitOutlined,
   GlobalOutlined,
   ReloadOutlined,
+  BellOutlined,
+  CheckCircleOutlined,
   SafetyCertificateOutlined,
   SwapOutlined
 } from '@ant-design/icons-vue'
@@ -15,6 +18,7 @@ import dayjs from 'dayjs'
 import DataState from '@/components/DataState.vue'
 import EChart from '@/components/EChart.vue'
 import PageHeader from '@/components/PageHeader.vue'
+import { alertsApi } from '@/api/alerts'
 import { apiErrorMessage } from '@/api/http'
 import { certificatesApi } from '@/api/certificates'
 import { domainsApi } from '@/api/domains'
@@ -28,7 +32,7 @@ import { useAuthStore } from '@/stores/auth'
 import { useThemeStore } from '@/stores/theme'
 import { canPreviewAgentConfig } from '@/utils/permissions'
 import { formatTime } from '@/utils/format'
-import type { Certificate, NetworkStatus, Node, TrafficLog } from '@/types/api'
+import type { Alert, AlertSummary, Certificate, NetworkStatus, Node, TrafficLog } from '@/types/api'
 
 interface DashboardData {
   nodes: Node[]
@@ -42,10 +46,13 @@ interface DashboardData {
   configVersion: number | null
   traffic: TrafficLog[]
   certificates: Certificate[]
+  alertSummary: AlertSummary
+  recentAlerts: Alert[]
 }
 
 const auth = useAuthStore()
 const theme = useThemeStore()
+const router = useRouter()
 const data = ref<DashboardData | null>(null)
 const loading = ref(true)
 const error = ref('')
@@ -59,14 +66,16 @@ async function load() {
   loading.value = true
   error.value = ''
   try {
-    const [nodes, online, networks, domains, rules, traffic, certificates] = await Promise.all([
+    const [nodes, online, networks, domains, rules, traffic, certificates, alertSummary, alertList] = await Promise.all([
       nodesApi.list({ page_size: 100 }),
       nodesApi.list({ status: 'online', page_size: 100 }),
       networksApi.list(),
       domainsApi.list({ page_size: 100 }),
       proxyApi.rules({ page_size: 100 }),
       logsApi.traffic({ page_size: 100 }),
-      certificatesApi.list({ page_size: 100 })
+      certificatesApi.list({ page_size: 100 }),
+      alertsApi.summary(),
+      alertsApi.list({ state: 'firing', page_size: 8 })
     ])
     const networkStatuses: NetworkStatus[] = await Promise.all(networks.items.map((network) => networksApi.status(network.id)))
     let configVersion: number | null = null
@@ -88,7 +97,9 @@ async function load() {
       proxyTotal: rules.total,
       configVersion,
       traffic: traffic.items,
-      certificates: certificates.items
+      certificates: certificates.items,
+      alertSummary,
+      recentAlerts: alertList.items
     }
   } catch (cause) {
     error.value = apiErrorMessage(cause)
@@ -204,33 +215,12 @@ const protocolChart = computed<EChartsOption>(() => {
   }
 })
 
-const alerts = computed(() => {
-  const items: Array<{ type: 'warning' | 'error'; title: string; detail: string; time?: string }> = []
-  data.value?.nodes.forEach((node) => {
-    const stale = node.last_seen && dayjs().diff(dayjs(node.last_seen), 'minute') > 5
-    if (node.status !== 'online' && stale) {
-      items.push({
-        type: 'error',
-        title: '节点离线超过 5 分钟',
-        detail: `${node.name} · 最后心跳 ${formatTime(node.last_seen)}`,
-        time: node.last_seen || undefined
-      })
-    }
-  })
-  data.value?.certificates.forEach((certificate) => {
-    if (!certificate.expires_at) return
-    const days = dayjs(certificate.expires_at).diff(dayjs(), 'day')
-    if (days >= 0 && days <= 30) {
-      items.push({
-        type: 'warning',
-        title: `证书将在 ${days} 天内过期`,
-        detail: `${certificate.domain} · ${formatTime(certificate.expires_at)}`,
-        time: certificate.expires_at
-      })
-    }
-  })
-  return items.slice(0, 8)
-})
+const alertSummaryCards = computed(() => [
+  { key: 'critical', label: '紧急告警', value: data.value?.alertSummary.firing.critical ?? 0, icon: AlertOutlined },
+  { key: 'warning', label: '警告告警', value: data.value?.alertSummary.firing.warning ?? 0, icon: AlertOutlined },
+  { key: 'info', label: '提示告警', value: data.value?.alertSummary.firing.info ?? 0, icon: BellOutlined },
+  { key: 'resolved', label: '24h 内恢复', value: data.value?.alertSummary.resolved_recent ?? 0, icon: CheckCircleOutlined }
+])
 </script>
 
 <template>
@@ -244,11 +234,26 @@ const alerts = computed(() => {
     <DataState
       :loading="loading && !data"
       :error="error"
-      :empty="Boolean(data && data.nodeTotal === 0 && data.networkTotal === 0)"
+      :empty="Boolean(data && data.nodeTotal === 0 && data.networkTotal === 0 && data.domainTotal === 0 && data.certificates.length === 0)"
       empty-title="还没有基础设施数据"
       empty-description="注册节点或创建虚拟网络后，这里将显示实时运行状态"
       @retry="load"
     >
+      <section class="alert-summary-grid" aria-label="告警概览">
+        <button
+          v-for="card in alertSummaryCards"
+          :key="card.key"
+          class="alert-summary-card"
+          :class="`alert-summary-card--${card.key}`"
+          type="button"
+          @click="router.push('/alerts')"
+        >
+          <component :is="card.icon" />
+          <span>{{ card.label }}</span>
+          <strong>{{ card.value }}</strong>
+        </button>
+      </section>
+
       <section class="metric-grid">
         <article v-for="card in cards" :key="card.label" class="metric-card" :class="`metric-card--${card.tone}`">
           <div class="metric-card__icon">
@@ -287,26 +292,29 @@ const alerts = computed(() => {
 
       <section class="panel alert-panel">
         <div class="panel-heading">
-          <div><h2><AlertOutlined /> 告警</h2><p>节点离线与证书到期风险由现有数据实时计算</p></div>
-          <a-tag :color="alerts.length ? 'red' : 'green'">{{ alerts.length }} 条</a-tag>
+          <div><h2><AlertOutlined /> 告警</h2><p>来自告警引擎的 firing 列表与状态变迁</p></div>
+          <div class="panel-heading__actions">
+            <a-tag :color="data?.recentAlerts.length ? 'red' : 'green'">{{ data?.recentAlerts.length ?? 0 }} 条</a-tag>
+            <a-button size="small" @click="router.push('/alerts')">全部告警</a-button>
+          </div>
         </div>
         <DataState
-          :empty="alerts.length === 0"
+          :empty="data?.recentAlerts.length === 0"
           empty-title="当前没有告警"
           empty-description="未发现离线超时节点或 30 天内到期证书"
         >
-          <a-list :data-source="alerts" size="small" class="alert-list">
+          <a-list :data-source="data?.recentAlerts || []" size="small" class="alert-list">
             <template #renderItem="{ item }">
               <a-list-item>
                 <a-list-item-meta>
                   <template #avatar>
-                    <div class="alert-avatar" :class="`alert-avatar--${item.type}`"><AlertOutlined /></div>
+                    <div class="alert-avatar" :class="`alert-avatar--${item.severity}`"><AlertOutlined /></div>
                   </template>
                   <template #title>{{ item.title }}</template>
                   <template #description>{{ item.detail }}</template>
                 </a-list-item-meta>
-                <a-tag :color="item.type === 'error' ? 'red' : 'orange'">
-                  {{ item.type === 'error' ? '紧急' : '关注' }}
+                <a-tag :color="item.severity === 'critical' ? 'red' : item.severity === 'warning' ? 'orange' : 'blue'">
+                  {{ item.severity === 'critical' ? '紧急' : item.severity === 'warning' ? '警告' : '提示' }}
                 </a-tag>
               </a-list-item>
             </template>

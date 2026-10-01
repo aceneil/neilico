@@ -30,3 +30,7 @@ export function canPreviewAgentConfig(role: Role | null): boolean {
 export function canManageRelayServers(role: Role | null): boolean {
   return role === 'platform_admin' || role === 'tenant_admin'
 }
+
+export function canEvaluateAlerts(role: Role | null): boolean {
+  return role === 'platform_admin' || role === 'tenant_admin' || role === 'ops'
+}

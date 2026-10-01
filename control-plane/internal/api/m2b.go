@@ -549,8 +549,14 @@ func (s *Server) handleAgentConfig(w http.ResponseWriter, r *http.Request) {
 	}
 	delivery, notModified, err := s.configs.Delivery(r.Context(), nodeID, requestedVersion, includePrivate)
 	if err != nil {
+		if recordErr := s.configs.RecordDispatchFailure(r.Context(), nodeID, err); recordErr != nil {
+			s.logger.Error("record config dispatch failure", "node_id", nodeID, "error", recordErr)
+		}
 		s.serviceError(w, err)
 		return
+	}
+	if recordErr := s.configs.RecordDispatchSuccess(r.Context(), nodeID); recordErr != nil {
+		s.logger.Error("clear config dispatch failure", "node_id", nodeID, "error", recordErr)
 	}
 	if notModified {
 		writeJSON(w, http.StatusNotModified, map[string]any{"not_modified": true, "version": delivery.Version})

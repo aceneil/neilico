@@ -19,6 +19,7 @@ import (
 	"umpp/control-plane/internal/db"
 	"umpp/control-plane/internal/metrics"
 	"umpp/control-plane/internal/service"
+	"umpp/control-plane/internal/service/alerts"
 	acmeclient "umpp/control-plane/internal/service/cert/acme"
 	"umpp/control-plane/internal/service/proxy"
 	"umpp/control-plane/internal/service/proxy/nps"
@@ -131,8 +132,10 @@ func run() error {
 			ChallengeSolver: challengeStore,
 		},
 		ChallengeHandler: challengeStore.Handler(),
+		Alerts:           alertOptions(cfg),
 	})
 	go handler.StartCertificateLifecycle(ctx)
+	go handler.StartAlertEvaluation(ctx)
 	if cfg.ACME.Enabled {
 		go challengeStore.RunCleanup(ctx, time.Minute)
 	}
@@ -268,4 +271,20 @@ func newLogger(cfg config.Log) *slog.Logger {
 		handler = slog.NewJSONHandler(os.Stdout, options)
 	}
 	return slog.New(handler)
+}
+
+func alertOptions(cfg config.Config) alerts.Options {
+	return alerts.Options{
+		EvaluationInterval:    cfg.Alerts.EvaluationInterval,
+		NodeOfflineAfter:      cfg.Alerts.NodeOfflineAfter,
+		CertificateExpiringIn: cfg.Alerts.CertificateExpiringIn,
+		CertificateCriticalIn: cfg.Alerts.CertificateCriticalIn,
+		P2PSuccessRateMinimum: cfg.Alerts.P2PSuccessRateMinimum,
+		RelaySpikeMultiplier:  cfg.Alerts.RelaySpikeMultiplier,
+		RelayBaselineWindow:   cfg.Alerts.RelayBaselineWindow,
+		ResolvedRetention:     cfg.Alerts.ResolvedRetention,
+		WebhookURL:            cfg.Alerts.WebhookURL,
+		WebhookTimeout:        cfg.Alerts.WebhookTimeout,
+		WebhookRetries:        cfg.Alerts.WebhookRetries,
+	}
 }

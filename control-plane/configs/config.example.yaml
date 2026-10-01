@@ -43,3 +43,16 @@ proxy:
     binary_path: "/usr/bin/nps"
     pid_file: "data/nps/nps.pid"
     reload_strategy: "signal"
+
+alerts:
+  evaluation_interval: 1m
+  node_offline_after: 5m
+  certificate_expiring_in: 720h
+  certificate_critical_in: 168h
+  p2p_success_rate_minimum: 0.60
+  relay_spike_multiplier: 3
+  relay_baseline_window: 24h
+  resolved_retention: 168h
+  webhook_url: ""
+  webhook_timeout: 5s
+  webhook_retries: 3

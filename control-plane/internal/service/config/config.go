@@ -465,6 +465,43 @@ func memberReferences(peers []Peer) map[string][]netip.Prefix {
 	return references
 }
 
+func (m *Manager) RecordDispatchFailure(ctx context.Context, nodeID uuid.UUID, cause error) error {
+	var node models.Node
+	if err := m.db.WithContext(ctx).Where("id = ?", nodeID).First(&node).Error; err != nil {
+		return err
+	}
+	now := time.Now().UTC()
+	message := "configuration delivery failed"
+	if cause != nil {
+		message = truncate(cause.Error(), 2000)
+	}
+	return m.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var existing models.ConfigDispatchFailure
+		result := tx.Where("target_type = ? AND target_id = ?", TargetNode, nodeID).First(&existing)
+		if result.Error != nil && !errors.Is(result.Error, gorm.ErrRecordNotFound) {
+			return result.Error
+		}
+		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+			return tx.Create(&models.ConfigDispatchFailure{
+				ID: uuid.New(), TenantID: node.TenantID, TargetType: TargetNode,
+				TargetID: nodeID, LastError: message, Failures: 1,
+				FailedAt: now, CreatedAt: now, UpdatedAt: now,
+			}).Error
+		}
+		existing.LastError = message
+		existing.Failures++
+		existing.FailedAt = now
+		existing.UpdatedAt = now
+		return tx.Save(&existing).Error
+	})
+}
+
+func (m *Manager) RecordDispatchSuccess(ctx context.Context, nodeID uuid.UUID) error {
+	return m.db.WithContext(ctx).
+		Where("target_type = ? AND target_id = ?", TargetNode, nodeID).
+		Delete(&models.ConfigDispatchFailure{}).Error
+}
+
 func (m *Manager) Delivery(ctx context.Context, nodeID uuid.UUID, requestedVersion int, includePrivate bool) (Delivery, bool, error) {
 	var node models.Node
 	if err := m.db.WithContext(ctx).Where("id = ?", nodeID).First(&node).Error; err != nil {

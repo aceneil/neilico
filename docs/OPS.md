@@ -59,25 +59,70 @@ docker compose exec -T postgres pg_restore -U umpp -d umpp --clean --if-exists <
 5. 任一节点配置版本异常时使用 `POST /api/v1/configs/{target_type}/{target_id}/rollback` 回滚到已知版本。
 6. 回滚使用上一步备份的 dump 和镜像 tag；不要删除 pgdata，除非确认恢复成功。
 
-## 监控指标与告警阈值
+## V1-R2 告警规则
 
-| 指标 | 阈值/建议 |
-| :--- | :--- |
-| `umpp_nodes_online` | 与设备基线比较，下降即告警 |
-| 节点离线 | 超过 5 分钟告警（Agent 心跳超时 60 秒） |
-| `umpp_tunnel_up` | 任一关键网络节点连续 2 分钟为 0 |
-| `umpp_p2p_success_rate` | < 60% 告警 |
-| `umpp_relay_bytes` | 5 分钟内超过基线 3σ 或持续增长 |
-| `umpp_proxy_requests` | 5xx 比例 > 1% 或请求量突增 |
-| `umpp_config_version` | 配置下发失败、版本停滞超过 5 分钟 |
-| `umpp_agent_heartbeat_latency` | p95 > 5 秒 |
-| 证书 `expires_at` / `umpp_certificate_expiry_days` | 30 天内过期或 gauge < 30 告警 |
-| `umpp_acme_orders_total{result}` | `failure` 增长即告警；持续失败检查 DNS/80/CA |
-| `umpp_acme_order_duration_seconds` | p95 > 60 秒调查 CA、DNS 或挑战延迟 |
-| `umpp_certificate_renewals_total{result}` | `failure` 增长即告警；现有 active 证书仍继续服务 |
-| `umpp_tls_handshakes_total{result}` | `failure` 增长时检查 SNI 证书、到期和缓存 |
+评估器随 `cmd/api` 启动，默认每分钟扫描全部租户；context 取消时停止。`POST /api/v1/alerts/evaluate` 可手工触发。规则和阈值只读查询：`GET /api/v1/alerts/rules`。
 
-Prometheus 抓取 `GET :18080/metrics`；Agent 指标默认 `127.0.0.1:9100`，只在需要时通过内网采集。证书 gauge 每个域名一个样本；ACME/续期计数按 `result="success|failure"` 区分。
+| 规则 ID | 生效条件 | 默认阈值 | 严重级 | 当前数据源 | 配置覆盖键 |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| `node_offline` | `now - node.last_seen` **大于**阈值 | 5 分钟 | `warning` | `nodes.last_seen` | `alerts.node_offline_after` / `UMPP_ALERTS_NODE_OFFLINE_AFTER` |
+| `certificate_expiring` | `status=active` 且 `expires_at - now` **小于**阈值 | 30 天；剩余 **≤7 天** 为 `critical` | `warning/critical` | `certificates.expires_at/status` | `alerts.certificate_expiring_in`、`alerts.certificate_critical_in` |
+| `p2p_success_rate_low` | P2P 成功率 `< 60%` | 60% | `warning` | **未接入**，返回 `data_status=insufficient_data`，不生成假告警 | `alerts.p2p_success_rate_minimum` |
+| `relay_traffic_spike` | 当前中继流量 `>= 24h 均值 × 3` | 3 倍 | `warning` | **未接入**，返回 `data_status=insufficient_data`，不生成假告警 | `alerts.relay_spike_multiplier`、`alerts.relay_baseline_window` |
+| `config_dispatch_failed` | 配置交付失败，或证书 `status=failed` / `last_error != ""` | 立即 | `critical`（失败交付）/ `warning`（active 证书续期错误） | `config_dispatch_failures`、`certificates.last_error/status` | 无阈值 |
+
+边界按规格文字实现：节点恰好 5 分钟不触发、超过才触发；证书恰好 30 天不触发、小于才触发；P2P 恰好 60% 不触发；中继恰好 3 倍触发。
+
+### 状态机与持久化
+
+- 新条件触发写 `alerts.state=firing` 和一条 `alert_events(state=firing)`。
+- 同一 `(tenant,rule,target_type,target_id)` 的当前 firing 唯一。持续评估只刷新 `since/value/last_evaluated_at`，不重复写事件；`started_at` 保持首次触发时间，Dashboard 的持续时长使用它。
+- 条件消失写 `state=resolved`、`resolved_at` 和一条 resolved 事件。再触发复用当前记录并重置 `started_at`，形成完整时间线。
+- resolved 当前行默认保留 7 天（`alerts.resolved_retention`），支持「当前 firing」「最近 resolved」「目标历史」查询。
+- 无数据源规则用 `data_status=insufficient_data` 明示；该结果不落库、不通知、不计入 firing。
+
+### 通知
+
+默认 `log`，向 stdout 写结构化日志。配置 `alerts.webhook_url` 后同时 POST JSON；单次超时默认 5 秒，失败最多重试 3 次（共最多 4 次请求），最终失败只记日志，不影响评估/API 主流程。不提供邮件或短信。
+
+```json
+{
+  "event": "alert.firing",
+  "schema_version": "umpp.alert.v1",
+  "alert": {
+    "id": "<uuid>",
+    "rule": "node_offline",
+    "severity": "warning",
+    "target_type": "node",
+    "target_id": "<uuid>",
+    "title": "节点离线",
+    "detail": "...",
+    "value": 601.2,
+    "threshold": 300,
+    "since": "2026-10-02T12:00:00Z",
+    "state": "firing",
+    "started_at": "2026-10-02T12:00:00Z"
+  },
+  "timestamp": "2026-10-02T12:00:01Z"
+}
+```
+
+## V1-R2 指标与数据来源
+
+Prometheus 抓取 `GET :18080/metrics`。**无采集来源的指标保持 0，不模拟增长；待 V2 接入真实采集。**
+
+| 指标 | 类型/标签 | V1-R2 数据来源 |
+| :--- | :--- | :--- |
+| `umpp_nodes_online` | gauge | PostgreSQL `nodes.status=online` 实时计数 |
+| `umpp_tunnel_up{network_id,node_id}` | gauge | 由 network member + node online 状态推导；不是 UDP 遥测 |
+| `umpp_p2p_success_rate` | gauge | **数据源未接入，当前恒为 0；V2 接入真实采集** |
+| `umpp_relay_bytes` | gauge | **中继吞吐数据源未接入，当前恒为 0；V2 接入真实采集** |
+| `umpp_proxy_requests` | gauge | 内置反代真实请求计数；标签明细另有 `umpp_proxy_requests_total{domain,status}` |
+| `umpp_config_version{target_type,target_id}` | gauge | `config_versions` 每目标最新版本 |
+| `umpp_agent_heartbeat_latency` | gauge | 当前只记录 heartbeat 成功时间，没有请求耗时样本；**恒为 0，V2 接入真实采集** |
+| `umpp_alerts_firing{severity,rule}` | gauge | `alerts.state=firing` 实时计数，所有已知组合均暴露 |
+
+原有 ACME、TLS、证书到期和 HTTP 指标继续保留。空数据集的 `_none` 样本仅为保证 metric family 存在，数值为 0，不代表真实目标。
 
 ## ACME 自动续期处置
 

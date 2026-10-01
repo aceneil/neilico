@@ -229,6 +229,58 @@ type AuditLog struct {
 	User   *User   `gorm:"foreignKey:UserID;constraint:OnDelete:SET NULL,OnUpdate:CASCADE" json:"-"`
 }
 
+type ConfigDispatchFailure struct {
+	ID         uuid.UUID `gorm:"type:uuid;primaryKey" json:"id"`
+	TenantID   uuid.UUID `gorm:"type:uuid;not null;index" json:"tenant_id"`
+	TargetType string    `gorm:"type:varchar(32);not null;uniqueIndex:idx_config_dispatch_target,priority:1" json:"target_type"`
+	TargetID   uuid.UUID `gorm:"type:uuid;not null;uniqueIndex:idx_config_dispatch_target,priority:2" json:"target_id"`
+	LastError  string    `gorm:"type:text;not null" json:"last_error"`
+	Failures   int       `gorm:"not null;default:1" json:"failures"`
+	FailedAt   time.Time `gorm:"type:timestamp;not null;index" json:"failed_at"`
+	CreatedAt  time.Time `gorm:"type:timestamp;not null" json:"created_at"`
+	UpdatedAt  time.Time `gorm:"type:timestamp;not null" json:"updated_at"`
+}
+
+type Alert struct {
+	ID              uuid.UUID  `gorm:"type:uuid;primaryKey" json:"id"`
+	TenantID        uuid.UUID  `gorm:"type:uuid;not null;index;uniqueIndex:idx_alerts_tenant_rule_target,priority:1" json:"tenant_id"`
+	Rule            string     `gorm:"type:varchar(64);not null;index:idx_alerts_rule_target,priority:1;uniqueIndex:idx_alerts_tenant_rule_target,priority:2" json:"rule"`
+	Severity        string     `gorm:"type:varchar(16);not null;index" json:"severity"`
+	TargetType      string     `gorm:"type:varchar(32);not null;index:idx_alerts_rule_target,priority:2;uniqueIndex:idx_alerts_tenant_rule_target,priority:3" json:"target_type"`
+	TargetID        uuid.UUID  `gorm:"type:uuid;not null;index:idx_alerts_rule_target,priority:3;uniqueIndex:idx_alerts_tenant_rule_target,priority:4" json:"target_id"`
+	Title           string     `gorm:"type:varchar(255);not null" json:"title"`
+	Detail          string     `gorm:"type:text;not null" json:"detail"`
+	Value           float64    `gorm:"not null" json:"value"`
+	Threshold       float64    `gorm:"not null" json:"threshold"`
+	Since           time.Time  `gorm:"type:timestamp;not null;index" json:"since"`
+	StartedAt       time.Time  `gorm:"type:timestamp;not null" json:"started_at"`
+	State           string     `gorm:"type:varchar(16);not null;index" json:"state"`
+	EvaluationCount int        `gorm:"not null;default:0" json:"-"`
+	LastEvaluatedAt time.Time  `gorm:"type:timestamp;not null;index" json:"last_evaluated_at"`
+	ResolvedAt      *time.Time `gorm:"type:timestamp;index" json:"resolved_at,omitempty"`
+	CreatedAt       time.Time  `gorm:"type:timestamp;not null;index" json:"created_at"`
+	UpdatedAt       time.Time  `gorm:"type:timestamp;not null" json:"updated_at"`
+
+	Tenant *Tenant `gorm:"foreignKey:TenantID;constraint:OnDelete:CASCADE,OnUpdate:CASCADE" json:"-"`
+}
+
+type AlertEvent struct {
+	ID         uuid.UUID `gorm:"type:uuid;primaryKey" json:"id"`
+	AlertID    uuid.UUID `gorm:"type:uuid;not null;index;constraint:OnDelete:CASCADE,OnUpdate:CASCADE" json:"alert_id"`
+	TenantID   uuid.UUID `gorm:"type:uuid;not null;index" json:"tenant_id"`
+	Rule       string    `gorm:"type:varchar(64);not null;index" json:"rule"`
+	TargetType string    `gorm:"type:varchar(32);not null" json:"target_type"`
+	TargetID   uuid.UUID `gorm:"type:uuid;not null;index" json:"target_id"`
+	State      string    `gorm:"type:varchar(16);not null;index" json:"state"`
+	Severity   string    `gorm:"type:varchar(16);not null" json:"severity"`
+	Value      float64   `gorm:"not null" json:"value"`
+	Threshold  float64   `gorm:"not null" json:"threshold"`
+	Detail     string    `gorm:"type:text;not null" json:"detail"`
+	CreatedAt  time.Time `gorm:"type:timestamp;not null;index" json:"created_at"`
+
+	Alert *Alert `gorm:"foreignKey:AlertID;constraint:OnDelete:CASCADE,OnUpdate:CASCADE" json:"-"`
+}
+
 type TrafficLog struct {
 	ID        uuid.UUID `gorm:"type:uuid;primaryKey" json:"id"`
 	TenantID  uuid.UUID `gorm:"type:uuid;not null;index" json:"tenant_id"`

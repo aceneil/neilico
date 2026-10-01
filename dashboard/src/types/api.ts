@@ -106,6 +106,72 @@ export interface Certificate {
   issuer: string
   cert_pem: string
   expires_at?: string | null
+  status: 'active' | 'pending' | 'failed' | 'revoked' | string
+  last_error?: string
+  renewed_at?: string | null
+  renew_count?: number
+  challenge_type?: string
+  auto_renew?: boolean
+  next_attempt_at?: string | null
+  created_at?: string
+}
+
+export type AlertState = 'firing' | 'resolved'
+export type AlertSeverity = 'critical' | 'warning' | 'info'
+
+export interface Alert {
+  id: string
+  rule: string
+  severity: AlertSeverity
+  target_type: string
+  target_id: string
+  title: string
+  detail: string
+  value: number
+  threshold: number
+  since: string
+  state: AlertState
+  started_at?: string | null
+  resolved_at?: string | null
+  data_status?: 'available' | 'insufficient_data' | string
+  tenant_id?: string
+  evaluated_at?: string | null
+}
+
+export interface AlertEvent {
+  id: string
+  alert_id: string
+  rule: string
+  target_type: string
+  target_id: string
+  state: AlertState
+  severity: AlertSeverity
+  value: number
+  threshold: number
+  detail: string
+  created_at: string
+}
+
+export interface AlertDetail {
+  alert: Alert
+  events: AlertEvent[]
+}
+
+export interface AlertRule {
+  id: string
+  condition: string
+  severity: AlertSeverity
+  target_type: string
+  threshold: number
+  threshold_unit: 'seconds' | 'days' | 'ratio' | 'multiplier' | 'failures' | string
+  threshold_description: string
+  data_status: 'available' | 'insufficient_data' | string
+}
+
+export interface AlertSummary {
+  firing: Record<AlertSeverity, number>
+  resolved_recent: number
+  by_rule: Record<string, number>
 }
 
 export interface Domain {

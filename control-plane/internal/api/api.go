@@ -18,6 +18,7 @@ import (
 	"umpp/control-plane/internal/middleware"
 	"umpp/control-plane/internal/models"
 	"umpp/control-plane/internal/service"
+	alertservice "umpp/control-plane/internal/service/alerts"
 	"umpp/control-plane/internal/service/cert"
 	acmeclient "umpp/control-plane/internal/service/cert/acme"
 	configservice "umpp/control-plane/internal/service/config"
@@ -41,6 +42,7 @@ type Server struct {
 	traffic       *service.TrafficService
 	networks      *service.NetworkService
 	configs       *configservice.Manager
+	alertEngine   *alertservice.Engine
 	metrics       *metrics.Metrics
 	logger        *slog.Logger
 	version       string
@@ -58,6 +60,10 @@ type Handler struct {
 
 func (h *Handler) StartCertificateLifecycle(ctx context.Context) {
 	h.server.certs.Start(ctx)
+}
+
+func (h *Handler) StartAlertEvaluation(ctx context.Context) {
+	h.server.alertEngine.Run(ctx)
 }
 
 func New(
@@ -99,6 +105,17 @@ func NewWithProxy(
 			Challenge: acmeclient.ChallengeHTTP01,
 		}, nil)
 	}
+	var alertNotifier alertservice.Notifier = alertservice.NewLogNotifier(logger)
+	if opts.Alerts.WebhookURL != "" {
+		webhookNotifier, err := alertservice.NewWebhookNotifier(
+			opts.Alerts.WebhookURL, opts.Alerts.WebhookTimeout, opts.Alerts.WebhookRetries, logger,
+		)
+		if err != nil {
+			panic(err)
+		}
+		alertNotifier = alertservice.NewMultiNotifier(alertNotifier, webhookNotifier)
+	}
+	alertEngine := alertservice.NewEngine(db, opts.Alerts, alertNotifier, promMetrics, logger)
 	configManager := configservice.New(db, certificateCrypto, promMetrics)
 	certificateService := service.NewCertificateService(db, certificateCrypto)
 	var certificateInvalidator service.CertificateCacheInvalidator
@@ -122,6 +139,7 @@ func NewWithProxy(
 		traffic:       service.NewTrafficService(db),
 		networks:      service.NewNetworkService(db, certificateCrypto),
 		configs:       configManager,
+		alertEngine:   alertEngine,
 		metrics:       promMetrics,
 		logger:        logger,
 		version:       version,
@@ -139,6 +157,7 @@ func NewWithProxy(
 	mux.HandleFunc("/api/v1/auth/login", server.handleLogin)
 	mux.HandleFunc("/api/v1/auth/refresh", server.handleRefresh)
 
+	server.registerAlerts(mux)
 	mux.Handle("/api/v1/tenants", server.requireRole(server.handleTenants, auth.RolePlatformAdmin))
 	mux.Handle("/api/v1/tenants/", server.requireRole(server.handleTenantItem, auth.RolePlatformAdmin))
 	mux.Handle("/api/v1/users", middleware.AuthRequired(authManager, http.HandlerFunc(server.handleUsers)))

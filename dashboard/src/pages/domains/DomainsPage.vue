@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, reactive, ref } from 'vue'
+import dayjs from 'dayjs'
 import {
   DeleteOutlined,
   EditOutlined,
@@ -62,6 +63,25 @@ const ruleForm = reactive({
 const domainOptions = computed(() =>
   domains.value.map((domain) => ({ value: domain.id, label: domain.domain }))
 )
+function certificateRemainingDays(certificate: Certificate): number | null {
+  if (!certificate.expires_at) return null
+  return dayjs(certificate.expires_at).diff(dayjs(), 'day')
+}
+
+function formatRemainingDays(certificate: Certificate): string {
+  const days = certificateRemainingDays(certificate)
+  if (days == null) return '—'
+  return days < 0 ? `已过期 ${Math.abs(days)} 天` : `${days} 天`
+}
+
+function certificateRowClass(certificate: Certificate): string {
+  const days = certificateRemainingDays(certificate)
+  if (days == null) return ''
+  if (days < 0 || days <= 7) return 'certificate-row--critical'
+  if (days <= 30) return 'certificate-row--warning'
+  return ''
+}
+
 const nodeOptions = computed(() =>
   nodes.value.map((node) => ({ value: node.id, label: `${node.name} (${node.virtual_ip || node.id.slice(0, 8)})` }))
 )
@@ -290,10 +310,23 @@ void load()
             :data-source="certificates"
             row-key="id"
             :pagination="{ pageSize: 10, hideOnSinglePage: true }"
-            :scroll="{ x: 920, y: 'calc(100vh - 385px)' }"
+            :scroll="{ x: 1220, y: 'calc(100vh - 385px)' }"
+            :row-class-name="certificateRowClass"
           >
             <a-table-column title="域名" data-index="domain" :width="230" />
             <a-table-column title="签发者" data-index="issuer" :width="190" />
+            <a-table-column title="签发状态" :width="110">
+              <template #default="{ record }">
+                <a-tag :color="record.status === 'active' ? 'green' : record.status === 'failed' ? 'red' : 'orange'">
+                  {{ record.status }}
+                </a-tag>
+              </template>
+            </a-table-column>
+            <a-table-column title="剩余有效天数" :width="150">
+              <template #default="{ record }">
+                <strong>{{ formatRemainingDays(record) }}</strong>
+              </template>
+            </a-table-column>
             <a-table-column title="过期时间" :width="190">
               <template #default="{ record }">{{ formatTime(record.expires_at) }}</template>
             </a-table-column>

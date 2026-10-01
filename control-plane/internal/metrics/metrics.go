@@ -1,6 +1,7 @@
 package metrics
 
 import (
+	"context"
 	"net/http"
 	"strconv"
 	"time"
@@ -13,10 +14,16 @@ import (
 )
 
 type Metrics struct {
+	db                  *gorm.DB
 	registry            *prometheus.Registry
 	httpRequests        *prometheus.CounterVec
 	nodesOnline         prometheus.GaugeFunc
 	proxyRequests       *prometheus.CounterVec
+	proxyRequestsGauge  prometheus.Gauge
+	p2pSuccessRate      prometheus.Gauge
+	relayBytes          prometheus.Gauge
+	heartbeatLatency    prometheus.Gauge
+	alertsFiring        *prometheus.GaugeVec
 	proxyProviderUp     *prometheus.GaugeVec
 	tunnelUp            *prometheus.GaugeVec
 	configVersion       *prometheus.GaugeVec
@@ -48,6 +55,26 @@ func New(db *gorm.DB) *Metrics {
 		Name: "umpp_proxy_requests_total",
 		Help: "Total requests handled by the UMPP proxy plane.",
 	}, []string{"domain", "status"})
+	proxyRequestsGauge := prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "umpp_proxy_requests",
+		Help: "Requests handled by the UMPP proxy plane (labelled breakdown is umpp_proxy_requests_total).",
+	})
+	p2pSuccessRate := prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "umpp_p2p_success_rate",
+		Help: "P2P hole-punch success rate from 0 to 1; no collector is connected in V1-R2.",
+	})
+	relayBytes := prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "umpp_relay_bytes",
+		Help: "Relay traffic bytes; no relay throughput collector is connected in V1-R2.",
+	})
+	heartbeatLatency := prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "umpp_agent_heartbeat_latency",
+		Help: "Agent heartbeat request latency; no heartbeat latency samples are collected in V1-R2.",
+	})
+	alertsFiring := prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "umpp_alerts_firing",
+		Help: "Current firing UMPP alerts by severity and rule.",
+	}, []string{"severity", "rule"})
 	proxyProviderUp := prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "umpp_proxy_provider_up",
 		Help: "Whether a UMPP proxy provider is ready (1) or unavailable (0).",
@@ -85,14 +112,30 @@ func New(db *gorm.DB) *Metrics {
 		Name: "umpp_tls_handshakes_total",
 		Help: "Total TLS handshakes served by the built-in proxy by result.",
 	}, []string{"result"})
+	for _, severity := range []string{"critical", "warning", "info"} {
+		for _, rule := range []string{"node_offline", "certificate_expiring", "p2p_success_rate_low", "relay_traffic_spike", "config_dispatch_failed"} {
+			alertsFiring.WithLabelValues(severity, rule).Set(0)
+		}
+	}
 	proxyProviderUp.WithLabelValues("builtin").Set(0)
 	proxyProviderUp.WithLabelValues("nps").Set(0)
-	registry.MustRegister(httpRequests, nodesOnline, proxyRequests, proxyProviderUp, tunnelUp, configVersion, aclDenied, acmeOrders, acmeOrderDuration, certificateExpiry, certificateRenewals, tlsHandshakes)
+	registry.MustRegister(
+		httpRequests, nodesOnline, proxyRequests, proxyRequestsGauge,
+		p2pSuccessRate, relayBytes, heartbeatLatency, alertsFiring,
+		proxyProviderUp, tunnelUp, configVersion, aclDenied, acmeOrders,
+		acmeOrderDuration, certificateExpiry, certificateRenewals, tlsHandshakes,
+	)
 	return &Metrics{
+		db:                  db,
 		registry:            registry,
 		httpRequests:        httpRequests,
 		nodesOnline:         nodesOnline,
 		proxyRequests:       proxyRequests,
+		proxyRequestsGauge:  proxyRequestsGauge,
+		p2pSuccessRate:      p2pSuccessRate,
+		relayBytes:          relayBytes,
+		heartbeatLatency:    heartbeatLatency,
+		alertsFiring:        alertsFiring,
 		proxyProviderUp:     proxyProviderUp,
 		tunnelUp:            tunnelUp,
 		configVersion:       configVersion,
@@ -122,7 +165,58 @@ func (m *Metrics) IncACLDenied() {
 }
 
 func (m *Metrics) Handler() http.Handler {
-	return promhttp.HandlerFor(m.registry, promhttp.HandlerOpts{})
+	handler := promhttp.HandlerFor(m.registry, promhttp.HandlerOpts{})
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+		defer cancel()
+		m.refreshDatabaseMetrics(ctx)
+		handler.ServeHTTP(w, r)
+	})
+}
+
+func (m *Metrics) refreshDatabaseMetrics(ctx context.Context) {
+	type tunnelRow struct {
+		NetworkID string
+		NodeID    string
+		Status    string
+	}
+	tunnels := make([]tunnelRow, 0)
+	if m.db != nil {
+		if err := m.db.WithContext(ctx).Raw(`
+			SELECT network_members.network_id, nodes.id, nodes.status
+			FROM network_members
+			JOIN nodes ON nodes.id = network_members.node_id
+			ORDER BY network_members.network_id, nodes.id
+		`).Scan(&tunnels).Error; err == nil {
+			m.tunnelUp.Reset()
+			if len(tunnels) == 0 {
+				m.SetTunnelUp("_none", "_none", false)
+			}
+			for _, tunnel := range tunnels {
+				m.SetTunnelUp(tunnel.NetworkID, tunnel.NodeID, tunnel.Status == "online")
+			}
+		}
+		type versionRow struct {
+			TargetType string
+			TargetID   string
+			Version    int
+		}
+		versions := make([]versionRow, 0)
+		if err := m.db.WithContext(ctx).Raw(`
+			SELECT target_type, target_id, MAX(version) AS version
+			FROM config_versions
+			GROUP BY target_type, target_id
+			ORDER BY target_type, target_id
+		`).Scan(&versions).Error; err == nil {
+			m.configVersion.Reset()
+			if len(versions) == 0 {
+				m.SetConfigVersion("_none", "_none", 0)
+			}
+			for _, version := range versions {
+				m.SetConfigVersion(version.TargetType, version.TargetID, version.Version)
+			}
+		}
+	}
 }
 
 func (m *Metrics) ObserveHTTP(method, path string, status int) {
@@ -131,6 +225,18 @@ func (m *Metrics) ObserveHTTP(method, path string, status int) {
 
 func (m *Metrics) ObserveProxyRequest(domain, status string) {
 	m.proxyRequests.WithLabelValues(domain, status).Inc()
+	m.proxyRequestsGauge.Inc()
+}
+
+// SetAlertsFiring replaces the alert gauge snapshot. All known rule/severity
+// combinations remain present at zero so /metrics is stable and observable.
+func (m *Metrics) SetAlertsFiring(counts map[string]int64) {
+	m.alertsFiring.Reset()
+	for _, severity := range []string{"critical", "warning", "info"} {
+		for _, rule := range []string{"node_offline", "certificate_expiring", "p2p_success_rate_low", "relay_traffic_spike", "config_dispatch_failed"} {
+			m.alertsFiring.WithLabelValues(severity, rule).Set(float64(counts[rule+"|"+severity]))
+		}
+	}
 }
 
 func (m *Metrics) SetProxyProviderUp(kind string, up bool) {

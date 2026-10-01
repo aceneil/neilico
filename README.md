@@ -21,15 +21,16 @@
 
 | 组件/交付物 | 状态 | 说明 |
 | :--- | :--- | :--- |
-| `control-plane/` | ✅ M1–M2b/M4b/V1-R1 | REST API、JWT/RBAC、租户隔离、配置版本、ACME 自动签发/续期、SNI TLS、metrics |
+| `control-plane/` | ✅ M1–M2b/M4b/V1-R1/V1-R2 | REST API、JWT/RBAC、租户隔离、配置版本、ACME 自动签发/续期、SNI TLS、告警规则引擎、metrics |
 | `agent/` | ✅ M3 | 注册/心跳/配置轮询、WireGuard shell applier、dry-run、指标、Dockerfile |
 | `cli/` | ✅ M3 | `umppctl` 登录、节点、网络、域名、状态 |
-| `dashboard/` | ✅ M4 | Vue 3 + Ant Design Vue + ECharts |
+| `dashboard/` | ✅ M4/V1-R2 | Vue 3 + Ant Design Vue + ECharts；告警中心与证书剩余天数 |
 | NPS 配置集成 | ✅ MVP | 生成配置；NPS 数据面由外部服务提供 |
 | Mesh 配置生成 | ✅ MVP | WireGuard 配置生成、ACL/子网路由、版本化下发 |
 | relay 数据面 | ⚠️ 占位 | 代码只有 relay 元数据 CRUD；Compose 使用 wg-easy 占位，3478/udp 预留，留给 V1 |
 | Docker Compose | ✅ M5 | PostgreSQL/Redis/NATS/control-api/dashboard/relay，非 root 镜像、healthcheck、日志限制 |
 | ACME/TLS overlay | ✅ V1-R1 | Pebble RFC 8555 真实 HTTP-01、CA 信任、SNI TLS，`scripts/smoke-acme.sh` |
+| 告警体系 | ✅ V1-R2 | 五条 §15.2 规则、状态机/事件、log/webhook、告警 API 与 Dashboard |
 | 端到端冒烟 | ✅ M5 | `scripts/smoke.sh`，真实 Agent dry-run + builtin 反代 + metrics/audit 断言 |
 | Helm Chart | ⏳ 留给 V1 | 本预算不提供半成品 Chart，建议在 V1 做 PostgreSQL 外部依赖版本 |
 

@@ -30,6 +30,7 @@ const iconMap: Record<string, unknown> = {
   global: GlobalOutlined,
   apartment: ApartmentOutlined,
   team: TeamOutlined,
+  bell: BellOutlined,
   'file-search': FileSearchOutlined,
   setting: SettingOutlined
 }

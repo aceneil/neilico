@@ -59,6 +59,9 @@ func AutoMigrate(handle *gorm.DB) error {
 		&models.ConfigVersion{},
 		&models.AuditLog{},
 		&models.TrafficLog{},
+		&models.ConfigDispatchFailure{},
+		&models.Alert{},
+		&models.AlertEvent{},
 	); err != nil {
 		return fmt.Errorf("automigrate: %w", err)
 	}

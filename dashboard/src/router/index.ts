@@ -21,6 +21,12 @@ const router = createRouter({
           meta: { title: '仪表盘', icon: 'dashboard', roles: ['platform_admin', 'tenant_admin', 'ops', 'readonly'] }
         },
         {
+          path: 'alerts',
+          name: 'alerts',
+          component: () => import('@/pages/alerts/AlertsPage.vue'),
+          meta: { title: '告警中心', icon: 'bell', roles: ['platform_admin', 'tenant_admin', 'ops', 'readonly'] }
+        },
+        {
           path: 'nodes',
           name: 'nodes',
           component: () => import('@/pages/nodes/NodesPage.vue'),

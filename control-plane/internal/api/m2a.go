@@ -10,18 +10,20 @@ import (
 	"umpp/control-plane/internal/auth"
 	"umpp/control-plane/internal/middleware"
 	"umpp/control-plane/internal/service"
+	alertservice "umpp/control-plane/internal/service/alerts"
 	acmeclient "umpp/control-plane/internal/service/cert/acme"
 	"umpp/control-plane/internal/service/proxy"
 )
 
 type ProxyOptions struct {
-	Enabled          bool                `json:"enabled"`
-	Kind             string              `json:"kind"`
-	Listen           string              `json:"listen"`
-	TLS              ProxyTLSOptions     `json:"tls"`
-	ACME             acmeclient.Client   `json:"-"`
-	ACMEOptions      service.ACMEOptions `json:"-"`
-	ChallengeHandler http.Handler        `json:"-"`
+	Enabled          bool                 `json:"enabled"`
+	Kind             string               `json:"kind"`
+	Listen           string               `json:"listen"`
+	TLS              ProxyTLSOptions      `json:"tls"`
+	ACME             acmeclient.Client    `json:"-"`
+	ACMEOptions      service.ACMEOptions  `json:"-"`
+	ChallengeHandler http.Handler         `json:"-"`
+	Alerts           alertservice.Options `json:"-"`
 }
 
 type ProxyTLSOptions struct {

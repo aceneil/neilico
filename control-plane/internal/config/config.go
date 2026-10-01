@@ -51,6 +51,20 @@ type ACME struct {
 	AutoRenew       bool          `yaml:"auto_renew"`
 }
 
+type Alerts struct {
+	EvaluationInterval    time.Duration `yaml:"evaluation_interval"`
+	NodeOfflineAfter      time.Duration `yaml:"node_offline_after"`
+	CertificateExpiringIn time.Duration `yaml:"certificate_expiring_in"`
+	CertificateCriticalIn time.Duration `yaml:"certificate_critical_in"`
+	P2PSuccessRateMinimum float64       `yaml:"p2p_success_rate_minimum"`
+	RelaySpikeMultiplier  float64       `yaml:"relay_spike_multiplier"`
+	RelayBaselineWindow   time.Duration `yaml:"relay_baseline_window"`
+	ResolvedRetention     time.Duration `yaml:"resolved_retention"`
+	WebhookURL            string        `yaml:"webhook_url"`
+	WebhookTimeout        time.Duration `yaml:"webhook_timeout"`
+	WebhookRetries        int           `yaml:"webhook_retries"`
+}
+
 type Log struct {
 	Level  string `yaml:"level"`
 	Format string `yaml:"format"`
@@ -64,6 +78,7 @@ type Config struct {
 	Node      Node      `yaml:"node"`
 	ACME      ACME      `yaml:"acme"`
 	Proxy     Proxy     `yaml:"proxy"`
+	Alerts    Alerts    `yaml:"alerts"`
 	Log       Log       `yaml:"log"`
 }
 
@@ -104,6 +119,18 @@ func Default() Config {
 				PIDFile:        "data/nps/nps.pid",
 				ReloadStrategy: "signal",
 			},
+		},
+		Alerts: Alerts{
+			EvaluationInterval:    time.Minute,
+			NodeOfflineAfter:      5 * time.Minute,
+			CertificateExpiringIn: 30 * 24 * time.Hour,
+			CertificateCriticalIn: 7 * 24 * time.Hour,
+			P2PSuccessRateMinimum: 0.60,
+			RelaySpikeMultiplier:  3,
+			RelayBaselineWindow:   24 * time.Hour,
+			ResolvedRetention:     7 * 24 * time.Hour,
+			WebhookTimeout:        5 * time.Second,
+			WebhookRetries:        3,
 		},
 		Log: Log{Level: "info", Format: "json"},
 	}
@@ -158,6 +185,7 @@ func applyEnvironment(cfg *Config) error {
 		{"UMPP_NPS_BINARY_PATH", &cfg.Proxy.NPS.BinaryPath},
 		{"UMPP_NPS_PID_FILE", &cfg.Proxy.NPS.PIDFile},
 		{"UMPP_NPS_RELOAD_STRATEGY", &cfg.Proxy.NPS.ReloadStrategy},
+		{"UMPP_ALERTS_WEBHOOK_URL", &cfg.Alerts.WebhookURL},
 	}
 	for _, item := range stringOverrides {
 		if value, ok := os.LookupEnv(item.key); ok {
@@ -216,6 +244,48 @@ func applyEnvironment(cfg *Config) error {
 		{"UMPP_AUTH_REFRESH_TTL", &cfg.Auth.RefreshTTL},
 		{"UMPP_NODE_HEARTBEAT_TIMEOUT", &cfg.Node.HeartbeatTimeout},
 		{"UMPP_ACME_CHECK_INTERVAL", &cfg.ACME.CheckInterval},
+		{"UMPP_ALERTS_EVALUATION_INTERVAL", &cfg.Alerts.EvaluationInterval},
+		{"UMPP_ALERTS_NODE_OFFLINE_AFTER", &cfg.Alerts.NodeOfflineAfter},
+		{"UMPP_ALERTS_CERTIFICATE_EXPIRING_IN", &cfg.Alerts.CertificateExpiringIn},
+		{"UMPP_ALERTS_CERTIFICATE_CRITICAL_IN", &cfg.Alerts.CertificateCriticalIn},
+		{"UMPP_ALERTS_RELAY_BASELINE_WINDOW", &cfg.Alerts.RelayBaselineWindow},
+		{"UMPP_ALERTS_RESOLVED_RETENTION", &cfg.Alerts.ResolvedRetention},
+		{"UMPP_ALERTS_WEBHOOK_TIMEOUT", &cfg.Alerts.WebhookTimeout},
+	}
+	intOverrides := []struct {
+		key string
+		dst *int
+	}{
+		{"UMPP_ALERTS_WEBHOOK_RETRIES", &cfg.Alerts.WebhookRetries},
+	}
+	for _, item := range intOverrides {
+		value, ok := os.LookupEnv(item.key)
+		if !ok {
+			continue
+		}
+		parsed, err := strconv.Atoi(value)
+		if err != nil {
+			return fmt.Errorf("%s must be an integer: %w", item.key, err)
+		}
+		*item.dst = parsed
+	}
+	floatOverrides := []struct {
+		key string
+		dst *float64
+	}{
+		{"UMPP_ALERTS_P2P_SUCCESS_RATE_MINIMUM", &cfg.Alerts.P2PSuccessRateMinimum},
+		{"UMPP_ALERTS_RELAY_SPIKE_MULTIPLIER", &cfg.Alerts.RelaySpikeMultiplier},
+	}
+	for _, item := range floatOverrides {
+		value, ok := os.LookupEnv(item.key)
+		if !ok {
+			continue
+		}
+		parsed, err := strconv.ParseFloat(value, 64)
+		if err != nil {
+			return fmt.Errorf("%s must be a number: %w", item.key, err)
+		}
+		*item.dst = parsed
 	}
 	for _, item := range durationOverrides {
 		value, ok := os.LookupEnv(item.key)

@@ -70,6 +70,11 @@
 | GET | `/api/v1/agent/config?node_id=&version=` | agent/admin JWT | 版本化下发；相等 version 返回 304 |
 | GET | `/api/v1/configs?target_type=&target_id=` | tenant_admin | 配置版本列表 |
 | POST | `/api/v1/configs/{target_type}/{target_id}/rollback` | tenant_admin | 生成新版本回滚 |
+| GET | `/api/v1/alerts` | JWT；readonly 可读 | 告警列表，支持 state/severity/rule/target_type/target_id/page/page_size；platform_admin 可传 tenant_id |
+| GET | `/api/v1/alerts/rules` | JWT | 生效规则、阈值、数据源状态，只读 |
+| POST | `/api/v1/alerts/evaluate` | platform_admin/tenant_admin/ops | 手工执行一轮评估；返回 firing/resolved 变迁和 `insufficient_data` |
+| GET | `/api/v1/alerts/summary` | JWT | firing 按严重级、24h resolved、按规则计数 |
+| GET | `/api/v1/alerts/{id}` | JWT，按 tenant scope | 告警详情和 `alert_events` 时间线 |
 | GET | `/api/v1/audit-logs` | JWT | 审计列表，支持 action/resource/from/to/分页 |
 | GET | `/api/v1/nodes/{id}/metrics` | JWT | 节点指标 |
 | GET/POST | `/api/v1/relay-servers` | JWT；写需 admin | 中继服务器元数据 |
@@ -140,6 +145,31 @@ curl -sS -X POST "http://127.0.0.1:18080/api/v1/certificates/<certificate-id>/re
 ```
 
 证书资源包含 `issuer`、`status`、`cert_pem`、`expires_at`、`renewed_at`、`renew_count`、`challenge_type`、`auto_renew`、`last_error`、`next_attempt_at`。`key_pem` 永远使用 `json:"-"`，不会出现在列表、详情、创建或续期响应中。手工导入记录为 `status=active`、`auto_renew=false`；ACME 记录初始为 `status=pending`。
+
+### 告警
+
+```bash
+# 只读列表；platform_admin 可追加 &tenant_id=<uuid>
+curl -sS "http://127.0.0.1:18080/api/v1/alerts?state=firing&severity=critical&page=1&page_size=20" \
+  -H "Authorization: Bearer $TOKEN"
+
+curl -sS http://127.0.0.1:18080/api/v1/alerts/rules \
+  -H "Authorization: Bearer $TOKEN"
+
+curl -sS -X POST http://127.0.0.1:18080/api/v1/alerts/evaluate \
+  -H "Authorization: Bearer $TOKEN"
+# {"items":[...],"total":N,"insufficient_data":[...],"evaluated_at":"..."}
+
+curl -sS http://127.0.0.1:18080/api/v1/alerts/summary \
+  -H "Authorization: Bearer $TOKEN"
+# {"firing":{"critical":0,"warning":0,"info":0},"resolved_recent":0,"by_rule":{...}}
+
+curl -sS http://127.0.0.1:18080/api/v1/alerts/<alert-id> \
+  -H "Authorization: Bearer $TOKEN"
+# {"alert":{...},"events":[...]}
+```
+
+`state` 只接受 `firing|resolved`。Alert 本身只使用这两种状态；采集源缺失通过额外字段 `data_status=insufficient_data` 表达，手工评估响应单列且不会伪造告警。readonly 的 evaluate 返回 403。
 
 ### 域名反代
 
