@@ -149,9 +149,9 @@ type VirtualNetwork struct {
 
 type NetworkMember struct {
 	ID        uuid.UUID `gorm:"type:uuid;primaryKey" json:"id"`
-	NetworkID uuid.UUID `gorm:"type:uuid;not null;index;uniqueIndex:idx_network_members_network_node,priority:1" json:"network_id"`
+	NetworkID uuid.UUID `gorm:"type:uuid;not null;index;uniqueIndex:idx_network_members_network_node,priority:1;uniqueIndex:idx_network_members_network_ip,priority:1" json:"network_id"`
 	NodeID    uuid.UUID `gorm:"type:uuid;not null;index;uniqueIndex:idx_network_members_network_node,priority:2" json:"node_id"`
-	VirtualIP string    `gorm:"type:inet;not null;uniqueIndex:idx_network_members_network_ip,priority:1" json:"virtual_ip"`
+	VirtualIP string    `gorm:"type:inet;not null;uniqueIndex:idx_network_members_network_ip,priority:2" json:"virtual_ip"`
 	Role      string    `gorm:"type:varchar(32);not null;default:member" json:"role"`
 	JoinedAt  time.Time `gorm:"type:timestamp;not null;index" json:"joined_at"`
 

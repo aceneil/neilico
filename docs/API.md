@@ -1,0 +1,146 @@
+# UMPP Control API
+
+本文档由 `control-plane/internal/api` 的真实路由表整理。Base URL 在 Compose 部署中为 `http://127.0.0.1:18080`（生产可替换为 HTTPS 域名）。
+
+## 认证
+
+| 场景 | 方式 |
+| :--- | :--- |
+| 管理 API | `Authorization: Bearer <access token>`，登录 `/api/v1/auth/login` 获取 |
+| 刷新 | `Authorization: Bearer <refresh token>` 或请求体 `{ "refresh_token": "..." }` |
+| Agent 心跳、流量、端点上报 | `Authorization: Bearer <agent_token>` |
+| Agent config | agent token（返回私钥），或 tenant/platform admin JWT（不返回私钥） |
+| `/healthz`, `/metrics` | 无需认证 |
+
+登录请求不会输出密码；生产环境必须使用 TLS 和独立的密钥管理。
+
+## 通用响应
+
+成功响应通常为 JSON 对象或列表：
+
+```json
+{"items": [], "total": 0, "page": 1, "page_size": 20}
+```
+
+错误响应统一为：
+
+```json
+{"error":{"code":"invalid_request","message":"human readable message"}}
+```
+
+## 路由表
+
+| Method | Path | 认证/权限 | 说明 |
+| :--- | :--- | :--- | :--- |
+| GET | `/healthz` | public | 进程与数据库健康 |
+| GET | `/metrics` | public | Prometheus 指标 |
+| POST | `/api/v1/auth/login` | public | `{email,password}` -> access/refresh token |
+| POST | `/api/v1/auth/refresh` | refresh token | 刷新 token |
+| GET/POST | `/api/v1/tenants` | platform_admin | 租户列表/创建 |
+| GET/PUT/DELETE | `/api/v1/tenants/{id}` | platform_admin | 租户详情/更新/删除 |
+| GET/POST | `/api/v1/users` | JWT；创建需 admin | 用户列表/创建 |
+| GET/PUT/DELETE | `/api/v1/users/{id}` | JWT，按 tenant scope | 用户详情/更新/删除 |
+| POST | `/api/v1/nodes/register` | platform_admin/tenant_admin/ops | Agent 注册，返回一次性 `agent_token` |
+| GET | `/api/v1/nodes` | JWT | 节点列表，可按 `status`、`tag`、分页 |
+| POST | `/api/v1/nodes/{id}/heartbeat` | agent_token | 心跳，返回下一次间隔 |
+| GET/DELETE | `/api/v1/nodes/{id}` | JWT，按 tenant scope | 节点详情/删除 |
+| POST | `/api/v1/nodes/{id}/network-report` | agent_token | 公网端点上报 |
+| POST | `/api/v1/nodes/{id}/traffic` | agent_token | 流量增量上报 |
+| GET/POST | `/api/v1/domains` | JWT；写需 proxy 管理权限 | 域名列表/创建 |
+| GET/PUT/DELETE | `/api/v1/domains/{id}` | JWT，按 tenant scope | 域名详情/更新/删除 |
+| GET/POST | `/api/v1/certificates` | JWT；写需 proxy 管理权限 | 证书列表/导入 |
+| GET/DELETE | `/api/v1/certificates/{id}` | JWT，按 tenant scope | 证书详情/删除 |
+| GET/POST | `/api/v1/proxy-rules` | JWT；写需 proxy 管理权限 | 反代规则列表/创建 |
+| GET/PUT/DELETE | `/api/v1/proxy-rules/{id}` | JWT，按 tenant scope | 反代规则详情/更新/删除 |
+| GET | `/api/v1/proxy/providers` | JWT | ProxyProvider 状态 |
+| POST | `/api/v1/proxy/render` | tenant_admin | 渲染 NPS/内置反代配置 |
+| GET | `/api/v1/traffic` | JWT | 流量列表，支持 `node_id`、分页 |
+| GET/POST | `/api/v1/networks` | JWT；写需 network 管理权限 | 虚拟网络列表/创建 |
+| GET/PUT/DELETE | `/api/v1/networks/{id}` | JWT，按 tenant scope | 虚拟网络详情/更新/删除 |
+| GET/POST | `/api/v1/networks/{id}/members` | JWT；写需 network 管理权限 | 成员列表/加入 |
+| DELETE | `/api/v1/networks/{id}/members/{node_id}` | JWT，需 network 管理权限 | 成员移除 |
+| GET/POST | `/api/v1/networks/{id}/acl` | JWT；写需 network 管理权限 | ACL 列表/创建 |
+| DELETE | `/api/v1/networks/{id}/acl/{rule_id}` | JWT，需 network 管理权限 | ACL 删除 |
+| GET/POST | `/api/v1/networks/{id}/routes` | JWT；写需 network 管理权限 | 子网路由列表/创建 |
+| PUT/DELETE | `/api/v1/networks/{id}/routes/{route_id}` | JWT，需 network 管理权限 | 子网路由更新/删除 |
+| GET | `/api/v1/networks/{id}/mesh/export` | JWT | WireGuard/EasyTier 配置导出 |
+| POST | `/api/v1/nodes/{id}/keys/rotate` | JWT，需 node 管理权限 | WireGuard key 轮换 |
+| GET | `/api/v1/agent/config?node_id=&version=` | agent/admin JWT | 版本化下发；相等 version 返回 304 |
+| GET | `/api/v1/configs?target_type=&target_id=` | tenant_admin | 配置版本列表 |
+| POST | `/api/v1/configs/{target_type}/{target_id}/rollback` | tenant_admin | 生成新版本回滚 |
+| GET | `/api/v1/audit-logs` | JWT | 审计列表，支持 action/resource/from/to/分页 |
+| GET | `/api/v1/nodes/{id}/metrics` | JWT | 节点指标 |
+| GET/POST | `/api/v1/relay-servers` | JWT；写需 admin | 中继服务器元数据 |
+| PUT/DELETE | `/api/v1/relay-servers/{id}` | tenant/platform admin | 中继服务器元数据 |
+| GET | `/api/v1/networks/{id}/status` | JWT | 网络成员/隧道摘要 |
+
+## curl 示例
+
+### 登录
+
+```bash
+curl -sS -X POST http://127.0.0.1:18080/api/v1/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"admin@example.com","password":"<password>"}'
+# {"token":"<access>","refresh_token":"<refresh>","user":{"id":"...","email":"...","role":"platform_admin","tenant_id":"..."}}
+```
+
+### 创建租户、管理员和网络
+
+```bash
+TOKEN="<access>"
+curl -sS -X POST http://127.0.0.1:18080/api/v1/tenants \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"name":"acme","plan":"pro"}'
+
+curl -sS -X POST http://127.0.0.1:18080/api/v1/users \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"tenant_id":"<tenant-id>","email":"ops@acme.example","password":"<password>","role":"tenant_admin","status":"active"}'
+
+curl -sS -X POST http://127.0.0.1:18080/api/v1/networks \
+  -H "Authorization: Bearer <tenant-access>" -H 'Content-Type: application/json' \
+  -d '{"name":"home","cidr":"100.64.250.0/24"}'
+```
+
+### 注册、心跳、配置
+
+```bash
+curl -sS -X POST http://127.0.0.1:18080/api/v1/nodes/register \
+  -H "Authorization: Bearer <tenant-access>" -H 'Content-Type: application/json' \
+  -d '{"name":"nas-01","os":"linux","arch":"amd64","version":"dev","tags":["home"]}'
+# 响应包含 node_id、agent_token、public_key、private_key；private_key 只应保存到 Agent state。
+
+curl -sS -X POST http://127.0.0.1:18080/api/v1/nodes/<node-id>/heartbeat \
+  -H "Authorization: Bearer <agent-token>" -H 'Content-Type: application/json' \
+  -d '{"version":"dev"}'
+
+curl -sS http://127.0.0.1:18080/api/v1/agent/config?node_id=<node-id>\&version=0 \
+  -H "Authorization: Bearer <agent-token>"
+```
+
+### 域名反代
+
+```bash
+curl -sS -X POST http://127.0.0.1:18080/api/v1/domains \
+  -H "Authorization: Bearer <tenant-access>" -H 'Content-Type: application/json' \
+  -d '{"domain":"nas.example.com","status":"active"}'
+
+curl -sS -X POST http://127.0.0.1:18080/api/v1/proxy-rules \
+  -H "Authorization: Bearer <tenant-access>" -H 'Content-Type: application/json' \
+  -d '{"domain_id":"<domain-id>","path":"/","target_type":"node","target":"<node-id>:8080","access_control":{"ip_whitelist":[],"basic_auth":false,"require_jwt":false},"enabled":true}'
+```
+
+## 错误码
+
+| HTTP | code | 常见原因 |
+| :--- | :--- | :--- |
+| 400 | `invalid_request` / `invalid_id` | JSON、UUID、CIDR、分页或必填字段错误 |
+| 401 | `unauthorized` / `invalid_token` / `invalid_agent_token` | token 缺失、过期或 Agent token 不匹配 |
+| 403 | `forbidden` | 角色或 tenant scope 不足 |
+| 404 | `not_found` | 资源不存在或不属于当前 tenant |
+| 405 | `method_not_allowed` | 路由不支持该方法，响应含 `Allow` |
+| 409 | `conflict` | 唯一域名/租户/成员冲突或仍有引用 |
+| 422 | `unprocessable_entity` | 代理目标无法解析、节点没有虚拟 IP |
+| 500 | `internal_error` | 服务端错误，查看控制面日志 |
+
+`GET /api/v1/agent/config` 在客户端 `version` 等于服务端最新版本时返回 `304 Not Modified`，响应体为 `{"not_modified":true,"version":N}`；落后、超前或未知版本会返回 `200` 最新期望配置。

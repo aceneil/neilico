@@ -1,0 +1,143 @@
+name: umpp-m5
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-umpp}
+      POSTGRES_USER: ${POSTGRES_USER:-umpp}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    ports:
+      - "${POSTGRES_PORT:-15432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-umpp} -d ${POSTGRES_DB:-umpp}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    logging: *default-logging
+
+  redis:
+    image: redis:7
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-16379}:6379"
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    logging: *default-logging
+
+  nats:
+    image: nats:2.11-alpine
+    restart: unless-stopped
+    command: ["-js", "-m", "8222"]
+    ports:
+      - "${NATS_PORT:-14222}:4222"
+    volumes:
+      - natsdata:/data
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:8222/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    logging: *default-logging
+
+  control-api:
+    build:
+      context: ../../control-plane
+      dockerfile: Dockerfile
+      args:
+        VERSION: m5
+    restart: unless-stopped
+    environment:
+      UMPP_SERVER_HOST: 0.0.0.0
+      UMPP_SERVER_PORT: 8080
+      UMPP_DATABASE_DRIVER: postgres
+      UMPP_DATABASE_DSN: postgres://${POSTGRES_USER:-umpp}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-umpp}?sslmode=disable
+      UMPP_AUTH_JWT_SECRET: ${UMPP_JWT_SECRET:?set UMPP_JWT_SECRET in .env}
+      UMPP_BOOTSTRAP_ADMIN_EMAIL: ${BOOTSTRAP_ADMIN_EMAIL:-admin@example.com}
+      UMPP_BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:?set BOOTSTRAP_ADMIN_PASSWORD in .env}
+      UMPP_BOOTSTRAP_DEFAULT_TENANT: default
+      UMPP_PROXY_ENABLED: "true"
+      UMPP_PROXY_KIND: builtin
+      UMPP_PROXY_LISTEN: :8081
+      UMPP_LOG_FORMAT: json
+    ports:
+      - "${CONTROL_API_PORT:-18080}:8080"
+      - "${PROXY_PORT:-18081}:8081"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 15s
+    logging: *default-logging
+
+  dashboard:
+    build:
+      context: ../../dashboard
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "${DASHBOARD_PORT:-13000}:8080"
+    depends_on:
+      control-api:
+        condition: service_healthy
+    logging: *default-logging
+
+  # M2b currently contains a WireGuard configuration generator and relay
+  # metadata CRUD, but no relay data-plane. This is an explicit placeholder
+  # based on wg-easy, not a UMPP relay implementation. The TURN port is
+  # reserved for the future relay/ICE listener and may be unused by wg-easy.
+  relay:
+    image: ghcr.io/wg-easy/wg-easy:15
+    restart: unless-stopped
+    environment:
+      INSECURE: "true"
+    # Required by the official wg-easy placeholder to create wg0 inside the
+    # container network namespace. No host firewall or routing rules are set.
+    cap_add:
+      - NET_ADMIN
+    sysctls:
+      net.ipv4.ip_forward: "1"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:51821/').then(() => process.exit(0)).catch(() => process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+    ports:
+      - "${RELAY_WIREGUARD_PORT:-51820}:51820/udp"
+      - "${RELAY_TURN_PORT:-3478}:3478/udp"
+    logging: *default-logging
+
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 100.64.250.0/24
+
+volumes:
+  pgdata:
+  redisdata:
+  natsdata:

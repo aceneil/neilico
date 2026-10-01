@@ -62,6 +62,15 @@ func AutoMigrate(handle *gorm.DB) error {
 	); err != nil {
 		return fmt.Errorf("automigrate: %w", err)
 	}
+	// Older M2b deployments created a global virtual-IP unique index. Network
+	// virtual IPs only need to be unique within one network; normalize both
+	// fresh and existing databases before serving traffic.
+	if err := handle.Exec("DROP INDEX IF EXISTS idx_network_members_network_ip").Error; err != nil {
+		return fmt.Errorf("drop legacy network member IP index: %w", err)
+	}
+	if err := handle.Exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_network_members_network_ip ON network_members (network_id, virtual_ip)").Error; err != nil {
+		return fmt.Errorf("create scoped network member IP index: %w", err)
+	}
 	return nil
 }
 

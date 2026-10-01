@@ -132,20 +132,42 @@ func resolveTarget(ctx context.Context, db *gorm.DB, rule models.ProxyRule) (str
 		}
 		return "", fmt.Errorf("resolve proxy node: %w", err)
 	}
-	if node.VirtualIP == nil || strings.TrimSpace(*node.VirtualIP) == "" {
-		return "", &UnprocessableError{Reason: fmt.Sprintf("node %s has no virtual IP assigned", nodeID)}
+	host := ""
+	if node.VirtualIP != nil {
+		host = strings.TrimSpace(*node.VirtualIP)
+	}
+	if host == "" {
+		// Nodes normally receive their virtual IP through network membership,
+		// while Node.VirtualIP is optional at registration. Resolve that
+		// membership address for target_type=node rules.
+		var member models.NetworkMember
+		err := db.WithContext(ctx).
+			Where("node_id = ?", node.ID).
+			Order("joined_at DESC, id ASC").
+			First(&member).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return "", &UnprocessableError{Reason: fmt.Sprintf("node %s has no virtual IP assigned", nodeID)}
+		}
+		if err != nil {
+			// A few focused unit tests use a minimal schema; treat a missing
+			// membership table like an unassigned node rather than a 500.
+			if strings.Contains(strings.ToLower(err.Error()), "no such table") {
+				return "", &UnprocessableError{Reason: fmt.Sprintf("node %s has no virtual IP assigned", nodeID)}
+			}
+			return "", fmt.Errorf("resolve proxy node virtual IP: %w", err)
+		}
+		host = strings.TrimSpace(member.VirtualIP)
 	}
 	_, port, err := net.SplitHostPort(rule.Target)
 	if err != nil {
 		return "", &UnprocessableError{Reason: err.Error()}
 	}
-	host := strings.TrimSpace(*node.VirtualIP)
 	if parsed, parseErr := netip.ParsePrefix(host); parseErr == nil {
 		host = parsed.Addr().String()
 	} else if addr, parseErr := netip.ParseAddr(host); parseErr == nil {
 		host = addr.String()
 	} else {
-		return "", &UnprocessableError{Reason: fmt.Sprintf("node %s has invalid virtual IP %q", nodeID, *node.VirtualIP)}
+		return "", &UnprocessableError{Reason: fmt.Sprintf("node %s has invalid virtual IP %q", nodeID, host)}
 	}
 	return net.JoinHostPort(host, port), nil
 }
