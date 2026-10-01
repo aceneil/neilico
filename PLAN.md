@@ -63,8 +63,20 @@ umpp/
 
 **轮次纪律**：同仓开发必须串行（上一轮验收通过后才派下一轮）。每轮开始前工作区必须 committing clean。
 
-## 5. V1 追加（MVP 验收通过后择机）
-多租户隔离强化、Let's Encrypt ACME 自动证书、API Token、中继节点注册与调度、Windows/macOS Agent、Helm Chart、告警规则（规格 §15.2）。
+## 5. V1 路线（MVP 交付后启动，2026-10-02）
+
+按「用户可感知价值 × 可验证性」排序，每轮一个 codex 轮次、独立可测：
+
+| 轮次 | 主题 | 核心内容 | 硬验收 |
+| :--- | :--- | :--- | :--- |
+| **V1-R1** | ACME 证书自动化 | `x/crypto/acme` 签发 + HTTP-01 挑战服务 + 自动续期调度（阈值/退避/single-flight）+ 内置反代 **SNI TLS 终结** + 证书状态字段与指标 | hermetic 单测全绿 **且** `scripts/smoke-acme.sh` 用 **Pebble**（真 ACME 协议）签发出证书、SNI 握手取到该证书 |
+| **V1-R2** | 告警体系（§15.2） | 5 条规则（节点离线/证书将到期/P2P 成功率/中继流量突增/配置下发失败）+ 状态机与 `alert_events` + `/api/v1/alerts` 系列 + webhook 通知 + Dashboard 告警卡片与 `/alerts` 页 | 规则逐条边界单测 + 状态机去重/恢复测试 + 无数据源必须 `insufficient_data`（**禁止编造**） |
+| **V1-R3** | Helm Chart（§11.2） | `deploy/helm/umpp/`（control-api/dashboard + 可选 postgres/redis/nats/relay）+ `values.schema.json` + `ci/verify.sh` | `helm lint` + 两套 `helm template` + 断言：必需 Kind 齐备、渲染产物**无明文密钥**、非法 values 必须失败 |
+| **V1-R4** | API Token / Scope / 限流（§10.1、§4.1.2） | `api_tokens` 表（只存哈希 + prefix）+ `umpp_` 前缀令牌 + scope 授权（角色→scope 映射表）+ 租户级令牌 CRUD/轮换 + 按令牌维度令牌桶限流 + CLI & Dashboard 接通 | 令牌三态错误码、**不泄露明文**断言、scope 矩阵、**API Token 不得自我提权**、限流隔离与豁免、readonly 回归 |
+
+**执行方式**：沿用项目已沉淀的自主驱动器（systemd 定时器 + 机械验收 + 自动派下一轮 + 桌面/飞书双通道通知），轮次链 `M5 → V1R1 → V1R2 → V1R3 → V1R4 → DONE`；需要 docker/helm 的轮次通过 `~/.hermes/cache/umpp-<ROUND>-accept.sh` 挂附加验收。
+
+**仍然不做（V2）**：商业化计费、Exit Node、DNS 解析、插件系统、高可用控制面、多地域中继调度、流量工程/QoS、OpenWrt、OAuth2 第三方登录、ClickHouse 访问日志、Windows/macOS Agent。
 
 ## 6. 验收与测试计划（规格 §14 落地）
 - 单元：配置生成、ACL 匹配、子网路由计算、Agent 配置解析、JWT。
