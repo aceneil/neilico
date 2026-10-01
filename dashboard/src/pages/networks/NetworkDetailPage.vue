@@ -18,7 +18,7 @@ import { useAuthStore } from '@/stores/auth'
 import { canManageNetworks, canPreviewAgentConfig } from '@/utils/permissions'
 import { formatTime } from '@/utils/format'
 import { maskWireGuardConfig } from '@/utils/sensitive'
-import type { AclRule, AgentConfig, NetworkMember, Node, SubnetRoute, VirtualNetwork } from '@/types/api'
+import type { AclRule, AgentConfig, NetworkMember, NetworkStatus, Node, SubnetRoute, VirtualNetwork } from '@/types/api'
 
 const route = useRoute()
 const router = useRouter()
@@ -29,6 +29,7 @@ const canPreview = computed(() => canPreviewAgentConfig(auth.role))
 const loading = ref(false)
 const error = ref('')
 const network = ref<VirtualNetwork | null>(null)
+const networkStatus = ref<NetworkStatus | null>(null)
 const members = ref<NetworkMember[]>([])
 const aclRules = ref<AclRule[]>([])
 const routes = ref<SubnetRoute[]>([])
@@ -59,14 +60,16 @@ async function load() {
   loading.value = true
   error.value = ''
   try {
-    const [networkData, memberData, aclData, routeData, nodeData] = await Promise.all([
+    const [networkData, networkStatusData, memberData, aclData, routeData, nodeData] = await Promise.all([
       networksApi.get(networkId.value),
+      networksApi.status(networkId.value),
       networksApi.members(networkId.value),
       networksApi.acl(networkId.value),
       networksApi.routes(networkId.value),
       nodesApi.list({ page_size: 100 })
     ])
     network.value = networkData
+    networkStatus.value = networkStatusData
     members.value = memberData.items
     aclRules.value = aclData.items
     routes.value = routeData.items
@@ -221,7 +224,8 @@ void load()
       <section v-if="network" class="network-summary">
         <div><span>网络 ID</span><code>{{ network.id }}</code></div>
         <div><span>CIDR</span><strong>{{ network.cidr }}</strong></div>
-        <div><span>成员</span><strong>{{ members.length }}</strong></div>
+        <div><span>成员 / 在线</span><strong>{{ networkStatus?.member_count ?? members.length }} / {{ networkStatus?.online_member_count ?? 0 }}</strong></div>
+        <div><span>隧道 up / total</span><strong>{{ networkStatus?.tunnels.up ?? 0 }} / {{ networkStatus?.tunnels.total ?? 0 }}</strong></div>
         <div><span>创建时间</span><strong>{{ formatTime(network.created_at) }}</strong></div>
         <div><span>网络密钥</span><code>••••••••REDACTED••••••••</code></div>
       </section>

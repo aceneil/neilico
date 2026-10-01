@@ -3,6 +3,7 @@ import type {
   AclRule,
   AgentConfig,
   NetworkMember,
+  NetworkStatus,
   Paged,
   SubnetRoute,
   VirtualNetwork
@@ -26,6 +27,9 @@ export const networksApi = {
   },
   get(id: string) {
     return http.get<VirtualNetwork>(`/networks/${id}`).then((response) => response.data)
+  },
+  status(id: string) {
+    return http.get<NetworkStatus>(`/networks/${id}/status`).then((response) => response.data)
   },
   create(input: NetworkInput) {
     return http.post<VirtualNetwork>('/networks', input).then((response) => response.data)

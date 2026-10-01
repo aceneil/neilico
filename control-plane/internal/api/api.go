@@ -25,23 +25,26 @@ import (
 const maxRequestBody = 1 << 20
 
 type Server struct {
-	db         *gorm.DB
-	auth       *auth.Manager
-	tenants    *service.TenantService
-	users      *service.UserService
-	nodes      *service.NodeService
-	domains    *service.DomainService
-	certs      *service.CertificateService
-	proxyRules *service.ProxyRuleService
-	traffic    *service.TrafficService
-	networks   *service.NetworkService
-	configs    *configservice.Manager
-	metrics    *metrics.Metrics
-	logger     *slog.Logger
-	version    string
-	proxy      proxy.Provider
-	proxyOpts  ProxyOptions
-	startedAt  time.Time
+	db            *gorm.DB
+	auth          *auth.Manager
+	tenants       *service.TenantService
+	users         *service.UserService
+	nodes         *service.NodeService
+	domains       *service.DomainService
+	certs         *service.CertificateService
+	proxyRules    *service.ProxyRuleService
+	auditLogs     *service.AuditLogService
+	relays        *service.RelayServerService
+	observability *service.ObservabilityService
+	traffic       *service.TrafficService
+	networks      *service.NetworkService
+	configs       *configservice.Manager
+	metrics       *metrics.Metrics
+	logger        *slog.Logger
+	version       string
+	proxy         proxy.Provider
+	proxyOpts     ProxyOptions
+	startedAt     time.Time
 }
 
 func New(
@@ -78,27 +81,31 @@ func NewWithProxy(
 	}
 	nodeService.ConfigureKeyCrypto(certificateCrypto)
 	server := &Server{
-		db:         db,
-		auth:       authManager,
-		tenants:    service.NewTenantService(db),
-		users:      service.NewUserService(db),
-		nodes:      nodeService,
-		domains:    service.NewDomainService(db),
-		certs:      service.NewCertificateService(db, certificateCrypto),
-		proxyRules: service.NewProxyRuleService(db),
-		traffic:    service.NewTrafficService(db),
-		networks:   service.NewNetworkService(db, certificateCrypto),
-		configs:    configservice.New(db, certificateCrypto, promMetrics),
-		metrics:    promMetrics,
-		logger:     logger,
-		version:    version,
-		proxy:      proxyProvider,
-		proxyOpts:  opts,
-		startedAt:  time.Now().UTC(),
+		db:            db,
+		auth:          authManager,
+		tenants:       service.NewTenantService(db),
+		users:         service.NewUserService(db),
+		nodes:         nodeService,
+		domains:       service.NewDomainService(db),
+		certs:         service.NewCertificateService(db, certificateCrypto),
+		proxyRules:    service.NewProxyRuleService(db),
+		auditLogs:     service.NewAuditLogService(db),
+		relays:        service.NewRelayServerService(db),
+		observability: service.NewObservabilityService(db),
+		traffic:       service.NewTrafficService(db),
+		networks:      service.NewNetworkService(db, certificateCrypto),
+		configs:       configservice.New(db, certificateCrypto, promMetrics),
+		metrics:       promMetrics,
+		logger:        logger,
+		version:       version,
+		proxy:         proxyProvider,
+		proxyOpts:     opts,
+		startedAt:     time.Now().UTC(),
 	}
 	mux := http.NewServeMux()
 	server.registerM2A(mux)
 	server.registerM2B(mux)
+	server.registerM4B(mux)
 
 	mux.HandleFunc("/healthz", server.handleHealth)
 	mux.Handle("/metrics", promMetrics.Handler())

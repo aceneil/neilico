@@ -153,6 +153,62 @@ export interface TrafficLog {
   created_at: string
 }
 
+export interface AuditLog {
+  id: string
+  tenant_id?: string | null
+  user_id?: string | null
+  action: string
+  resource: string
+  detail: unknown
+  ip: string
+  created_at: string
+}
+
+export interface NodeTrafficTotal {
+  in_bytes: number
+  out_bytes: number
+  window_hours: number
+}
+
+export interface NodeTrafficPoint {
+  ts: string
+  in: number
+  out: number
+}
+
+export interface NodeMetrics {
+  node_id: string
+  status: string
+  last_seen?: string | null
+  heartbeat_interval_seconds: number
+  uptime_seconds_since_register: number
+  traffic: NodeTrafficTotal
+  recent_traffic: NodeTrafficPoint[]
+}
+
+export interface RelayServer {
+  id: string
+  name: string
+  endpoint: string
+  region: string
+  status: 'online' | 'offline' | string
+  last_seen?: string | null
+}
+
+export interface NetworkTunnelSummary {
+  total: number
+  up: number
+  down: number
+  basis: 'member_status' | string
+}
+
+export interface NetworkStatus {
+  network_id: string
+  member_count: number
+  online_member_count: number
+  tunnels: NetworkTunnelSummary
+}
+
 export interface HealthStatus {
   status: string
   db: string

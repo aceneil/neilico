@@ -185,10 +185,10 @@ type SubnetRoute struct {
 
 type RelayServer struct {
 	ID       uuid.UUID  `gorm:"type:uuid;primaryKey" json:"id"`
-	Name     string     `gorm:"type:varchar(255);not null" json:"name"`
+	Name     string     `gorm:"type:varchar(255);not null;uniqueIndex" json:"name"`
 	Endpoint string     `gorm:"type:varchar(255);not null" json:"endpoint"`
 	Region   string     `gorm:"type:varchar(64);not null" json:"region"`
-	Status   string     `gorm:"type:varchar(32);not null;default:unknown" json:"status"`
+	Status   string     `gorm:"type:varchar(32);not null;default:offline" json:"status"`
 	LastSeen *time.Time `gorm:"type:timestamp;index" json:"last_seen"`
 }
 

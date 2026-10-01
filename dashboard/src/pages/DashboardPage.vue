@@ -28,13 +28,15 @@ import { useAuthStore } from '@/stores/auth'
 import { useThemeStore } from '@/stores/theme'
 import { canPreviewAgentConfig } from '@/utils/permissions'
 import { formatTime } from '@/utils/format'
-import type { Certificate, Node, TrafficLog } from '@/types/api'
+import type { Certificate, NetworkStatus, Node, TrafficLog } from '@/types/api'
 
 interface DashboardData {
   nodes: Node[]
   nodeTotal: number
   onlineTotal: number
   networkTotal: number
+  tunnelTotal: number
+  tunnelUpTotal: number
   domainTotal: number
   proxyTotal: number
   configVersion: number | null
@@ -66,6 +68,7 @@ async function load() {
       logsApi.traffic({ page_size: 100 }),
       certificatesApi.list({ page_size: 100 })
     ])
+    const networkStatuses: NetworkStatus[] = await Promise.all(networks.items.map((network) => networksApi.status(network.id)))
     let configVersion: number | null = null
     if (canPreviewAgentConfig(auth.role) && nodes.items[0]) {
       try {
@@ -79,6 +82,8 @@ async function load() {
       nodeTotal: nodes.total,
       onlineTotal: online.total,
       networkTotal: networks.total,
+      tunnelTotal: networkStatuses.reduce((sum, status) => sum + status.tunnels.total, 0),
+      tunnelUpTotal: networkStatuses.reduce((sum, status) => sum + status.tunnels.up, 0),
       domainTotal: domains.total,
       proxyTotal: rules.total,
       configVersion,
@@ -103,7 +108,7 @@ useLiveData(
 const cards = computed(() => [
   { label: '在线节点数', value: data.value?.onlineTotal ?? 0, suffix: '在线', icon: CloudServerOutlined, tone: 'green' },
   { label: '总节点数', value: data.value?.nodeTotal ?? 0, suffix: `${onlineRate.value}% 在线`, icon: DeploymentUnitOutlined, tone: 'blue' },
-  { label: '网络数', value: data.value?.networkTotal ?? 0, suffix: '虚拟网络', icon: SwapOutlined, tone: 'cyan' },
+  { label: '网络数', value: data.value?.networkTotal ?? 0, suffix: `${data.value?.tunnelUpTotal ?? 0}/${data.value?.tunnelTotal ?? 0} 隧道在线`, icon: SwapOutlined, tone: 'cyan' },
   { label: '域名数', value: data.value?.domainTotal ?? 0, suffix: '代理入口', icon: GlobalOutlined, tone: 'violet' },
   { label: '代理规则数', value: data.value?.proxyTotal ?? 0, suffix: '启用配置', icon: DatabaseOutlined, tone: 'orange' },
   {

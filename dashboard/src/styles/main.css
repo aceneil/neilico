@@ -589,13 +589,51 @@ pre {
   font-size: 16px;
 }
 
+.metrics-empty {
+  margin: 12px 0 2px;
+}
+
+.node-metric-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-bottom: 14px;
+  gap: 10px;
+}
+
+.node-metric-grid div {
+  min-width: 0;
+  padding: 12px;
+  background: var(--surface-subtle);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.node-metric-grid span,
+.node-metric-grid strong {
+  display: block;
+}
+
+.node-metric-grid span {
+  margin-bottom: 6px;
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.node-metric-grid strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 17px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .network-list-panel {
   flex: 1;
 }
 
 .network-summary {
   display: grid;
-  grid-template-columns: 1.5fr 1fr 0.65fr 1fr 1fr;
+  grid-template-columns: 1.5fr 1fr 0.8fr 0.8fr 1fr 1fr;
   padding: 14px 16px;
   gap: 12px;
   background: var(--surface);
@@ -680,6 +718,10 @@ pre {
   margin-bottom: 12px;
 }
 
+.audit-action {
+  width: min(300px, 28vw);
+}
+
 .settings-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -695,6 +737,23 @@ pre {
 .settings-panel .ant-segmented,
 .settings-panel .ant-empty {
   margin: 18px var(--ui-panel-padding) 0;
+}
+
+.relay-panel {
+  grid-column: 1 / -1;
+  min-height: 320px;
+}
+
+.relay-table-wrap {
+  margin: 18px var(--ui-panel-padding) 0;
+}
+
+.relay-table-wrap .ant-empty {
+  margin: 28px 0;
+}
+
+.relay-table-wrap .data-state__empty {
+  padding-inline: 0;
 }
 
 .settings-panel .ant-descriptions {
@@ -1007,7 +1066,8 @@ pre {
   }
 
   .chart-panel--small,
-  .settings-panel--about {
+  .settings-panel--about,
+  .relay-panel {
     grid-column: auto;
   }
 

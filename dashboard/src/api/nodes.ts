@@ -1,5 +1,5 @@
 import { http } from '@/api/http'
-import type { Node, NodeRegisterResult, Paged } from '@/types/api'
+import type { Node, NodeMetrics, NodeRegisterResult, Paged } from '@/types/api'
 
 export interface NodeListQuery {
   status?: string
@@ -24,6 +24,11 @@ export const nodesApi = {
   },
   get(id: string) {
     return http.get<Node>(`/nodes/${id}`).then((response) => response.data)
+  },
+  metrics(id: string, windowHours = 24) {
+    return http
+      .get<NodeMetrics>(`/nodes/${id}/metrics`, { params: { window_hours: windowHours } })
+      .then((response) => response.data)
   },
   register(input: NodeRegisterInput) {
     return http.post<NodeRegisterResult>('/nodes/register', input).then((response) => response.data)

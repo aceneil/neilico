@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import {
   CopyOutlined,
   DeleteOutlined,
@@ -11,17 +11,21 @@ import {
   SearchOutlined
 } from '@ant-design/icons-vue'
 import { message, Modal } from 'ant-design-vue'
+import type { EChartsOption } from 'echarts'
 import DataState from '@/components/DataState.vue'
+import EChart from '@/components/EChart.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import { apiErrorMessage } from '@/api/http'
 import { nodesApi, type NodeListQuery } from '@/api/nodes'
 import { useAuthStore } from '@/stores/auth'
+import { useThemeStore } from '@/stores/theme'
 import { canManageNodes } from '@/utils/permissions'
-import { formatTime } from '@/utils/format'
+import { formatBytes, formatTime } from '@/utils/format'
 import { maskSecret } from '@/utils/sensitive'
-import type { Node, NodeRegisterResult } from '@/types/api'
+import type { Node, NodeMetrics, NodeRegisterResult } from '@/types/api'
 
 const auth = useAuthStore()
+const theme = useThemeStore()
 const canWrite = computed(() => canManageNodes(auth.role))
 const loading = ref(false)
 const error = ref('')
@@ -36,6 +40,9 @@ const registerOpen = ref(false)
 const registering = ref(false)
 const registerFormRef = ref()
 const registration = ref<NodeRegisterResult | null>(null)
+const nodeMetrics = ref<NodeMetrics | null>(null)
+const metricsLoading = ref(false)
+const metricsError = ref('')
 
 const registerForm = reactive({
   name: '',
@@ -86,9 +93,68 @@ function applyFilters() {
   void load()
 }
 
+async function loadNodeMetrics() {
+  if (!selectedNode.value) return
+  const nodeID = selectedNode.value.id
+  metricsLoading.value = true
+  metricsError.value = ''
+  try {
+    const result = await nodesApi.metrics(nodeID, 24)
+    if (selectedNode.value?.id === nodeID) nodeMetrics.value = result
+  } catch (cause) {
+    if (selectedNode.value?.id === nodeID) metricsError.value = apiErrorMessage(cause)
+  } finally {
+    if (selectedNode.value?.id === nodeID) metricsLoading.value = false
+  }
+}
+
 function openDetail(node: Node) {
   selectedNode.value = node
+  nodeMetrics.value = null
+  metricsError.value = ''
   detailOpen.value = true
+  void loadNodeMetrics()
+}
+
+watch(detailOpen, (open) => {
+  if (!open) {
+    nodeMetrics.value = null
+    metricsError.value = ''
+  }
+})
+
+const metricsChart = computed<EChartsOption>(() => {
+  const dark = theme.resolved === 'dark'
+  const textColor = dark ? '#aebbd0' : '#526072'
+  const splitColor = dark ? '#263244' : '#e7ebf0'
+  return {
+    tooltip: { trigger: 'axis' },
+    legend: { top: 0, textStyle: { color: textColor } },
+    grid: { left: 52, right: 18, top: 38, bottom: 34 },
+    xAxis: {
+      type: 'category',
+      data: (nodeMetrics.value?.recent_traffic || []).map((point) => formatTime(point.ts).slice(11, 16)),
+      axisLine: { lineStyle: { color: splitColor } },
+      axisLabel: { color: textColor }
+    },
+    yAxis: {
+      type: 'value',
+      splitLine: { lineStyle: { color: splitColor } },
+      axisLabel: { color: textColor }
+    },
+    series: [
+      { name: 'in', type: 'line', smooth: true, showSymbol: false, areaStyle: { opacity: 0.12 }, data: (nodeMetrics.value?.recent_traffic || []).map((point) => point.in) },
+      { name: 'out', type: 'line', smooth: true, showSymbol: false, areaStyle: { opacity: 0.08 }, data: (nodeMetrics.value?.recent_traffic || []).map((point) => point.out) }
+    ]
+  }
+})
+
+function formatUptime(seconds: number): string {
+  const totalMinutes = Math.max(0, Math.floor(seconds / 60))
+  const days = Math.floor(totalMinutes / 1440)
+  const hours = Math.floor((totalMinutes % 1440) / 60)
+  const minutes = totalMinutes % 60
+  return days ? `${days}天 ${hours}小时` : hours ? `${hours}小时 ${minutes}分钟` : `${minutes}分钟`
 }
 
 function removeNode(node: Node) {
@@ -278,6 +344,33 @@ void load()
             <span v-else>—</span>
           </a-descriptions-item>
         </a-descriptions>
+        <h3 class="drawer-section-title">指标（最近 24 小时）</h3>
+        <DataState
+          :loading="metricsLoading"
+          :error="metricsError"
+          :empty="false"
+          @retry="loadNodeMetrics"
+        >
+          <template v-if="nodeMetrics">
+            <div class="node-metric-grid">
+              <div><span>入站</span><strong>{{ formatBytes(nodeMetrics.traffic.in_bytes) }}</strong></div>
+              <div><span>出站</span><strong>{{ formatBytes(nodeMetrics.traffic.out_bytes) }}</strong></div>
+              <div><span>运行时长</span><strong>{{ formatUptime(nodeMetrics.uptime_seconds_since_register) }}</strong></div>
+              <div><span>心跳间隔</span><strong>{{ nodeMetrics.heartbeat_interval_seconds }} 秒</strong></div>
+            </div>
+            <EChart
+              v-if="nodeMetrics.recent_traffic.length"
+              :option="metricsChart"
+              :dark="theme.resolved === 'dark'"
+              height="220px"
+            />
+            <a-empty
+              v-else
+              description="24 小时窗口内没有 traffic_logs"
+              class="metrics-empty"
+            />
+          </template>
+        </DataState>
         <h3 class="drawer-section-title">心跳时间线</h3>
         <a-timeline>
           <a-timeline-item :color="selectedNode.status === 'online' ? 'green' : 'gray'">
