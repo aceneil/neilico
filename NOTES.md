@@ -35,9 +35,26 @@ UMPP（Unified Mesh & Proxy Platform）：统一「内网穿透 + Mesh 组网」
 | M2a 域名/证书/代理面 | ✅ | `c3c4af6` | 域名/证书（私钥 AES-GCM 加密）/代理规则 CRUD、NPS Provider、内置 httputil 反代、流量上报 |
 | M2b Mesh + 配置版本化下发 | ✅ | `a9b753b` | 虚拟网络/成员（VIP 分配）/ACL/子网路由、WireGuard 与 EasyTier Provider、密钥轮换、304/回滚 |
 | M3 Agent + CLI | ✅ | `c1aca8d` | Agent 注册/心跳/端点/配置轮询/wgctrl→shell/dry-run/路由/流量/指标，`umppctl` |
-| M4 Dashboard | ✅ | `a10556d`/`ce43379` | 登录、仪表盘、设备、域名、网络、用户、日志、设置；npm build |
-| **M5 部署+文档+冒烟** | ✅ | 本轮 | Compose + Dockerfile + `scripts/smoke.sh` + API/USER/OPS/README；smoke 真实 Agent dry-run |
+| M4 Dashboard | ✅ | `a10556d` | 登录、仪表盘、设备、域名、网络、用户、日志、设置；npm build |
+| M4b 补齐读接口 | ✅ | `ce43379` | 新增 `GET /api/v1/audit-logs`、`GET /api/v1/nodes/{id}/metrics`、`relay-servers` CRUD（M4 据实报告这些接口后端从未实现，避免前端造假数据）；Dashboard 对应页面接通 |
+| **M5 部署+文档+冒烟** | ✅ | `8e54d34` | Compose + Dockerfile + `scripts/smoke.sh`（12/12 PASS）+ API/USER/OPS/README；smoke 用真实 Agent dry-run |
 | Helm Chart | ⏳ 留给 V1 | — | 本预算不提供半成品，建议带 PostgreSQL 外部依赖说明 |
+
+### 当前运行状态（2026-10-02 01:5x 实测）
+- **整个栈仍在运行**（`Up 3 hours (healthy)`）：API `:18080`、内置反代 `:18081`、Dashboard `:13000`、PG `:15432`、Redis `:16379`、NATS `:14222`、relay 占位 UDP `:51820/:3478`
+  （8080/3000/5432/6379/4222 被本机既有容器占用，故整体改端口）
+- 独立在线验证脚本：`bash scripts/verify-live.sh`（只打印状态与计数，不回显任何密钥）
+  实测结果：healthz `status=ok db=up`；8 节点注册过（smoke 结束后 offline，属预期）；4 网络 / 3 域名 / 3 代理规则；`audit-logs total=61`；
+  `umpp_proxy_requests_total{domain="smoke-…",status="200"} 1` ← **反代真的服务过 200**；Dashboard 13000 → 200
+- 收尾：`bash scripts/smoke-down.sh --yes` 停栈
+
+### 流水线自动化（本项目沉淀，可复用）
+- 自主驱动器：`~/.hermes/scripts/umpp-autodrive.sh` + systemd 用户定时器 `umpp-autodrive.timer`（每 5 分钟）
+  状态机 `~/.hermes/cache/umpp-pipeline.state`（`ROUND/PID/HANDLED`）；轮次链 `M1→M2a→M2b→M3→M4→M4b→M5→DONE`。
+  **它自己跑完了 M4→M4b→M5（22:20–23:32），无需人干预。**
+- 通知双通道：桌面 `notify-send` + 飞书推送（`hermes -p chatrob send -t feishu:oc_…`，**不需要 gateway 常驻**）。
+- ⚠️ 教训：**不要依赖 Hermes 后台进程退出通知来唤醒 manager**——实测会被 SIGTERM（`process-results/*.json` 里 `exit_code=-15`）；
+  默认 profile 无 gateway 时 cron 也不会触发。
 
 ### 关键接口事实（Agent/Dashboard 对接必读）
 - 登录：`POST /api/v1/auth/login`，返回 `token`、`refresh_token`、`user`。
