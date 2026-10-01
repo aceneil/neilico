@@ -14,11 +14,11 @@ import (
 )
 
 func (s *Server) registerAlerts(mux *http.ServeMux) {
-	mux.Handle("/api/v1/alerts", middleware.AuthRequired(s.auth, http.HandlerFunc(s.handleAlerts)))
-	mux.Handle("/api/v1/alerts/rules", middleware.AuthRequired(s.auth, http.HandlerFunc(s.handleAlertRules)))
-	mux.Handle("/api/v1/alerts/summary", middleware.AuthRequired(s.auth, http.HandlerFunc(s.handleAlertSummary)))
-	mux.Handle("/api/v1/alerts/evaluate", middleware.AuthRequired(s.auth, http.HandlerFunc(s.handleAlertEvaluate)))
-	mux.Handle("/api/v1/alerts/", middleware.AuthRequired(s.auth, http.HandlerFunc(s.handleAlertItem)))
+	mux.Handle("/api/v1/alerts", s.authed(http.HandlerFunc(s.handleAlerts)))
+	mux.Handle("/api/v1/alerts/rules", s.authed(http.HandlerFunc(s.handleAlertRules)))
+	mux.Handle("/api/v1/alerts/summary", s.authed(http.HandlerFunc(s.handleAlertSummary)))
+	mux.Handle("/api/v1/alerts/evaluate", s.authed(http.HandlerFunc(s.handleAlertEvaluate)))
+	mux.Handle("/api/v1/alerts/", s.authed(http.HandlerFunc(s.handleAlertItem)))
 }
 
 func (s *Server) handleAlerts(w http.ResponseWriter, r *http.Request) {
@@ -127,7 +127,7 @@ func (s *Server) handleAlertEvaluate(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "unauthorized", "valid access token required")
 		return
 	}
-	if !auth.RoleAllowed(principal.Role, auth.RolePlatformAdmin, auth.RoleTenantAdmin, auth.RoleOps) {
+	if !roleAllowed(r.Context(), principal, auth.RolePlatformAdmin, auth.RoleTenantAdmin, auth.RoleOps) {
 		writeError(w, http.StatusForbidden, "forbidden", "admin or ops role required")
 		return
 	}

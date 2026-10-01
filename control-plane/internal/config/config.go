@@ -65,6 +65,12 @@ type Alerts struct {
 	WebhookRetries        int           `yaml:"webhook_retries"`
 }
 
+type RateLimit struct {
+	Enabled bool    `yaml:"enabled"`
+	RPS     float64 `yaml:"rps"`
+	Burst   int     `yaml:"burst"`
+}
+
 type Log struct {
 	Level  string `yaml:"level"`
 	Format string `yaml:"format"`
@@ -79,6 +85,7 @@ type Config struct {
 	ACME      ACME      `yaml:"acme"`
 	Proxy     Proxy     `yaml:"proxy"`
 	Alerts    Alerts    `yaml:"alerts"`
+	RateLimit RateLimit `yaml:"ratelimit"`
 	Log       Log       `yaml:"log"`
 }
 
@@ -132,7 +139,8 @@ func Default() Config {
 			WebhookTimeout:        5 * time.Second,
 			WebhookRetries:        3,
 		},
-		Log: Log{Level: "info", Format: "json"},
+		RateLimit: RateLimit{Enabled: true, RPS: 20, Burst: 40},
+		Log:       Log{Level: "info", Format: "json"},
 	}
 }
 
@@ -203,6 +211,7 @@ func applyEnvironment(cfg *Config) error {
 		key string
 		dst *bool
 	}{
+		{"UMPP_RATELIMIT_ENABLED", &cfg.RateLimit.Enabled},
 		{"UMPP_ACME_ENABLED", &cfg.ACME.Enabled},
 		{"UMPP_ACME_AGREE_TOS", &cfg.ACME.AgreeTOS},
 		{"UMPP_ACME_AUTO_RENEW", &cfg.ACME.AutoRenew},
@@ -223,6 +232,7 @@ func applyEnvironment(cfg *Config) error {
 		dst *int
 	}{
 		{"UMPP_SERVER_PORT", &cfg.Server.Port},
+		{"UMPP_RATELIMIT_BURST", &cfg.RateLimit.Burst},
 		{"UMPP_ACME_HTTP_PORT", &cfg.ACME.HTTPPort},
 		{"UMPP_ACME_RENEW_BEFORE_DAYS", &cfg.ACME.RenewBeforeDays},
 	} {
@@ -273,6 +283,7 @@ func applyEnvironment(cfg *Config) error {
 		key string
 		dst *float64
 	}{
+		{"UMPP_RATELIMIT_RPS", &cfg.RateLimit.RPS},
 		{"UMPP_ALERTS_P2P_SUCCESS_RATE_MINIMUM", &cfg.Alerts.P2PSuccessRateMinimum},
 		{"UMPP_ALERTS_RELAY_SPIKE_MULTIPLIER", &cfg.Alerts.RelaySpikeMultiplier},
 	}
@@ -318,6 +329,12 @@ func (c Config) Validate() error {
 	}
 	if c.Node.HeartbeatTimeout <= 0 {
 		return fmt.Errorf("node.heartbeat_timeout must be positive")
+	}
+	if c.RateLimit.RPS <= 0 {
+		return fmt.Errorf("ratelimit.rps must be positive")
+	}
+	if c.RateLimit.Burst < 1 {
+		return fmt.Errorf("ratelimit.burst must be positive")
 	}
 	if c.Log.Level != "debug" && c.Log.Level != "info" && c.Log.Level != "warn" && c.Log.Level != "error" {
 		return fmt.Errorf("log.level must be debug, info, warn, or error")

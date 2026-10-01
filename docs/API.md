@@ -6,7 +6,8 @@
 
 | 场景 | 方式 |
 | :--- | :--- |
-| 管理 API | `Authorization: Bearer <access token>`，登录 `/api/v1/auth/login` 获取 |
+| 管理 API | `Authorization: Bearer <JWT>`，登录 `/api/v1/auth/login` 获取 |
+| 自动化 API | `Authorization: Bearer <API Token>`，明文格式 `umpp_<32-byte base64url>`；只在创建/轮换响应中出现一次 |
 | 刷新 | `Authorization: Bearer <refresh token>` 或请求体 `{ "refresh_token": "..." }` |
 | Agent 心跳、流量、端点上报 | `Authorization: Bearer <agent_token>` |
 | Agent config | agent token（返回私钥），或 tenant/platform admin JWT（不返回私钥） |
@@ -27,6 +28,8 @@
 ```json
 {"error":{"code":"invalid_request","message":"human readable message"}}
 ```
+
+scope 不足时还会返回 `detail`；API Token 使用 `insufficient_scope`，JWT 为保持 M1–M4 兼容仍使用 `forbidden`，但 `detail.reason` 固定为 `insufficient_scope`。任何错误、日志和审计都只允许显示 `token_prefix + "…"`，不会回显完整凭据。
 
 ## 路由表
 
@@ -79,7 +82,69 @@
 | GET | `/api/v1/nodes/{id}/metrics` | JWT | 节点指标 |
 | GET/POST | `/api/v1/relay-servers` | JWT；写需 admin | 中继服务器元数据 |
 | PUT/DELETE | `/api/v1/relay-servers/{id}` | tenant/platform admin | 中继服务器元数据 |
-| GET | `/api/v1/networks/{id}/status` | JWT | 网络成员/隧道摘要 |
+| GET | `/api/v1/networks/{id}/status` | JWT / `networks:read` | 网络成员/隧道摘要 |
+| GET | `/api/v1/api-tokens` | JWT 或 API Token；`tokens:read` | Token 列表，只返回 8 字符前缀、名称、scopes、过期/最近使用/撤销时间 |
+| POST | `/api/v1/api-tokens` | JWT 或 API Token；`tokens:write` | 创建 Token；201 响应一次性返回 `token` |
+| DELETE | `/api/v1/api-tokens/{id}` | JWT 或 API Token；`tokens:write` | 幂等撤销，已撤销仍返回 200 + `already_revoked:true` |
+| POST | `/api/v1/api-tokens/{id}/rotate` | JWT 或 API Token；`tokens:write` | 旧 Token 立即撤销，新 Token 一次性返回 |
+
+## API Token 与 Scope
+
+Token 明文为 `umpp_` 加 32 字节 `base64url` 随机值。服务端只保存 SHA-256 十六进制哈希；`token_prefix` 是完整明文的前 8 字符。`user_id` 为空表示租户级服务账号；所有 Token 都以 `tenant_id` 为隔离根。
+
+| Scope | GET 能力 | 写能力 |
+| :--- | :--- | :--- |
+| `nodes:read` / `nodes:write` | 节点、流量、节点指标 | 注册、删除、密钥轮换 |
+| `networks:read` / `networks:write` | 网络/成员/ACL/路由/状态/配置版本 | 网络、成员、ACL、路由、配置回滚 |
+| `proxy:read` / `proxy:write` | 域名、代理规则、provider/render | 域名和代理规则变更 |
+| `certs:read` / `certs:write` | 证书读取 | 导入、续期、删除（V1 revoke 仍 501） |
+| `tokens:read` / `tokens:write` | API Token 列表 | 创建、撤销、轮换 |
+| `alerts:read` / `alerts:write` | 告警、规则、汇总、时间线 | 手工评估 |
+| `admin` | 全部 | 全部；同时开放 users/tenants/audit/relay 等 V1 管理接口 |
+
+JWT 角色映射保持既有 RBAC 语义：
+
+| 角色 | 等价 scopes |
+| :--- | :--- |
+| `platform_admin` | `admin` |
+| `tenant_admin` | 除 `admin` 外全部 read/write |
+| `ops` | `nodes/networks/proxy/certs/alerts` read/write，`tokens:read`，无 `tokens:write`；证书写仍受既有 admin-only 限制 |
+| `readonly` | 全部 `:read` |
+
+API Token 严格按数据库 `scopes` 判定，不继承创建者角色。用 API Token 创建新 Token 时，新 scopes 必须是旧 scopes 的子集；尝试创建 `admin` 或其他新增权限返回 403 `insufficient_scope`。
+
+### 创建与使用
+
+```bash
+curl -sS -X POST http://127.0.0.1:18080/api/v1/api-tokens \
+  -H "Authorization: Bearer $ADMIN_JWT" -H 'Content-Type: application/json' \
+  -d '{"name":"ci-read","scopes":["nodes:read"],"expires_in_days":90}'
+# 201 的 token 字段只显示一次；保存到 secrets manager，不要写入 shell history/日志。
+
+curl -sS http://127.0.0.1:18080/api/v1/nodes \
+  -H "Authorization: Bearer $API_TOKEN"
+
+curl -sS -X DELETE http://127.0.0.1:18080/api/v1/api-tokens/<token-id> \
+  -H "Authorization: Bearer $ADMIN_JWT"
+
+curl -sS -X POST http://127.0.0.1:18080/api/v1/api-tokens/<token-id>/rotate \
+  -H "Authorization: Bearer $ADMIN_JWT"
+```
+
+列表响应只含 `id/name/token_prefix/scopes/expires_at/last_used_at/revoked_at`，永不包含 `token_hash` 或明文。`last_used_at`/`last_used_ip` 采用异步节流更新，同 Token 默认最多每 60 秒写一次库。
+
+### 简易限流
+
+按 API Token ID（JWT 按 user ID）维护内存令牌桶，单实例语义：
+
+```yaml
+ratelimit:
+  enabled: true
+  rps: 20
+  burst: 40
+```
+
+也可用 `UMPP_RATELIMIT_ENABLED`、`UMPP_RATELIMIT_RPS`、`UMPP_RATELIMIT_BURST`。超限返回 `429 rate_limited` 和 `Retry-After`。`/healthz`、`/metrics`、`/.well-known/acme-challenge/*` 不计数；Agent 心跳/流量上报走独立 agent-token 路径，也不进入此 API Token/JWT 桶。
 
 ## curl 示例
 
@@ -188,8 +253,9 @@ curl -sS -X POST http://127.0.0.1:18080/api/v1/proxy-rules \
 | HTTP | code | 常见原因 |
 | :--- | :--- | :--- |
 | 400 | `invalid_request` / `invalid_id` | JSON、UUID、CIDR、分页或必填字段错误 |
-| 401 | `unauthorized` / `invalid_token` / `invalid_agent_token` | token 缺失、过期或 Agent token 不匹配 |
-| 403 | `forbidden` | 角色或 tenant scope 不足 |
+| 401 | `unauthorized` / `invalid_token` / `token_expired` / `token_revoked` / `invalid_agent_token` | 凭据缺失/无效；API Token 过期或撤销使用独立错误码 |
+| 403 | `forbidden` / `insufficient_scope` | 角色、scope 或 tenant scope 不足；`detail.required_scope` 指出缺失项 |
+| 429 | `rate_limited` | API Token/JWT user 超过令牌桶速率，响应含 `Retry-After` |
 | 404 | `not_found` | 资源不存在或不属于当前 tenant |
 | 405 | `method_not_allowed` | 路由不支持该方法，响应含 `Allow` |
 | 409 | `conflict` / `order_in_flight` / `acme_disabled` / `acme_tos_not_accepted` | 资源引用、并发 order，或 ACME 未启用/未同意 TOS |

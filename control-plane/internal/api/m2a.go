@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -24,6 +25,13 @@ type ProxyOptions struct {
 	ACMEOptions      service.ACMEOptions  `json:"-"`
 	ChallengeHandler http.Handler         `json:"-"`
 	Alerts           alertservice.Options `json:"-"`
+	RateLimit        RateLimitOptions     `json:"-"`
+}
+
+type RateLimitOptions struct {
+	Enabled bool
+	RPS     float64
+	Burst   int
 }
 
 type ProxyTLSOptions struct {
@@ -33,15 +41,15 @@ type ProxyTLSOptions struct {
 }
 
 func (s *Server) registerM2A(mux *http.ServeMux) {
-	mux.Handle("/api/v1/domains", middleware.AuthRequired(s.auth, http.HandlerFunc(s.handleDomains)))
-	mux.Handle("/api/v1/domains/", middleware.AuthRequired(s.auth, http.HandlerFunc(s.handleDomainItem)))
-	mux.Handle("/api/v1/certificates", middleware.AuthRequired(s.auth, http.HandlerFunc(s.handleCertificates)))
-	mux.Handle("/api/v1/certificates/", middleware.AuthRequired(s.auth, http.HandlerFunc(s.handleCertificateItem)))
-	mux.Handle("/api/v1/proxy-rules", middleware.AuthRequired(s.auth, http.HandlerFunc(s.handleProxyRules)))
-	mux.Handle("/api/v1/proxy-rules/", middleware.AuthRequired(s.auth, http.HandlerFunc(s.handleProxyRuleItem)))
-	mux.Handle("/api/v1/proxy/providers", middleware.AuthRequired(s.auth, http.HandlerFunc(s.handleProxyProviders)))
-	mux.Handle("/api/v1/proxy/render", middleware.AuthRequired(s.auth, http.HandlerFunc(s.handleProxyRender)))
-	mux.Handle("/api/v1/traffic", middleware.AuthRequired(s.auth, http.HandlerFunc(s.handleTraffic)))
+	mux.Handle("/api/v1/domains", s.authed(http.HandlerFunc(s.handleDomains)))
+	mux.Handle("/api/v1/domains/", s.authed(http.HandlerFunc(s.handleDomainItem)))
+	mux.Handle("/api/v1/certificates", s.authed(http.HandlerFunc(s.handleCertificates)))
+	mux.Handle("/api/v1/certificates/", s.authed(http.HandlerFunc(s.handleCertificateItem)))
+	mux.Handle("/api/v1/proxy-rules", s.authed(http.HandlerFunc(s.handleProxyRules)))
+	mux.Handle("/api/v1/proxy-rules/", s.authed(http.HandlerFunc(s.handleProxyRuleItem)))
+	mux.Handle("/api/v1/proxy/providers", s.authed(http.HandlerFunc(s.handleProxyProviders)))
+	mux.Handle("/api/v1/proxy/render", s.authed(http.HandlerFunc(s.handleProxyRender)))
+	mux.Handle("/api/v1/traffic", s.authed(http.HandlerFunc(s.handleTraffic)))
 	mux.HandleFunc("/api/v1/nodes/{id}/traffic", s.handleNodeTraffic)
 }
 
@@ -65,7 +73,7 @@ func (s *Server) handleDomains(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, http.StatusOK, result)
 	case http.MethodPost:
-		if !canManageProxy(principal.Role) {
+		if !canManageProxy(r.Context(), principal) {
 			writeError(w, http.StatusForbidden, "forbidden", "insufficient role")
 			return
 		}
@@ -105,7 +113,7 @@ func (s *Server) handleDomainItem(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, http.StatusOK, item)
 	case http.MethodPut:
-		if !canManageProxy(principal.Role) {
+		if !canManageProxy(r.Context(), principal) {
 			writeError(w, http.StatusForbidden, "forbidden", "insufficient role")
 			return
 		}
@@ -121,7 +129,7 @@ func (s *Server) handleDomainItem(w http.ResponseWriter, r *http.Request) {
 		s.reloadProxy(r)
 		writeJSON(w, http.StatusOK, item)
 	case http.MethodDelete:
-		if !canManageProxy(principal.Role) {
+		if !canManageProxy(r.Context(), principal) {
 			writeError(w, http.StatusForbidden, "forbidden", "insufficient role")
 			return
 		}
@@ -156,7 +164,7 @@ func (s *Server) handleCertificates(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, http.StatusOK, result)
 	case http.MethodPost:
-		if !canManageCertificates(principal.Role) {
+		if !canManageCertificates(r.Context(), principal) {
 			writeError(w, http.StatusForbidden, "forbidden", "certificate administrator role required")
 			return
 		}
@@ -221,7 +229,7 @@ func (s *Server) handleCertificateItem(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, http.StatusOK, item)
 	case action == "" && r.Method == http.MethodDelete:
-		if !canManageCertificates(principal.Role) {
+		if !canManageCertificates(r.Context(), principal) {
 			writeError(w, http.StatusForbidden, "forbidden", "certificate administrator role required")
 			return
 		}
@@ -232,7 +240,7 @@ func (s *Server) handleCertificateItem(w http.ResponseWriter, r *http.Request) {
 		s.reloadProxy(r)
 		w.WriteHeader(http.StatusNoContent)
 	case action == "renew" && r.Method == http.MethodPost:
-		if !canManageCertificates(principal.Role) {
+		if !canManageCertificates(r.Context(), principal) {
 			writeError(w, http.StatusForbidden, "forbidden", "certificate administrator role required")
 			return
 		}
@@ -243,7 +251,7 @@ func (s *Server) handleCertificateItem(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, http.StatusAccepted, map[string]any{"id": item.ID, "status": "pending"})
 	case action == "revoke" && r.Method == http.MethodPost:
-		if !canManageCertificates(principal.Role) {
+		if !canManageCertificates(r.Context(), principal) {
 			writeError(w, http.StatusForbidden, "forbidden", "certificate administrator role required")
 			return
 		}
@@ -281,7 +289,7 @@ func (s *Server) handleProxyRules(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, http.StatusOK, result)
 	case http.MethodPost:
-		if !canManageProxy(principal.Role) {
+		if !canManageProxy(r.Context(), principal) {
 			writeError(w, http.StatusForbidden, "forbidden", "insufficient role")
 			return
 		}
@@ -329,7 +337,7 @@ func (s *Server) handleProxyRuleItem(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, http.StatusOK, item)
 	case http.MethodPut:
-		if !canManageProxy(principal.Role) {
+		if !canManageProxy(r.Context(), principal) {
 			writeError(w, http.StatusForbidden, "forbidden", "insufficient role")
 			return
 		}
@@ -353,7 +361,7 @@ func (s *Server) handleProxyRuleItem(w http.ResponseWriter, r *http.Request) {
 		s.reloadProxy(r)
 		writeJSON(w, http.StatusOK, item)
 	case http.MethodDelete:
-		if !canManageProxy(principal.Role) {
+		if !canManageProxy(r.Context(), principal) {
 			writeError(w, http.StatusForbidden, "forbidden", "insufficient role")
 			return
 		}
@@ -408,7 +416,7 @@ func (s *Server) handleProxyRender(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	principal, ok := middleware.PrincipalFromContext(r.Context())
-	if !ok || !auth.RoleAllowed(principal.Role, auth.RolePlatformAdmin, auth.RoleTenantAdmin) {
+	if !ok || !roleAllowed(r.Context(), principal, auth.RolePlatformAdmin, auth.RoleTenantAdmin) {
 		writeError(w, http.StatusForbidden, "forbidden", "tenant administrator role required")
 		return
 	}
@@ -521,10 +529,10 @@ func (s *Server) decodeRequestArray(w http.ResponseWriter, r *http.Request, dst 
 	return true
 }
 
-func canManageProxy(role string) bool {
-	return auth.RoleAllowed(role, auth.RolePlatformAdmin, auth.RoleTenantAdmin, auth.RoleOps)
+func canManageProxy(ctx context.Context, principal middleware.Principal) bool {
+	return roleAllowed(ctx, principal, auth.RolePlatformAdmin, auth.RoleTenantAdmin, auth.RoleOps)
 }
 
-func canManageCertificates(role string) bool {
-	return auth.RoleAllowed(role, auth.RolePlatformAdmin, auth.RoleTenantAdmin)
+func canManageCertificates(ctx context.Context, principal middleware.Principal) bool {
+	return roleAllowed(ctx, principal, auth.RolePlatformAdmin, auth.RoleTenantAdmin)
 }

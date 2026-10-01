@@ -66,19 +66,22 @@ func (c *Client) Do(ctx context.Context, method, path string, input, output any)
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		var envelope struct {
-			Error   string `json:"error"`
-			Message string `json:"message"`
+			Error   json.RawMessage `json:"error"`
+			Message string          `json:"message"`
 		}
 		_ = json.Unmarshal(payload, &envelope)
-		message := envelope.Message
+		code, message := parseErrorEnvelope(envelope.Error, envelope.Message)
 		if message == "" {
 			message = strings.TrimSpace(string(payload))
 		}
-		if envelope.Error == "" {
-			envelope.Error = http.StatusText(response.StatusCode)
+		if code == "" {
+			code = http.StatusText(response.StatusCode)
 		}
 		message = secretPattern.ReplaceAllString(message, `${1}***`)
-		return &Error{Status: response.StatusCode, Code: envelope.Error, Message: message}
+		message = embeddedSecretPattern.ReplaceAllStringFunc(message, func(value string) string {
+			return value[:8] + "…"
+		})
+		return &Error{Status: response.StatusCode, Code: code, Message: message}
 	}
 	if output != nil && len(payload) > 0 {
 		if err := json.Unmarshal(payload, output); err != nil {
@@ -88,4 +91,23 @@ func (c *Client) Do(ctx context.Context, method, path string, input, output any)
 	return nil
 }
 
-var secretPattern = regexp.MustCompile(`(?i)("?(?:private_key|agent_token|network_secret)"?\s*[:=]\s*)("[^"]*"|\S+)`)
+func parseErrorEnvelope(raw json.RawMessage, fallback string) (string, string) {
+	if len(raw) == 0 {
+		return "", fallback
+	}
+	var object struct {
+		Code    string `json:"code"`
+		Message string `json:"message"`
+	}
+	if err := json.Unmarshal(raw, &object); err == nil {
+		return object.Code, object.Message
+	}
+	var code string
+	if err := json.Unmarshal(raw, &code); err == nil {
+		return code, fallback
+	}
+	return "", fallback
+}
+
+var secretPattern = regexp.MustCompile(`(?i)("?(?:private_key|agent_token|network_secret|refresh_token)"?\s*[:=]\s*)("[^"]*"|\S+)`)
+var embeddedSecretPattern = regexp.MustCompile(`(umpp_[A-Za-z0-9_-]{20,})`)

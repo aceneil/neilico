@@ -13,6 +13,22 @@ export interface AuthResponse {
   user: AuthUser
 }
 
+export interface APIToken {
+  id: string
+  name: string
+  token_prefix: string
+  scopes: string[]
+  expires_at?: string | null
+  last_used_at?: string | null
+  revoked_at?: string | null
+}
+
+export interface APITokenCreateResult {
+  token: string
+  notice: string
+  api_token: APIToken
+}
+
 export interface Tenant {
   id: string
   name: string

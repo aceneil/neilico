@@ -1278,3 +1278,14 @@ pre {
 [data-theme='dark'] .certificate-row--critical > td {
   background: rgba(255, 77, 79, 0.15) !important;
 }
+
+.token-result {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.token-result .ant-input {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  word-break: break-all;
+}

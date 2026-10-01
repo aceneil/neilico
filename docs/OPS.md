@@ -78,6 +78,38 @@ Chart 的 `values.yaml` 只包含 `CHANGE_ME` 占位符。生产优先设置 `se
 - PostgreSQL 备份采用托管快照或 `pg_dump`，升级前同时备份 Secret/TLS/Agent state。卸载不会自动删除开发 StatefulSet PVC。
 - relay 是占位实现，不是 UMPP 中继数据面；不要把 UDP 3478 当作已实现 TURN。
 
+## API Token 签发、轮换与泄露应急
+
+### 日常签发
+
+1. 使用 platform_admin/tenant_admin 登录 Dashboard，在「用户与权限 → API Token」创建；scope 遵循最小权限，脚本只读时不要勾选 `*:write`。
+2. CLI 等价操作：`umppctl token create --name=ci --scopes=nodes:read --expires-in-days=90`。完整 Token 只打印一次，立即写入 secrets manager；凭据文件 `~/.umppctl/config.yaml` 权限保持 0600。
+3. 列表只显示 `token_prefix + "…"`。不要把 Token 传入命令行历史、工单、聊天、审计 detail 或日志；CI 用 masked secret/environment。
+4. 为长期服务设置 `expires_in_days`。无过期时间只用于受控服务账号，并纳入定期轮换。
+
+### 撤销与轮换
+
+```bash
+umppctl token list
+umppctl token revoke --id <token-id>
+umppctl token create --name=ci-next --scopes=nodes:read --expires-in-days=90
+# 或在 Dashboard/API 使用 rotate：旧 Token 立即失效，新 Token 只显示一次。
+```
+
+撤销是幂等的：重复 DELETE 返回 200 且 `already_revoked=true`。轮换会在同一事务中撤销旧行并创建新行；旧明文立即返回 `401 token_revoked`。`api_tokens.revoked_at` 保留审计线索，不物理删除。
+
+### 泄露应急
+
+1. **立即撤销**对应 Token；若不确定 ID，按 `token_prefix` 在 Dashboard 列表定位。不要尝试从哈希还原明文。
+2. 在 secrets manager 轮换所有引用，检查 `api_token.create/revoke/rotate` 审计、`last_used_ip`、相关资源审计和反代日志。审计/日志只保留前 8 字符，可据此关联但不会泄露明文。
+3. 若 Token 可能有 `nodes:write/networks:write`，检查节点注册、密钥轮换、ACL/路由和配置版本；必要时轮换节点密钥并撤销异常配置。
+4. 若 `tokens:write/admin` 泄露，审计该 Token 创建的所有子 Token 并逐一撤销；检查用户/租户/relay 变更。完成后从最小权限新 Token 恢复自动化。
+5. 保存事件时间线、Token ID/prefix、影响租户和处置记录。不要在事件报告中粘贴完整 Token、JWT、密码或私钥。
+
+### 限流与容量
+
+`ratelimit.enabled/rps/burst` 默认 `true/20/40`，按 API Token 或 JWT user 独立计数。单实例内存实现在重启后重新填满；多副本各自限流，不提供集群共享额度。`/healthz`、`/metrics` 与 ACME HTTP-01 豁免。持续 429 时先降低客户端并发/增加退避，再评估提高 `rps` 或 `burst`，不要关闭审计。
+
 ## 备份与恢复
 
 ```bash

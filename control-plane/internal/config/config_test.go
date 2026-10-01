@@ -104,6 +104,7 @@ func clearEnvironment(t *testing.T) {
 		"UMPP_AUTH_JWT_SECRET", "UMPP_AUTH_ACCESS_TTL", "UMPP_AUTH_REFRESH_TTL",
 		"UMPP_BOOTSTRAP_ADMIN_EMAIL", "UMPP_BOOTSTRAP_ADMIN_PASSWORD", "UMPP_BOOTSTRAP_DEFAULT_TENANT",
 		"UMPP_NODE_HEARTBEAT_TIMEOUT", "UMPP_LOG_LEVEL", "UMPP_LOG_FORMAT",
+		"UMPP_RATELIMIT_ENABLED", "UMPP_RATELIMIT_RPS", "UMPP_RATELIMIT_BURST",
 		"UMPP_PROXY_ENABLED", "UMPP_PROXY_KIND", "UMPP_PROXY_LISTEN",
 		"UMPP_NPS_CONFIG_PATH", "UMPP_NPS_BINARY_PATH", "UMPP_NPS_PID_FILE", "UMPP_NPS_RELOAD_STRATEGY",
 	}
@@ -115,5 +116,34 @@ func clearEnvironment(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
+	}
+}
+
+func TestRateLimitDefaultsEnvironmentAndValidation(t *testing.T) {
+	clearEnvironment(t)
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte("database:\n  driver: sqlite\n  dsn: file:test\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.RateLimit.Enabled || cfg.RateLimit.RPS != 20 || cfg.RateLimit.Burst != 40 {
+		t.Fatalf("unexpected rate limit defaults: %#v", cfg.RateLimit)
+	}
+	t.Setenv("UMPP_RATELIMIT_ENABLED", "false")
+	t.Setenv("UMPP_RATELIMIT_RPS", "3.5")
+	t.Setenv("UMPP_RATELIMIT_BURST", "7")
+	cfg, err = Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.RateLimit.Enabled || cfg.RateLimit.RPS != 3.5 || cfg.RateLimit.Burst != 7 {
+		t.Fatalf("rate limit environment override failed: %#v", cfg.RateLimit)
+	}
+	cfg.RateLimit.RPS = 0
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("Validate() accepted zero rate limit")
 	}
 }

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -15,11 +16,11 @@ import (
 )
 
 func (s *Server) registerM4B(mux *http.ServeMux) {
-	mux.Handle("/api/v1/audit-logs", middleware.AuthRequired(s.auth, http.HandlerFunc(s.handleAuditLogs)))
-	mux.Handle("/api/v1/nodes/{id}/metrics", middleware.AuthRequired(s.auth, http.HandlerFunc(s.handleNodeMetrics)))
-	mux.Handle("/api/v1/relay-servers", middleware.AuthRequired(s.auth, http.HandlerFunc(s.handleRelayServers)))
-	mux.Handle("/api/v1/relay-servers/{id}", middleware.AuthRequired(s.auth, http.HandlerFunc(s.handleRelayServerItem)))
-	mux.Handle("/api/v1/networks/{id}/status", middleware.AuthRequired(s.auth, http.HandlerFunc(s.handleNetworkStatus)))
+	mux.Handle("/api/v1/audit-logs", s.authed(http.HandlerFunc(s.handleAuditLogs)))
+	mux.Handle("/api/v1/nodes/{id}/metrics", s.authed(http.HandlerFunc(s.handleNodeMetrics)))
+	mux.Handle("/api/v1/relay-servers", s.authed(http.HandlerFunc(s.handleRelayServers)))
+	mux.Handle("/api/v1/relay-servers/{id}", s.authed(http.HandlerFunc(s.handleRelayServerItem)))
+	mux.Handle("/api/v1/networks/{id}/status", s.authed(http.HandlerFunc(s.handleNetworkStatus)))
 }
 
 func (s *Server) handleAuditLogs(w http.ResponseWriter, r *http.Request) {
@@ -137,7 +138,7 @@ func (s *Server) handleRelayServers(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, http.StatusOK, result)
 	case http.MethodPost:
-		if !canManageRelayServers(principal.Role) {
+		if !canManageRelayServers(r.Context(), principal) {
 			writeError(w, http.StatusForbidden, "forbidden", "insufficient role")
 			return
 		}
@@ -162,7 +163,7 @@ func (s *Server) handleRelayServerItem(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "unauthorized", "valid access token required")
 		return
 	}
-	if !canManageRelayServers(principal.Role) {
+	if !canManageRelayServers(r.Context(), principal) {
 		writeError(w, http.StatusForbidden, "forbidden", "insufficient role")
 		return
 	}
@@ -215,8 +216,8 @@ func (s *Server) handleNetworkStatus(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, result)
 }
 
-func canManageRelayServers(role string) bool {
-	return role == auth.RolePlatformAdmin || role == auth.RoleTenantAdmin
+func canManageRelayServers(ctx context.Context, principal middleware.Principal) bool {
+	return roleAllowed(ctx, principal, auth.RolePlatformAdmin, auth.RoleTenantAdmin)
 }
 
 func parseOptionalRFC3339(w http.ResponseWriter, values url.Values, name string) (*time.Time, bool) {

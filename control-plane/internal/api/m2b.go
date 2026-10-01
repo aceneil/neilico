@@ -23,21 +23,21 @@ import (
 )
 
 func (s *Server) registerM2B(mux *http.ServeMux) {
-	mux.Handle("/api/v1/networks", middleware.AuthRequired(s.auth, http.HandlerFunc(s.handleNetworks)))
-	mux.Handle("/api/v1/networks/{id}", middleware.AuthRequired(s.auth, http.HandlerFunc(s.handleNetworkItem)))
-	mux.Handle("/api/v1/networks/{id}/members", middleware.AuthRequired(s.auth, http.HandlerFunc(s.handleNetworkMembers)))
-	mux.Handle("/api/v1/networks/{id}/members/{node_id}", middleware.AuthRequired(s.auth, http.HandlerFunc(s.handleNetworkMemberItem)))
-	mux.Handle("/api/v1/networks/{id}/acl", middleware.AuthRequired(s.auth, http.HandlerFunc(s.handleNetworkACL)))
-	mux.Handle("/api/v1/networks/{id}/acl/{rule_id}", middleware.AuthRequired(s.auth, http.HandlerFunc(s.handleNetworkACLItem)))
-	mux.Handle("/api/v1/networks/{id}/routes", middleware.AuthRequired(s.auth, http.HandlerFunc(s.handleNetworkRoutes)))
-	mux.Handle("/api/v1/networks/{id}/routes/{route_id}", middleware.AuthRequired(s.auth, http.HandlerFunc(s.handleNetworkRouteItem)))
-	mux.Handle("/api/v1/networks/{id}/mesh/export", middleware.AuthRequired(s.auth, http.HandlerFunc(s.handleMeshExport)))
+	mux.Handle("/api/v1/networks", s.authed(http.HandlerFunc(s.handleNetworks)))
+	mux.Handle("/api/v1/networks/{id}", s.authed(http.HandlerFunc(s.handleNetworkItem)))
+	mux.Handle("/api/v1/networks/{id}/members", s.authed(http.HandlerFunc(s.handleNetworkMembers)))
+	mux.Handle("/api/v1/networks/{id}/members/{node_id}", s.authed(http.HandlerFunc(s.handleNetworkMemberItem)))
+	mux.Handle("/api/v1/networks/{id}/acl", s.authed(http.HandlerFunc(s.handleNetworkACL)))
+	mux.Handle("/api/v1/networks/{id}/acl/{rule_id}", s.authed(http.HandlerFunc(s.handleNetworkACLItem)))
+	mux.Handle("/api/v1/networks/{id}/routes", s.authed(http.HandlerFunc(s.handleNetworkRoutes)))
+	mux.Handle("/api/v1/networks/{id}/routes/{route_id}", s.authed(http.HandlerFunc(s.handleNetworkRouteItem)))
+	mux.Handle("/api/v1/networks/{id}/mesh/export", s.authed(http.HandlerFunc(s.handleMeshExport)))
 
-	mux.Handle("/api/v1/nodes/{id}/keys/rotate", middleware.AuthRequired(s.auth, http.HandlerFunc(s.handleNodeKeyRotate)))
+	mux.Handle("/api/v1/nodes/{id}/keys/rotate", s.authed(http.HandlerFunc(s.handleNodeKeyRotate)))
 	mux.HandleFunc("/api/v1/nodes/{id}/network-report", s.handleNetworkReport)
 	mux.HandleFunc("/api/v1/agent/config", s.handleAgentConfig)
-	mux.Handle("/api/v1/configs", middleware.AuthRequired(s.auth, http.HandlerFunc(s.handleConfigVersions)))
-	mux.Handle("/api/v1/configs/{target_type}/{target_id}/rollback", middleware.AuthRequired(s.auth, http.HandlerFunc(s.handleConfigRollback)))
+	mux.Handle("/api/v1/configs", s.authed(http.HandlerFunc(s.handleConfigVersions)))
+	mux.Handle("/api/v1/configs/{target_type}/{target_id}/rollback", s.authed(http.HandlerFunc(s.handleConfigRollback)))
 }
 
 func (s *Server) handleNetworks(w http.ResponseWriter, r *http.Request) {
@@ -55,7 +55,7 @@ func (s *Server) handleNetworks(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, http.StatusOK, list)
 	case http.MethodPost:
-		if !canManageNetworks(principal.Role) {
+		if !canManageNetworks(r.Context(), principal) {
 			writeError(w, http.StatusForbidden, "forbidden", "insufficient role")
 			return
 		}
@@ -97,7 +97,7 @@ func (s *Server) handleNetworkItem(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, http.StatusOK, item)
 	case http.MethodPut:
-		if !canManageNetworks(principal.Role) {
+		if !canManageNetworks(r.Context(), principal) {
 			writeError(w, http.StatusForbidden, "forbidden", "insufficient role")
 			return
 		}
@@ -116,7 +116,7 @@ func (s *Server) handleNetworkItem(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, http.StatusOK, item)
 	case http.MethodDelete:
-		if !canManageNetworks(principal.Role) {
+		if !canManageNetworks(r.Context(), principal) {
 			writeError(w, http.StatusForbidden, "forbidden", "insufficient role")
 			return
 		}
@@ -159,7 +159,7 @@ func (s *Server) handleNetworkMembers(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, http.StatusOK, list)
 	case http.MethodPost:
-		if !canManageNetworks(principal.Role) {
+		if !canManageNetworks(r.Context(), principal) {
 			writeError(w, http.StatusForbidden, "forbidden", "insufficient role")
 			return
 		}
@@ -192,7 +192,7 @@ func (s *Server) handleNetworkMemberItem(w http.ResponseWriter, r *http.Request)
 		s.methodNotAllowed(w, http.MethodDelete)
 		return
 	}
-	if !canManageNetworks(principal.Role) {
+	if !canManageNetworks(r.Context(), principal) {
 		writeError(w, http.StatusForbidden, "forbidden", "insufficient role")
 		return
 	}
@@ -238,7 +238,7 @@ func (s *Server) handleNetworkACL(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, http.StatusOK, list)
 	case http.MethodPost:
-		if !canManageNetworks(principal.Role) {
+		if !canManageNetworks(r.Context(), principal) {
 			writeError(w, http.StatusForbidden, "forbidden", "insufficient role")
 			return
 		}
@@ -271,7 +271,7 @@ func (s *Server) handleNetworkACLItem(w http.ResponseWriter, r *http.Request) {
 		s.methodNotAllowed(w, http.MethodDelete)
 		return
 	}
-	if !canManageNetworks(principal.Role) {
+	if !canManageNetworks(r.Context(), principal) {
 		writeError(w, http.StatusForbidden, "forbidden", "insufficient role")
 		return
 	}
@@ -313,7 +313,7 @@ func (s *Server) handleNetworkRoutes(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, http.StatusOK, list)
 	case http.MethodPost:
-		if !canManageNetworks(principal.Role) {
+		if !canManageNetworks(r.Context(), principal) {
 			writeError(w, http.StatusForbidden, "forbidden", "insufficient role")
 			return
 		}
@@ -352,7 +352,7 @@ func (s *Server) handleNetworkRouteItem(w http.ResponseWriter, r *http.Request) 
 	}
 	switch r.Method {
 	case http.MethodPut:
-		if !canManageNetworks(principal.Role) {
+		if !canManageNetworks(r.Context(), principal) {
 			writeError(w, http.StatusForbidden, "forbidden", "insufficient role")
 			return
 		}
@@ -371,7 +371,7 @@ func (s *Server) handleNetworkRouteItem(w http.ResponseWriter, r *http.Request) 
 		}
 		writeJSON(w, http.StatusOK, item)
 	case http.MethodDelete:
-		if !canManageNetworks(principal.Role) {
+		if !canManageNetworks(r.Context(), principal) {
 			writeError(w, http.StatusForbidden, "forbidden", "insufficient role")
 			return
 		}
@@ -391,7 +391,7 @@ func (s *Server) handleNetworkRouteItem(w http.ResponseWriter, r *http.Request) 
 
 func (s *Server) handleMeshExport(w http.ResponseWriter, r *http.Request) {
 	principal, ok := middleware.PrincipalFromContext(r.Context())
-	if !ok || !auth.RoleAllowed(principal.Role, auth.RolePlatformAdmin, auth.RoleTenantAdmin) {
+	if !ok || !roleAllowed(r.Context(), principal, auth.RolePlatformAdmin, auth.RoleTenantAdmin) {
 		writeError(w, http.StatusForbidden, "forbidden", "tenant administrator role required")
 		return
 	}
@@ -423,7 +423,7 @@ func (s *Server) handleNodeKeyRotate(w http.ResponseWriter, r *http.Request) {
 		s.methodNotAllowed(w, http.MethodPost)
 		return
 	}
-	if !auth.CanManageNodes(principal.Role) {
+	if !roleAllowed(r.Context(), principal, auth.RolePlatformAdmin, auth.RoleTenantAdmin, auth.RoleOps) {
 		writeError(w, http.StatusForbidden, "forbidden", "insufficient role")
 		return
 	}
@@ -567,7 +567,7 @@ func (s *Server) handleAgentConfig(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleConfigVersions(w http.ResponseWriter, r *http.Request) {
 	principal, ok := middleware.PrincipalFromContext(r.Context())
-	if !ok || !auth.RoleAllowed(principal.Role, auth.RolePlatformAdmin, auth.RoleTenantAdmin) {
+	if !ok || !roleAllowed(r.Context(), principal, auth.RolePlatformAdmin, auth.RoleTenantAdmin) {
 		writeError(w, http.StatusForbidden, "forbidden", "tenant administrator role required")
 		return
 	}
@@ -594,7 +594,7 @@ func (s *Server) handleConfigVersions(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleConfigRollback(w http.ResponseWriter, r *http.Request) {
 	principal, ok := middleware.PrincipalFromContext(r.Context())
-	if !ok || !auth.RoleAllowed(principal.Role, auth.RolePlatformAdmin, auth.RoleTenantAdmin) {
+	if !ok || !roleAllowed(r.Context(), principal, auth.RolePlatformAdmin, auth.RoleTenantAdmin) {
 		writeError(w, http.StatusForbidden, "forbidden", "tenant administrator role required")
 		return
 	}
@@ -700,6 +700,6 @@ func (s *Server) pathID(w http.ResponseWriter, raw, label string) (uuid.UUID, bo
 	return id, true
 }
 
-func canManageNetworks(role string) bool {
-	return auth.RoleAllowed(role, auth.RolePlatformAdmin, auth.RoleTenantAdmin, auth.RoleOps)
+func canManageNetworks(ctx context.Context, principal middleware.Principal) bool {
+	return roleAllowed(ctx, principal, auth.RolePlatformAdmin, auth.RoleTenantAdmin, auth.RoleOps)
 }

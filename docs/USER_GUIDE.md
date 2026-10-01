@@ -141,7 +141,34 @@ curl -v -H 'Host: nas.example.com' http://127.0.0.1:18081/
 
 应返回内网 Web 内容。HTTPS 可使用 ACME 自动签发，或在「证书」手工导入匹配 PEM 后绑定域名；客户端需信任完整证书链。TLS 请求会向目标设置 `X-Forwarded-Proto: https`，ACL（IP 白名单、Basic Auth、require_jwt）与 HTTP 模式保持一致。
 
-## 6. 常见问题
+## 6. 脚本自动化与 API Token
+
+长期脚本不要保存短期 JWT 或管理员密码。由管理员在 Dashboard「用户与权限 → API Token」按最小权限创建，或使用 CLI：
+
+```bash
+umppctl token create --name=backup-read --scopes=nodes:read --expires-in-days=90
+# 完整 token 只显示一次；立即写入 secrets manager，不写入 shell history。
+umppctl token list                 # 只显示 umpp_xxxxxxx… 前缀
+umppctl token revoke --id <id>
+```
+
+在 CI 中通过 secret/environment 注入，然后直接写 CLI 凭据（文件仍为 0600）：
+
+```bash
+umppctl --server https://umpp.example.com login --token "$UMPP_API_TOKEN"
+umppctl node list
+```
+
+API 调用示例：
+
+```bash
+curl -fsS https://umpp.example.com/api/v1/nodes \
+  -H "Authorization: Bearer $UMPP_API_TOKEN"
+```
+
+`admin` 等价全部权限；其余 Token 只能调用匹配的 `nodes/networks/proxy/certs/tokens/alerts` scope。只读 Token 调写接口返回 `403 insufficient_scope`。Token 有默认 20 rps/40 burst 的独立额度，收到 `429 rate_limited` 时读取 `Retry-After` 并退避。完整 Token 泄露时立即按 `docs/OPS.md` 撤销、轮换引用并审计 `last_used_ip`。
+
+## 7. 常见问题
 
 ### NAT 不通、节点一直 offline
 

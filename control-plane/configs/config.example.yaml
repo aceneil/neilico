@@ -14,6 +14,11 @@ bootstrap:
   default_tenant: "default"
 node:
   heartbeat_timeout: 60s
+ratelimit:
+  enabled: true
+  rps: 20
+  burst: 40
+
 log:
   level: info
   format: json

@@ -132,7 +132,12 @@ func run() error {
 			ChallengeSolver: challengeStore,
 		},
 		ChallengeHandler: challengeStore.Handler(),
-		Alerts:           alertOptions(cfg),
+		RateLimit: api.RateLimitOptions{
+			Enabled: cfg.RateLimit.Enabled,
+			RPS:     cfg.RateLimit.RPS,
+			Burst:   cfg.RateLimit.Burst,
+		},
+		Alerts: alertOptions(cfg),
 	})
 	go handler.StartCertificateLifecycle(ctx)
 	go handler.StartAlertEvaluation(ctx)

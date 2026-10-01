@@ -18,7 +18,10 @@ Usage:
   umppctl [global options] <command> [command options]
 
 Commands:
-  login                 Authenticate and save credentials
+  login                 Authenticate with password or API token
+  token list            List API tokens (masked)
+  token create          Create an API token (shown once)
+  token revoke          Revoke an API token
   node list             List nodes
   node register         Register a node
   network create        Create a virtual network
@@ -59,6 +62,8 @@ func (a *App) Run(ctx context.Context, args []string) error {
 	switch command {
 	case "login":
 		return a.login(ctx, &credentials, configPath, rest)
+	case "token":
+		return a.token(ctx, client, rest)
 	case "node":
 		return a.node(ctx, client, &credentials, configPath, rest)
 	case "network":

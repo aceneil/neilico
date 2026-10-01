@@ -42,6 +42,9 @@ type Server struct {
 	traffic       *service.TrafficService
 	networks      *service.NetworkService
 	configs       *configservice.Manager
+	apiTokens     *service.APITokenService
+	tokenUsage    *middleware.APITokenUsageTracker
+	rateLimiter   *middleware.Limiter
 	alertEngine   *alertservice.Engine
 	metrics       *metrics.Metrics
 	logger        *slog.Logger
@@ -139,6 +142,7 @@ func NewWithProxy(
 		traffic:       service.NewTrafficService(db),
 		networks:      service.NewNetworkService(db, certificateCrypto),
 		configs:       configManager,
+		apiTokens:     service.NewAPITokenService(db),
 		alertEngine:   alertEngine,
 		metrics:       promMetrics,
 		logger:        logger,
@@ -146,6 +150,10 @@ func NewWithProxy(
 		proxy:         proxyProvider,
 		proxyOpts:     opts,
 		startedAt:     time.Now().UTC(),
+	}
+	server.tokenUsage = middleware.NewAPITokenUsageTracker(db, logger, middleware.DefaultAPITokenUsageInterval)
+	if opts.RateLimit.Enabled && opts.RateLimit.RPS > 0 && opts.RateLimit.Burst > 0 {
+		server.rateLimiter = middleware.NewLimiter(opts.RateLimit.RPS, opts.RateLimit.Burst)
 	}
 	mux := http.NewServeMux()
 	server.registerM2A(mux)
@@ -158,15 +166,16 @@ func NewWithProxy(
 	mux.HandleFunc("/api/v1/auth/refresh", server.handleRefresh)
 
 	server.registerAlerts(mux)
+	server.registerAPITokens(mux)
 	mux.Handle("/api/v1/tenants", server.requireRole(server.handleTenants, auth.RolePlatformAdmin))
 	mux.Handle("/api/v1/tenants/", server.requireRole(server.handleTenantItem, auth.RolePlatformAdmin))
-	mux.Handle("/api/v1/users", middleware.AuthRequired(authManager, http.HandlerFunc(server.handleUsers)))
-	mux.Handle("/api/v1/users/", middleware.AuthRequired(authManager, http.HandlerFunc(server.handleUserItem)))
+	mux.Handle("/api/v1/users", server.authed(http.HandlerFunc(server.handleUsers)))
+	mux.Handle("/api/v1/users/", server.authed(http.HandlerFunc(server.handleUserItem)))
 
 	mux.Handle("/api/v1/nodes/register", server.requireRole(server.handleNodeRegister, auth.RolePlatformAdmin, auth.RoleTenantAdmin, auth.RoleOps))
-	mux.Handle("/api/v1/nodes", middleware.AuthRequired(authManager, http.HandlerFunc(server.handleNodes)))
+	mux.Handle("/api/v1/nodes", server.authed(http.HandlerFunc(server.handleNodes)))
 	mux.HandleFunc("/api/v1/nodes/{id}/heartbeat", server.handleNodeHeartbeatRoute)
-	mux.Handle("/api/v1/nodes/{id}", middleware.AuthRequired(authManager, http.HandlerFunc(server.handleNodeItem)))
+	mux.Handle("/api/v1/nodes/{id}", server.authed(http.HandlerFunc(server.handleNodeItem)))
 	mux.HandleFunc("/api/v1/", server.handleAPIFallback)
 
 	var handler http.Handler = mux
@@ -175,8 +184,19 @@ func NewWithProxy(
 	return &Handler{Handler: handler, server: server}
 }
 
+func (s *Server) authed(next http.Handler) http.Handler {
+	return middleware.AuthRequired(s.auth, s.db, s.tokenUsage, middleware.RateLimit(s.rateLimiter, next))
+}
+
+func roleAllowed(ctx context.Context, principal middleware.Principal, roles ...string) bool {
+	if principal.AuthMethod == auth.AuthMethodAPIToken {
+		return middleware.ScopeAuthorized(ctx)
+	}
+	return auth.RoleAllowed(principal.Role, roles...)
+}
+
 func (s *Server) requireRole(next http.HandlerFunc, roles ...string) http.Handler {
-	return middleware.AuthRequired(s.auth, middleware.RequireRole(roles, next))
+	return s.authed(middleware.RequireRole(roles, next))
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
@@ -360,7 +380,7 @@ func (s *Server) handleUsers(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, http.StatusOK, map[string]any{"items": users, "total": total, "page": page, "page_size": pageSize})
 	case http.MethodPost:
-		if !auth.CanManageUsers(principal.Role) {
+		if !roleAllowed(r.Context(), principal, auth.RolePlatformAdmin, auth.RoleTenantAdmin) {
 			writeError(w, http.StatusForbidden, "forbidden", "insufficient role")
 			return
 		}
@@ -404,7 +424,7 @@ func (s *Server) handleUserItem(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, http.StatusOK, user)
 	case http.MethodPut:
-		if !auth.CanManageUsers(principal.Role) {
+		if !roleAllowed(r.Context(), principal, auth.RolePlatformAdmin, auth.RoleTenantAdmin) {
 			writeError(w, http.StatusForbidden, "forbidden", "insufficient role")
 			return
 		}
@@ -423,7 +443,7 @@ func (s *Server) handleUserItem(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, http.StatusOK, user)
 	case http.MethodDelete:
-		if !auth.CanManageUsers(principal.Role) {
+		if !roleAllowed(r.Context(), principal, auth.RolePlatformAdmin, auth.RoleTenantAdmin) {
 			writeError(w, http.StatusForbidden, "forbidden", "insufficient role")
 			return
 		}
@@ -520,7 +540,7 @@ func (s *Server) handleNodeItem(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, http.StatusOK, node)
 	case http.MethodDelete:
-		if !auth.CanManageNodes(principal.Role) {
+		if !roleAllowed(r.Context(), principal, auth.RolePlatformAdmin, auth.RoleTenantAdmin, auth.RoleOps) {
 			writeError(w, http.StatusForbidden, "forbidden", "insufficient role")
 			return
 		}
@@ -680,7 +700,13 @@ func writeJSON(w http.ResponseWriter, status int, value any) {
 }
 
 func writeError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, map[string]any{
-		"error": map[string]string{"code": code, "message": message},
-	})
+	writeErrorDetail(w, status, code, message, nil)
+}
+
+func writeErrorDetail(w http.ResponseWriter, status int, code, message string, detail map[string]any) {
+	payload := map[string]any{"code": code, "message": message}
+	if detail != nil {
+		payload["detail"] = detail
+	}
+	writeJSON(w, status, map[string]any{"error": payload})
 }

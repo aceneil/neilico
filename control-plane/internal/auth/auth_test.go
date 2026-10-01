@@ -1,6 +1,8 @@
 package auth
 
 import (
+	"reflect"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -105,5 +107,55 @@ func TestAgentTokenHash(t *testing.T) {
 	}
 	if AgentTokenEqual(hash, plain+"forged") {
 		t.Fatal("forged agent token matched")
+	}
+}
+
+func TestAPITokenFormatHashAndScopeTables(t *testing.T) {
+	plain, hash, prefix, err := GenerateAPIToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(plain, "umpp_") || len(plain) != len("umpp_")+43 {
+		t.Fatalf("unexpected API token format length=%d prefix=%t", len(plain), strings.HasPrefix(plain, "umpp_"))
+	}
+	if prefix != plain[:8] || len(hash) != 64 || strings.Contains(hash, plain) {
+		t.Fatal("API token hash or prefix mismatch")
+	}
+	if HashAPIToken(plain) != hash || RedactAPIToken(plain) != prefix+"\u2026" {
+		t.Fatal("API token hashing/redaction mismatch")
+	}
+
+	expected := map[string][]string{
+		RolePlatformAdmin: {ScopeAdmin},
+		RoleTenantAdmin: {
+			ScopeNodesRead, ScopeNodesWrite, ScopeNetworksRead, ScopeNetworksWrite,
+			ScopeProxyRead, ScopeProxyWrite, ScopeCertsRead, ScopeCertsWrite,
+			ScopeTokensRead, ScopeTokensWrite, ScopeAlertsRead, ScopeAlertsWrite,
+		},
+		RoleOps: {
+			ScopeNodesRead, ScopeNodesWrite, ScopeNetworksRead, ScopeNetworksWrite,
+			ScopeProxyRead, ScopeProxyWrite, ScopeCertsRead, ScopeCertsWrite,
+			ScopeTokensRead, ScopeAlertsRead, ScopeAlertsWrite,
+		},
+		RoleReadonly: {
+			ScopeNodesRead, ScopeNetworksRead, ScopeProxyRead,
+			ScopeCertsRead, ScopeTokensRead, ScopeAlertsRead,
+		},
+	}
+	for role, want := range expected {
+		got := ScopesForRole(role)
+		sort.Strings(want)
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("%s scopes = %#v, want %#v", role, got, want)
+		}
+	}
+	if !HasScope([]string{ScopeAdmin}, ScopeTokensWrite) {
+		t.Fatal("admin scope is not wildcard")
+	}
+	if HasScope([]string{ScopeNodesRead}, ScopeNodesWrite) {
+		t.Fatal("read scope unexpectedly granted write")
+	}
+	if missing := MissingScopes([]string{ScopeNodesRead}, []string{ScopeNodesRead, ScopeNodesWrite}); !reflect.DeepEqual(missing, []string{ScopeNodesWrite}) {
+		t.Fatalf("missing scopes = %#v", missing)
 	}
 }

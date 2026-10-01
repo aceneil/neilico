@@ -25,6 +25,9 @@ const (
 
 	TokenAccess  = "access"
 	TokenRefresh = "refresh"
+
+	AuthMethodJWT      = "jwt"
+	AuthMethodAPIToken = "api_token"
 )
 
 var ErrInvalidToken = errors.New("invalid token")

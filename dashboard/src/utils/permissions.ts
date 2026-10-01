@@ -14,6 +14,10 @@ export function canManageProxy(role: Role | null): boolean {
   return role ? writeRoles.includes(role) : false
 }
 
+export function canManageAPITokens(role: Role | null): boolean {
+  return role === 'platform_admin' || role === 'tenant_admin'
+}
+
 export function canManageUsers(role: Role | null): boolean {
   return role === 'platform_admin' || role === 'tenant_admin'
 }

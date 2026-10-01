@@ -1,26 +1,30 @@
 <script setup lang="ts">
 import { computed, reactive, ref } from 'vue'
 import {
+  CopyOutlined,
   DeleteOutlined,
   EditOutlined,
   KeyOutlined,
   PlusOutlined,
   ReloadOutlined,
-  SafetyCertificateOutlined
+  SafetyCertificateOutlined,
+  SwapOutlined
 } from '@ant-design/icons-vue'
 import { message, Modal } from 'ant-design-vue'
 import DataState from '@/components/DataState.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import { apiErrorMessage } from '@/api/http'
+import { apiTokensApi } from '@/api/api-tokens'
 import { tenantsApi } from '@/api/tenants'
 import { usersApi } from '@/api/users'
 import { useAuthStore } from '@/stores/auth'
-import { canManageUsers, isPlatformAdmin } from '@/utils/permissions'
+import { canManageAPITokens, canManageUsers, isPlatformAdmin } from '@/utils/permissions'
 import { formatTime } from '@/utils/format'
-import type { Role, Tenant, User } from '@/types/api'
+import type { APIToken, APITokenCreateResult, Role, Tenant, User } from '@/types/api'
 
 const auth = useAuthStore()
 const canWrite = computed(() => canManageUsers(auth.role))
+const canWriteTokens = computed(() => canManageAPITokens(auth.role))
 const platformAdmin = computed(() => isPlatformAdmin(auth.role))
 const activeTab = ref('users')
 const loading = ref(false)
@@ -34,6 +38,13 @@ const userOpen = ref(false)
 const tenantOpen = ref(false)
 const userEditing = ref<User | null>(null)
 const tenantEditing = ref<Tenant | null>(null)
+const tokens = ref<APIToken[]>([])
+const tokensLoading = ref(false)
+const tokenOpen = ref(false)
+const tokenSubmitting = ref(false)
+const tokenResultOpen = ref(false)
+const tokenResult = ref<APITokenCreateResult | null>(null)
+const tokenNeverExpires = ref(false)
 
 const userForm = reactive({
   tenant_id: auth.user?.tenant_id || '',
@@ -43,12 +54,32 @@ const userForm = reactive({
   status: 'active'
 })
 const tenantForm = reactive({ name: '', plan: 'free' })
+const tokenForm = reactive({
+  name: '',
+  scopes: ['nodes:read'] as string[],
+  expires_in_days: 90
+})
 
 const roleOptions = [
   { value: 'platform_admin', label: 'platform_admin · 平台管理员' },
   { value: 'tenant_admin', label: 'tenant_admin · 租户管理员' },
   { value: 'ops', label: 'ops · 运维' },
   { value: 'readonly', label: 'readonly · 只读' }
+]
+const scopeOptions = [
+  { value: 'nodes:read', label: 'nodes:read · 节点读取' },
+  { value: 'nodes:write', label: 'nodes:write · 节点管理' },
+  { value: 'networks:read', label: 'networks:read · 网络读取' },
+  { value: 'networks:write', label: 'networks:write · 网络管理' },
+  { value: 'proxy:read', label: 'proxy:read · 域名/代理读取' },
+  { value: 'proxy:write', label: 'proxy:write · 域名/代理管理' },
+  { value: 'certs:read', label: 'certs:read · 证书读取' },
+  { value: 'certs:write', label: 'certs:write · 证书管理' },
+  { value: 'tokens:read', label: 'tokens:read · Token 读取' },
+  { value: 'tokens:write', label: 'tokens:write · Token 管理' },
+  { value: 'alerts:read', label: 'alerts:read · 告警读取' },
+  { value: 'alerts:write', label: 'alerts:write · 告警评估' },
+  { value: 'admin', label: 'admin · 全部权限' }
 ]
 const roleDescriptions = [
   { role: 'platform_admin', title: '平台管理员', description: '跨租户管理、租户管理与 Agent 配置预览' },
@@ -59,19 +90,23 @@ const roleDescriptions = [
 
 async function load() {
   loading.value = true
+  tokensLoading.value = true
   error.value = ''
   try {
-    const [userData, tenantData] = await Promise.all([
+    const [userData, tenantData, tokenData] = await Promise.all([
       usersApi.list({ page: page.value, page_size: pageSize.value }),
-      platformAdmin.value ? tenantsApi.list() : Promise.resolve({ items: [], total: 0 })
+      platformAdmin.value ? tenantsApi.list() : Promise.resolve({ items: [], total: 0 }),
+      apiTokensApi.list()
     ])
     users.value = userData.items
     total.value = userData.total
     tenants.value = tenantData.items
+    tokens.value = tokenData.items
   } catch (cause) {
     error.value = apiErrorMessage(cause)
   } finally {
     loading.value = false
+    tokensLoading.value = false
   }
 }
 
@@ -121,6 +156,76 @@ function toggleUser(user: User) {
         status: nextStatus
       })
       message.success(nextStatus === 'inactive' ? '用户已停用' : '用户已启用')
+      await load()
+    }
+  })
+}
+
+function openToken() {
+  Object.assign(tokenForm, { name: '', scopes: ['nodes:read'], expires_in_days: 90 })
+  tokenNeverExpires.value = false
+  tokenOpen.value = true
+}
+
+async function saveToken() {
+  if (!tokenForm.name.trim() || tokenForm.scopes.length === 0) {
+    message.warning('请填写名称并至少选择一个 scope')
+    return
+  }
+  tokenSubmitting.value = true
+  try {
+    tokenResult.value = await apiTokensApi.create({
+      name: tokenForm.name.trim(),
+      scopes: tokenForm.scopes,
+      ...(tokenNeverExpires.value ? {} : { expires_in_days: tokenForm.expires_in_days })
+    })
+    tokenOpen.value = false
+    tokenResultOpen.value = true
+    await load()
+  } catch (cause) {
+    message.error(apiErrorMessage(cause))
+  } finally {
+    tokenSubmitting.value = false
+  }
+}
+
+async function copyToken() {
+  if (!tokenResult.value) return
+  try {
+    await navigator.clipboard.writeText(tokenResult.value.token)
+    message.success('Token 已复制到剪贴板')
+  } catch {
+    message.error('复制失败，请手动选择并复制')
+  }
+}
+
+function clearTokenResult() {
+  tokenResult.value = null
+}
+
+function revokeToken(token: APIToken) {
+  Modal.confirm({
+    title: `撤销 Token“${token.name}”？`,
+    content: `将立即失效并保留 ${token.token_prefix}… 的审计线索，此操作幂等。`,
+    okText: '撤销',
+    okType: 'danger',
+    async onOk() {
+      await apiTokensApi.revoke(token.id)
+      message.success('Token 已撤销')
+      await load()
+    }
+  })
+}
+
+async function rotateToken(token: APIToken) {
+  Modal.confirm({
+    title: `轮换 Token“${token.name}”？`,
+    content: `旧凭据 ${token.token_prefix}… 会立即失效；新 Token 只显示一次。`,
+    okText: '轮换',
+    okType: 'danger',
+    async onOk() {
+      tokenResult.value = await apiTokensApi.rotate(token.id)
+      tokenResultOpen.value = true
       await load()
     }
   })
@@ -259,14 +364,51 @@ void load()
         </a-tab-pane>
 
         <a-tab-pane key="tokens">
-          <template #tab><KeyOutlined /> API Token</template>
-          <a-result
-            status="info"
-            title="即将推出"
-            sub-title="当前 M3 控制面未提供 API Token 查询或签发接口，本页面不展示虚构令牌。"
+          <template #tab><KeyOutlined /> API Token（{{ tokens.length }}）</template>
+          <div class="tab-actions">
+            <a-button v-if="canWriteTokens" type="primary" @click="openToken"><PlusOutlined /> 创建 Token</a-button>
+          </div>
+          <a-table
+            :data-source="tokens"
+            row-key="id"
+            :loading="tokensLoading"
+            :pagination="false"
+            :scroll="{ x: 1120, y: 'calc(100vh - 380px)' }"
           >
-            <template #icon><KeyOutlined /></template>
-          </a-result>
+            <a-table-column title="名称" data-index="name" :width="220">
+              <template #default="{ record }"><strong>{{ record.name }}</strong></template>
+            </a-table-column>
+            <a-table-column title="识别前缀" data-index="token_prefix" :width="130">
+              <template #default="{ record }"><code>{{ record.token_prefix }}…</code></template>
+            </a-table-column>
+            <a-table-column title="Scopes" :width="320">
+              <template #default="{ record }">
+                <a-space wrap>
+                  <a-tag v-for="scope in record.scopes" :key="scope" color="blue">{{ scope }}</a-tag>
+                </a-space>
+              </template>
+            </a-table-column>
+            <a-table-column title="过期时间" :width="180">
+              <template #default="{ record }">{{ formatTime(record.expires_at) }}</template>
+            </a-table-column>
+            <a-table-column title="最近使用" :width="180">
+              <template #default="{ record }">{{ formatTime(record.last_used_at) }}</template>
+            </a-table-column>
+            <a-table-column title="状态" :width="110">
+              <template #default="{ record }">
+                <a-badge :status="record.revoked_at ? 'default' : 'success'" :text="record.revoked_at ? '已撤销' : '正常'" />
+              </template>
+            </a-table-column>
+            <a-table-column v-if="canWriteTokens" title="操作" :width="190">
+              <template #default="{ record }">
+                <a-space v-if="!record.revoked_at">
+                  <a-button size="small" @click="rotateToken(record)"><SwapOutlined /> 轮换</a-button>
+                  <a-button size="small" danger @click="revokeToken(record)"><DeleteOutlined /> 撤销</a-button>
+                </a-space>
+                <span v-else>—</span>
+              </template>
+            </a-table-column>
+          </a-table>
         </a-tab-pane>
       </a-tabs>
     </DataState>
@@ -297,6 +439,49 @@ void load()
           />
         </a-form-item>
       </a-form>
+    </a-modal>
+
+    <a-modal
+      v-model:open="tokenOpen"
+      title="创建 API Token"
+      :confirm-loading="tokenSubmitting"
+      ok-text="创建并显示一次"
+      @ok="saveToken"
+    >
+      <a-form layout="vertical">
+        <a-form-item label="名称" required>
+          <a-input v-model:value="tokenForm.name" placeholder="例如 ci-deploy" autocomplete="off" />
+        </a-form-item>
+        <a-form-item label="Scopes" required>
+          <a-select
+            v-model:value="tokenForm.scopes"
+            mode="multiple"
+            :options="scopeOptions"
+            option-filter-prop="label"
+            placeholder="按最小权限选择"
+          />
+        </a-form-item>
+        <a-form-item label="有效期">
+          <a-space>
+            <a-checkbox v-model:checked="tokenNeverExpires">永不过期</a-checkbox>
+            <a-input-number
+              v-if="!tokenNeverExpires"
+              v-model:value="tokenForm.expires_in_days"
+              :min="1"
+              :max="3650"
+              addon-after="天"
+            />
+          </a-space>
+        </a-form-item>
+      </a-form>
+    </a-modal>
+
+    <a-modal v-model:open="tokenResultOpen" title="Token 创建成功" :footer="null" @after-close="clearTokenResult">
+      <a-alert type="warning" show-icon message="此 token 只显示一次" :description="tokenResult?.notice" />
+      <div class="token-result">
+        <a-textarea :value="tokenResult?.token" readonly :rows="3" />
+        <a-button type="primary" @click="copyToken"><CopyOutlined /> 复制 Token</a-button>
+      </div>
     </a-modal>
 
     <a-modal v-model:open="tenantOpen" :title="tenantEditing ? '编辑租户' : '新增租户'" @ok="saveTenant">

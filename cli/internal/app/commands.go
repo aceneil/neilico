@@ -18,6 +18,27 @@ import (
 	"umpp/cli/internal/config"
 )
 
+type apiTokenItem struct {
+	ID          string   `json:"id"`
+	Name        string   `json:"name"`
+	TokenPrefix string   `json:"token_prefix"`
+	Scopes      []string `json:"scopes"`
+	ExpiresAt   *string  `json:"expires_at"`
+	LastUsedAt  *string  `json:"last_used_at"`
+	RevokedAt   *string  `json:"revoked_at"`
+}
+
+type apiTokenList struct {
+	Items []apiTokenItem `json:"items"`
+	Total int64          `json:"total"`
+}
+
+type apiTokenCreateResponse struct {
+	Token    string       `json:"token"`
+	Notice   string       `json:"notice"`
+	APIToken apiTokenItem `json:"api_token"`
+}
+
 type loginResponse struct {
 	Token        string `json:"token"`
 	RefreshToken string `json:"refresh_token"`
@@ -67,8 +88,23 @@ func (a *App) login(ctx context.Context, credentials *config.Credentials, path s
 	set := newFlagSet("login", a.Stderr)
 	email := set.String("email", "", "account email")
 	password := set.String("password", "", "account password (read from stdin when omitted)")
+	apiToken := set.String("token", "", "API token (saved directly without password login)")
 	if err := set.Parse(args); err != nil {
 		return err
+	}
+	if strings.TrimSpace(*apiToken) != "" {
+		value := strings.TrimSpace(*apiToken)
+		if !strings.HasPrefix(value, "umpp_") || len(value) < 12 {
+			return fmt.Errorf("--token must be a UMPP API token")
+		}
+		credentials.AccessToken = value
+		credentials.RefreshToken = ""
+		credentials.UserEmail = ""
+		if err := config.Save(path, *credentials); err != nil {
+			return err
+		}
+		fmt.Fprintln(a.Stdout, "API token credentials saved")
+		return nil
 	}
 	if err := requireFlag(*email, "email"); err != nil {
 		return err
@@ -99,6 +135,102 @@ func (a *App) login(ctx context.Context, credentials *config.Credentials, path s
 	}
 	fmt.Fprintf(a.Stdout, "logged in as %s\n", response.User.Email)
 	return nil
+}
+
+func (a *App) token(ctx context.Context, client *api.Client, args []string) error {
+	if len(args) == 0 {
+		return errHelpText("token")
+	}
+	switch args[0] {
+	case "list":
+		set := newFlagSet("token list", a.Stderr)
+		if err := set.Parse(args[1:]); err != nil {
+			return err
+		}
+		var result apiTokenList
+		if err := client.Do(ctx, "GET", "/api/v1/api-tokens", nil, &result); err != nil {
+			return err
+		}
+		table := tabwriter.NewWriter(a.Stdout, 0, 4, 2, ' ', 0)
+		fmt.Fprintln(table, "ID\tNAME\tTOKEN\tSCOPES\tEXPIRES\tLAST USED\tSTATUS")
+		for _, item := range result.Items {
+			status := "active"
+			if item.RevokedAt != nil {
+				status = "revoked"
+			}
+			fmt.Fprintf(table, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+				item.ID, item.Name, item.TokenPrefix+"…", strings.Join(item.Scopes, ","),
+				optionalTime(item.ExpiresAt), optionalTime(item.LastUsedAt), status)
+		}
+		return table.Flush()
+	case "create":
+		set := newFlagSet("token create", a.Stderr)
+		name := set.String("name", "", "token name")
+		scopes := set.String("scopes", "", "comma-separated scopes")
+		expires := set.Int("expires-in-days", 0, "expiry in days (omit for no expiry)")
+		if err := set.Parse(args[1:]); err != nil {
+			return err
+		}
+		if err := requireFlag(*name, "name"); err != nil {
+			return err
+		}
+		scopeList := splitScopes(*scopes)
+		if len(scopeList) == 0 {
+			return fmt.Errorf("--scopes is required")
+		}
+		input := map[string]any{"name": *name, "scopes": scopeList}
+		if *expires != 0 {
+			if *expires < 1 {
+				return fmt.Errorf("--expires-in-days must be positive")
+			}
+			input["expires_in_days"] = *expires
+		}
+		var response apiTokenCreateResponse
+		if err := client.Do(ctx, "POST", "/api/v1/api-tokens", input, &response); err != nil {
+			return err
+		}
+		fmt.Fprintf(a.Stdout, "token\t%s\n", response.Token)
+		fmt.Fprintf(a.Stdout, "prefix\t%s\u2026\n", response.APIToken.TokenPrefix)
+		fmt.Fprintln(a.Stdout, "notice\t此 token 只显示一次，请立即安全保存")
+		return nil
+	case "revoke":
+		set := newFlagSet("token revoke", a.Stderr)
+		id := set.String("id", "", "API token ID")
+		if err := set.Parse(args[1:]); err != nil {
+			return err
+		}
+		if err := requireFlag(*id, "id"); err != nil {
+			return err
+		}
+		var response struct {
+			APIToken       apiTokenItem `json:"api_token"`
+			AlreadyRevoked bool         `json:"already_revoked"`
+		}
+		if err := client.Do(ctx, "DELETE", "/api/v1/api-tokens/"+url.PathEscape(*id), nil, &response); err != nil {
+			return err
+		}
+		fmt.Fprintf(a.Stdout, "revoked\t%s\t%s\u2026\n", response.APIToken.ID, response.APIToken.TokenPrefix)
+		return nil
+	default:
+		return errHelpText("token")
+	}
+}
+
+func optionalTime(value *string) string {
+	if value == nil || *value == "" {
+		return "-"
+	}
+	return *value
+}
+
+func splitScopes(value string) []string {
+	result := make([]string, 0)
+	for _, item := range strings.Split(value, ",") {
+		if item = strings.TrimSpace(item); item != "" {
+			result = append(result, item)
+		}
+	}
+	return result
 }
 
 func (a *App) node(ctx context.Context, client *api.Client, credentials *config.Credentials, configPath string, args []string) error {
@@ -371,7 +503,7 @@ func redactPayload(value any) {
 	case map[string]any:
 		for key, child := range typed {
 			switch strings.ToLower(key) {
-			case "private_key", "network_secret", "agent_token":
+			case "private_key", "network_secret", "agent_token", "token", "refresh_token":
 				typed[key] = "***"
 			case "wireguard_config":
 				if text, ok := child.(string); ok {

@@ -47,6 +47,7 @@ func AutoMigrate(handle *gorm.DB) error {
 	if err := handle.AutoMigrate(
 		&models.Tenant{},
 		&models.User{},
+		&models.APIToken{},
 		&models.Certificate{},
 		&models.Domain{},
 		&models.ProxyRule{},
