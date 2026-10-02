@@ -16,7 +16,7 @@ server:
   port: 9090
 database:
   driver: postgres
-  dsn: postgres://localhost/umpp
+  dsn: postgres://localhost/neilico
 auth:
   jwt_secret: test-secret-from-file
   access_ttl: 10m
@@ -57,16 +57,16 @@ log:
 		t.Fatalf("heartbeat timeout = %v", cfg.Node.HeartbeatTimeout)
 	}
 
-	t.Setenv("UMPP_SERVER_HOST", "0.0.0.0")
-	t.Setenv("UMPP_SERVER_PORT", "8081")
-	t.Setenv("UMPP_DATABASE_DRIVER", "sqlite")
-	t.Setenv("UMPP_DATABASE_DSN", "file:test?mode=memory")
-	t.Setenv("UMPP_AUTH_JWT_SECRET", "environment-secret-value")
-	t.Setenv("UMPP_AUTH_ACCESS_TTL", "1m")
-	t.Setenv("UMPP_AUTH_REFRESH_TTL", "24h")
-	t.Setenv("UMPP_NODE_HEARTBEAT_TIMEOUT", "60s")
-	t.Setenv("UMPP_LOG_LEVEL", "debug")
-	t.Setenv("UMPP_LOG_FORMAT", "json")
+	t.Setenv("NEILICO_SERVER_HOST", "0.0.0.0")
+	t.Setenv("NEILICO_SERVER_PORT", "8081")
+	t.Setenv("NEILICO_DATABASE_DRIVER", "sqlite")
+	t.Setenv("NEILICO_DATABASE_DSN", "file:test?mode=memory")
+	t.Setenv("NEILICO_AUTH_JWT_SECRET", "environment-secret-value")
+	t.Setenv("NEILICO_AUTH_ACCESS_TTL", "1m")
+	t.Setenv("NEILICO_AUTH_REFRESH_TTL", "24h")
+	t.Setenv("NEILICO_NODE_HEARTBEAT_TIMEOUT", "60s")
+	t.Setenv("NEILICO_LOG_LEVEL", "debug")
+	t.Setenv("NEILICO_LOG_FORMAT", "json")
 	cfg, err = Load(path)
 	if err != nil {
 		t.Fatalf("Load() with environment error = %v", err)
@@ -99,14 +99,14 @@ func TestLoadRejectsInvalidDuration(t *testing.T) {
 func clearEnvironment(t *testing.T) {
 	t.Helper()
 	keys := []string{
-		"UMPP_SERVER_HOST", "UMPP_SERVER_PORT",
-		"UMPP_DATABASE_DRIVER", "UMPP_DATABASE_DSN",
-		"UMPP_AUTH_JWT_SECRET", "UMPP_AUTH_ACCESS_TTL", "UMPP_AUTH_REFRESH_TTL",
-		"UMPP_BOOTSTRAP_ADMIN_EMAIL", "UMPP_BOOTSTRAP_ADMIN_PASSWORD", "UMPP_BOOTSTRAP_DEFAULT_TENANT",
-		"UMPP_NODE_HEARTBEAT_TIMEOUT", "UMPP_LOG_LEVEL", "UMPP_LOG_FORMAT",
-		"UMPP_RATELIMIT_ENABLED", "UMPP_RATELIMIT_RPS", "UMPP_RATELIMIT_BURST",
-		"UMPP_PROXY_ENABLED", "UMPP_PROXY_KIND", "UMPP_PROXY_LISTEN",
-		"UMPP_NPS_CONFIG_PATH", "UMPP_NPS_BINARY_PATH", "UMPP_NPS_PID_FILE", "UMPP_NPS_RELOAD_STRATEGY",
+		"NEILICO_SERVER_HOST", "NEILICO_SERVER_PORT",
+		"NEILICO_DATABASE_DRIVER", "NEILICO_DATABASE_DSN",
+		"NEILICO_AUTH_JWT_SECRET", "NEILICO_AUTH_ACCESS_TTL", "NEILICO_AUTH_REFRESH_TTL",
+		"NEILICO_BOOTSTRAP_ADMIN_EMAIL", "NEILICO_BOOTSTRAP_ADMIN_PASSWORD", "NEILICO_BOOTSTRAP_DEFAULT_TENANT",
+		"NEILICO_NODE_HEARTBEAT_TIMEOUT", "NEILICO_LOG_LEVEL", "NEILICO_LOG_FORMAT",
+		"NEILICO_RATELIMIT_ENABLED", "NEILICO_RATELIMIT_RPS", "NEILICO_RATELIMIT_BURST",
+		"NEILICO_PROXY_ENABLED", "NEILICO_PROXY_KIND", "NEILICO_PROXY_LISTEN",
+		"NEILICO_NPS_CONFIG_PATH", "NEILICO_NPS_BINARY_PATH", "NEILICO_NPS_PID_FILE", "NEILICO_NPS_RELOAD_STRATEGY",
 	}
 	for _, key := range keys {
 		value, existed := os.LookupEnv(key)
@@ -132,9 +132,9 @@ func TestRateLimitDefaultsEnvironmentAndValidation(t *testing.T) {
 	if !cfg.RateLimit.Enabled || cfg.RateLimit.RPS != 20 || cfg.RateLimit.Burst != 40 {
 		t.Fatalf("unexpected rate limit defaults: %#v", cfg.RateLimit)
 	}
-	t.Setenv("UMPP_RATELIMIT_ENABLED", "false")
-	t.Setenv("UMPP_RATELIMIT_RPS", "3.5")
-	t.Setenv("UMPP_RATELIMIT_BURST", "7")
+	t.Setenv("NEILICO_RATELIMIT_ENABLED", "false")
+	t.Setenv("NEILICO_RATELIMIT_RPS", "3.5")
+	t.Setenv("NEILICO_RATELIMIT_BURST", "7")
 	cfg, err = Load(path)
 	if err != nil {
 		t.Fatal(err)

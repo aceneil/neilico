@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"umpp/control-plane/internal/auth"
-	"umpp/control-plane/internal/models"
+	"neilico/control-plane/internal/auth"
+	"neilico/control-plane/internal/models"
 )
 
 type apiTokenResponse struct {
@@ -158,7 +158,7 @@ func TestAPITokenExpiryInvalidAndLastUsedStates(t *testing.T) {
 	status, body := mustRequest(t, app.server, http.MethodGet, "/api/v1/nodes", created.Token, nil)
 	requireStatus(t, status, http.StatusUnauthorized)
 	requireErrorCode(t, body, "token_expired")
-	status, body = mustRequest(t, app.server, http.MethodGet, "/api/v1/nodes", "umpp_not-a-real-token", nil)
+	status, body = mustRequest(t, app.server, http.MethodGet, "/api/v1/nodes", "neilico_not-a-real-token", nil)
 	requireStatus(t, status, http.StatusUnauthorized)
 	requireErrorCode(t, body, "invalid_token")
 }

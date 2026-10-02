@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	"umpp/control-plane/internal/service/mesh"
+	"neilico/control-plane/internal/service/mesh"
 )
 
 const Kind = "easytier-config-export"
@@ -34,7 +34,7 @@ func (*Provider) RenderExport(_ context.Context, network mesh.Network) ([]byte, 
 		return peers[i].PublicKey < peers[j].PublicKey
 	})
 	var output strings.Builder
-	output.WriteString("# UMPP EasyTier configuration export (export only; not wired to runtime)\n")
+	output.WriteString("# NEILICO EasyTier configuration export (export only; not wired to runtime)\n")
 	fmt.Fprintf(&output, "network_name = %s\n", quote(network.Name))
 	fmt.Fprintf(&output, "network_secret = %s\n", quote(network.Secret))
 	output.WriteString("peers = [\n")

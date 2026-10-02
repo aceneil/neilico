@@ -1,14 +1,14 @@
-# UMPP 项目计划 (Project Plan)
+# NEILICO 项目计划 (Project Plan)
 
-> 上游规格：[docs/UMPP_SPEC.md](docs/UMPP_SPEC.md)（用户提供的总纲文档，唯一需求来源）
+> 上游规格：[docs/NEILICO_SPEC.md](docs/NEILICO_SPEC.md)（用户提供的总纲文档，唯一需求来源）
 > 本文件是**执行计划**：里程碑拆分、验收标准、技术裁决记录。规格与本文冲突时以本文的「裁决」为准，并把裁决回写进规格附录。
 
 ## 0. 项目基线
 
 | 项 | 值 |
 | :--- | :--- |
-| 项目代号 | UMPP (Unified Mesh & Proxy Platform) |
-| 仓库 | `~/Documents/Projects/umpp` |
+| 项目代号 | NEILICO (Unified Mesh & Proxy Platform) |
+| 仓库 | `~/Documents/Projects/neilico` |
 | 代码托管 | 本地 git（推送远端见 §7） |
 | 语言/工具链 | Go 1.27 / Node 26 / Docker 29 + Compose 2.40（本机已就绪） |
 | 执行方式 | Codex CLI 分轮实现，Manager 逐轮验收；每轮一个 herdr workspace 内 pane |
@@ -39,11 +39,11 @@ MVP 验证判据（来自规格 §12.1）：
 ## 3. 仓库结构（目标）
 
 ```
-umpp/
-├── docs/                 # UMPP_SPEC.md（上游）、PLAN.md、USER_GUIDE.md、OPS.md、API.md
+neilico/
+├── docs/                 # NEILICO_SPEC.md（上游）、PLAN.md、USER_GUIDE.md、OPS.md、API.md
 ├── control-plane/        # Go: cmd/ internal/ migrations/ configs/
 ├── agent/                # Go: cmd/ internal/ configs/ Dockerfile
-├── cli/                  # Go: umppctl
+├── cli/                  # Go: neilicoctl
 ├── dashboard/            # Vue3 + Vite + Ant Design Vue
 ├── deploy/               # docker-compose/ 、helm/（V1）
 ├── scripts/              # 冒烟/验收脚本
@@ -57,7 +57,7 @@ umpp/
 | :--- | :--- | :--- |
 | **M1 控制面骨架 + 身份/节点** | Go module、config.yaml 加载、GORM 全量核心表迁移、`/healthz`、JWT 登录/刷新、RBAC 中间件、租户/用户 CRUD、节点注册/心跳/列表/删除（心跳超时 60s 判离线）、统一错误与审计日志写入 | `gofmt -l` 空、`go vet ./...` 通过、`go test ./...` 全绿（含 httptest 端到端：登录→建租户→注册节点→心跳→列表）、`CGO_ENABLED=0 go build` 成功 |
 | **M2 域名/代理 + Mesh + 配置下发** | domains/certificates/proxy_rules CRUD；`ProxyProvider`(nps-config 生成 + 内置反代)；virtual_networks/network_members/acl_rules/subnet_routes CRUD；ACL 匹配引擎（默认拒绝、优先级）；`MeshProvider`(wireguard 配置生成)；`GET /api/v1/agent/config` 版本化下发 + 304/回滚；`/metrics` Prometheus | 上述全套测试全绿；ACL 匹配表驱动用例 ≥20 条；配置生成快照用例（golden file） |
-| **M3 Agent + CLI** | Agent：读 agent.yaml、注册、30s 心跳、长轮询/定时拉配置、应用 WireGuard（`wgctrl` 或 shell 回退）、子网路由与 ip_forward/MASQUERADE、指标 :9100、优雅退出；Dockerfile（多阶段、静态二进制）；`umppctl` 登录/node list/network/domain/status | `go test ./...` 全绿；agent 与 control-plane 的**联调集成测试**（agent 用内存配置跑通注册+心跳+拉配置）；`CGO_ENABLED=0 go build` 两个二进制 |
+| **M3 Agent + CLI** | Agent：读 agent.yaml、注册、30s 心跳、长轮询/定时拉配置、应用 WireGuard（`wgctrl` 或 shell 回退）、子网路由与 ip_forward/MASQUERADE、指标 :9100、优雅退出；Dockerfile（多阶段、静态二进制）；`neilicoctl` 登录/node list/network/domain/status | `go test ./...` 全绿；agent 与 control-plane 的**联调集成测试**（agent 用内存配置跑通注册+心跳+拉配置）；`CGO_ENABLED=0 go build` 两个二进制 |
 | **M4 Dashboard** | 登录页、仪表盘（在线节点/隧道/流量/告警）、设备管理、域名与代理、虚拟网络（成员/ACL/路由）、用户与权限、日志与审计、系统设置；Axios 封装 + JWT 拦截 + 401 跳登录；ECharts 图表；WS 实时状态（可选降级轮询） | `npm ci && npm run build` 成功（零 TS 错误）；路由/菜单与规格 §4.4.1 逐条对应；组件树可构建产物 |
 | **M5 部署 + 文档 + 端到端冒烟** | `deploy/docker-compose/docker-compose.yml`（postgres/redis/nats/control-api/dashboard/relay）；`.env.example`；`scripts/smoke.sh` 一键端到端（起栈→登录→建网络→注册两个 agent→虚拟 IP 互 ping 的可验证替代：控制面配置一致性断言）；README/USER_GUIDE/OPS/API 文档 | `docker compose config` 通过；`scripts/smoke.sh` 退出码 0 且打印每步断言；文档齐备 |
 
@@ -71,10 +71,10 @@ umpp/
 | :--- | :--- | :--- | :--- |
 | **V1-R1** | ACME 证书自动化 | `x/crypto/acme` 签发 + HTTP-01 挑战服务 + 自动续期调度（阈值/退避/single-flight）+ 内置反代 **SNI TLS 终结** + 证书状态字段与指标 | hermetic 单测全绿 **且** `scripts/smoke-acme.sh` 用 **Pebble**（真 ACME 协议）签发出证书、SNI 握手取到该证书 |
 | **V1-R2** | 告警体系（§15.2） | 5 条规则（节点离线/证书将到期/P2P 成功率/中继流量突增/配置下发失败）+ 状态机与 `alert_events` + `/api/v1/alerts` 系列 + webhook 通知 + Dashboard 告警卡片与 `/alerts` 页 | 规则逐条边界单测 + 状态机去重/恢复测试 + 无数据源必须 `insufficient_data`（**禁止编造**） |
-| **V1-R3** | Helm Chart（§11.2） | `deploy/helm/umpp/`（control-api/dashboard + 可选 postgres/redis/nats/relay）+ `values.schema.json` + `ci/verify.sh` | `helm lint` + 两套 `helm template` + 断言：必需 Kind 齐备、渲染产物**无明文密钥**、非法 values 必须失败 |
-| **V1-R4** | API Token / Scope / 限流（§10.1、§4.1.2） | `api_tokens` 表（只存哈希 + prefix）+ `umpp_` 前缀令牌 + scope 授权（角色→scope 映射表）+ 租户级令牌 CRUD/轮换 + 按令牌维度令牌桶限流 + CLI & Dashboard 接通 | 令牌三态错误码、**不泄露明文**断言、scope 矩阵、**API Token 不得自我提权**、限流隔离与豁免、readonly 回归 |
+| **V1-R3** | Helm Chart（§11.2） | `deploy/helm/neilico/`（control-api/dashboard + 可选 postgres/redis/nats/relay）+ `values.schema.json` + `ci/verify.sh` | `helm lint` + 两套 `helm template` + 断言：必需 Kind 齐备、渲染产物**无明文密钥**、非法 values 必须失败 |
+| **V1-R4** | API Token / Scope / 限流（§10.1、§4.1.2） | `api_tokens` 表（只存哈希 + prefix）+ `neilico_` 前缀令牌 + scope 授权（角色→scope 映射表）+ 租户级令牌 CRUD/轮换 + 按令牌维度令牌桶限流 + CLI & Dashboard 接通 | 令牌三态错误码、**不泄露明文**断言、scope 矩阵、**API Token 不得自我提权**、限流隔离与豁免、readonly 回归 |
 
-**执行方式**：沿用项目已沉淀的自主驱动器（systemd 定时器 + 机械验收 + 自动派下一轮 + 桌面/飞书双通道通知），轮次链 `M5 → V1R1 → V1R2 → V1R3 → V1R4 → DONE`；需要 docker/helm 的轮次通过 `~/.hermes/cache/umpp-<ROUND>-accept.sh` 挂附加验收。
+**执行方式**：沿用项目已沉淀的自主驱动器（systemd 定时器 + 机械验收 + 自动派下一轮 + 桌面/飞书双通道通知），轮次链 `M5 → V1R1 → V1R2 → V1R3 → V1R4 → DONE`；需要 docker/helm 的轮次通过 `~/.hermes/cache/neilico-<ROUND>-accept.sh` 挂附加验收。
 
 **仍然不做（V2）**：商业化计费、Exit Node、DNS 解析、插件系统、高可用控制面、多地域中继调度、流量工程/QoS、OpenWrt、OAuth2 第三方登录、ClickHouse 访问日志、Windows/macOS Agent。
 
@@ -85,7 +85,7 @@ umpp/
 - 安全：未授权 401、越权跨租户 403、JWT 伪造、ACL 绕过。
 
 ## 7. 交付与留痕
-- 每轮产物：`git commit`（Manager 复验后提交）+ `/tmp/umpp-<Mx>-report.md` 报告 + `scripts/` 下可复跑断言。
+- 每轮产物：`git commit`（Manager 复验后提交）+ `/tmp/neilico-<Mx>-report.md` 报告 + `scripts/` 下可复跑断言。
 - 远端推送：若用户提供凭据/远端仓库则推送（SSH 需远端库已存在）。默认本地提交。
 
 ## 8. 风险

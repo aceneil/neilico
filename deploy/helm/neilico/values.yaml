@@ -23,7 +23,7 @@ affinity: {}
 
 controlApi:
   image:
-    repository: umpp-control-api
+    repository: neilico-control-api
     tag: latest
   service:
     type: ClusterIP
@@ -49,7 +49,7 @@ controlApi:
     seccompProfile:
       type: RuntimeDefault
   env: []
-  command: ["/usr/local/bin/umpp-api"]
+  command: ["/usr/local/bin/neilico-api"]
   args: ["--config", "/app/configs/config.example.yaml"]
   auth:
     accessTtl: 15m
@@ -75,7 +75,7 @@ controlApi:
 
 dashboard:
   image:
-    repository: umpp-dashboard
+    repository: neilico-dashboard
     tag: latest
   service:
     type: ClusterIP
@@ -135,15 +135,15 @@ secrets:
   bootstrapAdminPassword: CHANGE_ME
   keys:
     postgresPassword: POSTGRES_PASSWORD
-    jwtSecret: UMPP_AUTH_JWT_SECRET
-    bootstrapAdminPassword: UMPP_BOOTSTRAP_ADMIN_PASSWORD
-    webhookUrl: UMPP_ALERTS_WEBHOOK_URL
+    jwtSecret: NEILICO_AUTH_JWT_SECRET
+    bootstrapAdminPassword: NEILICO_BOOTSTRAP_ADMIN_PASSWORD
+    webhookUrl: NEILICO_ALERTS_WEBHOOK_URL
 
 externalDatabase:
   host: CHANGE_ME
   port: 5432
-  user: umpp
-  database: umpp
+  user: neilico
+  database: neilico
   sslmode: disable
   passwordSecret:
     name: ""
@@ -167,8 +167,8 @@ postgres:
   service:
     annotations: {}
     port: 5432
-  database: umpp
-  user: umpp
+  database: neilico
+  user: neilico
   resources:
     requests:
       cpu: 100m
@@ -227,7 +227,7 @@ nats:
     size: 2Gi
     storageClass: ""
 
-# Placeholder only. The real UMPP relay data plane is a V2 deliverable.
+# Placeholder only. The real NEILICO relay data plane is a V2 deliverable.
 relay:
   enabled: false
   exposure: hostNetwork
@@ -257,7 +257,7 @@ ingress:
   className: ""
   annotations: {}
   hosts:
-    - host: umpp.example.com
+    - host: neilico.example.com
       paths:
         - path: /
           pathType: Prefix

@@ -8,10 +8,10 @@ import (
 
 	"github.com/google/uuid"
 
-	"umpp/control-plane/internal/config"
-	"umpp/control-plane/internal/db"
-	"umpp/control-plane/internal/models"
-	"umpp/control-plane/internal/service"
+	"neilico/control-plane/internal/config"
+	"neilico/control-plane/internal/db"
+	"neilico/control-plane/internal/models"
+	"neilico/control-plane/internal/service"
 )
 
 func TestResolveNodeTarget(t *testing.T) {

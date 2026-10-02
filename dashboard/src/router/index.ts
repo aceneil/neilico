@@ -95,7 +95,7 @@ const router = createRouter({
 
 router.beforeEach((to) => {
   const auth = useAuthStore()
-  document.title = `${String(to.meta.title || 'UMPP')} · UMPP 控制台`
+  document.title = `${String(to.meta.title || 'NEILICO')} · NEILICO 控制台`
   if (!to.meta.public && !auth.isAuthenticated) {
     return { path: '/login', query: { redirect: to.fullPath } }
   }

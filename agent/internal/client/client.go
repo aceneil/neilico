@@ -16,7 +16,7 @@ import (
 	"strings"
 	"time"
 
-	"umpp/agent/internal/state"
+	"neilico/agent/internal/state"
 )
 
 const agentVersion = "dev"

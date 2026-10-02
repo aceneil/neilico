@@ -2,23 +2,23 @@
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: {{ include "umpp.postgres.fullname" . }}
+  name: {{ include "neilico.postgres.fullname" . }}
   labels:
-    {{- include "umpp.componentLabels" (dict "root" . "component" "postgres") | nindent 4 }}
+    {{- include "neilico.componentLabels" (dict "root" . "component" "postgres") | nindent 4 }}
   annotations:
-    {{- include "umpp.annotations" . | nindent 4 }}
+    {{- include "neilico.annotations" . | nindent 4 }}
 spec:
-  serviceName: {{ include "umpp.postgres.fullname" . }}
+  serviceName: {{ include "neilico.postgres.fullname" . }}
   replicas: 1
   selector:
     matchLabels:
-      {{- include "umpp.selectorLabels" . | nindent 6 }}
+      {{- include "neilico.selectorLabels" . | nindent 6 }}
       app.kubernetes.io/component: postgres
   template:
     metadata:
-      {{- include "umpp.podMetadata" (dict "root" . "component" "postgres") | nindent 6 }}
+      {{- include "neilico.podMetadata" (dict "root" . "component" "postgres") | nindent 6 }}
     spec:
-      serviceAccountName: {{ include "umpp.serviceAccountName" . }}
+      serviceAccountName: {{ include "neilico.serviceAccountName" . }}
       {{- with .Values.image.pullSecrets }}
       imagePullSecrets:
         {{- range . }}
@@ -27,7 +27,7 @@ spec:
       {{- end }}
       containers:
         - name: postgres
-          image: {{ include "umpp.image" (dict "root" . "image" .Values.postgres.image) }}
+          image: {{ include "neilico.image" (dict "root" . "image" .Values.postgres.image) }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           ports:
             - name: postgres
@@ -41,8 +41,8 @@ spec:
             - name: POSTGRES_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "umpp.externalDatabaseSecretName" . }}
-                  key: {{ include "umpp.externalDatabasePasswordKey" . }}
+                  name: {{ include "neilico.externalDatabaseSecretName" . }}
+                  key: {{ include "neilico.externalDatabasePasswordKey" . }}
           readinessProbe:
             exec:
               command: ["pg_isready", "-U", {{ .Values.postgres.user | quote }}, "-d", {{ .Values.postgres.database | quote }}]
@@ -80,9 +80,9 @@ spec:
     - metadata:
         name: data
         labels:
-          {{- include "umpp.componentLabels" (dict "root" . "component" "postgres") | nindent 10 }}
+          {{- include "neilico.componentLabels" (dict "root" . "component" "postgres") | nindent 10 }}
         annotations:
-          {{- include "umpp.annotations" . | nindent 10 }}
+          {{- include "neilico.annotations" . | nindent 10 }}
       spec:
         accessModes: ["ReadWriteOnce"]
         resources:
@@ -98,23 +98,23 @@ spec:
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: {{ include "umpp.redis.fullname" . }}
+  name: {{ include "neilico.redis.fullname" . }}
   labels:
-    {{- include "umpp.componentLabels" (dict "root" . "component" "redis") | nindent 4 }}
+    {{- include "neilico.componentLabels" (dict "root" . "component" "redis") | nindent 4 }}
   annotations:
-    {{- include "umpp.annotations" . | nindent 4 }}
+    {{- include "neilico.annotations" . | nindent 4 }}
 spec:
-  serviceName: {{ include "umpp.redis.fullname" . }}
+  serviceName: {{ include "neilico.redis.fullname" . }}
   replicas: 1
   selector:
     matchLabels:
-      {{- include "umpp.selectorLabels" . | nindent 6 }}
+      {{- include "neilico.selectorLabels" . | nindent 6 }}
       app.kubernetes.io/component: redis
   template:
     metadata:
-      {{- include "umpp.podMetadata" (dict "root" . "component" "redis") | nindent 6 }}
+      {{- include "neilico.podMetadata" (dict "root" . "component" "redis") | nindent 6 }}
     spec:
-      serviceAccountName: {{ include "umpp.serviceAccountName" . }}
+      serviceAccountName: {{ include "neilico.serviceAccountName" . }}
       {{- with .Values.image.pullSecrets }}
       imagePullSecrets:
         {{- range . }}
@@ -123,7 +123,7 @@ spec:
       {{- end }}
       containers:
         - name: redis
-          image: {{ include "umpp.image" (dict "root" . "image" .Values.redis.image) }}
+          image: {{ include "neilico.image" (dict "root" . "image" .Values.redis.image) }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           command:
             {{- toYaml .Values.redis.command | nindent 12 }}
@@ -168,9 +168,9 @@ spec:
     - metadata:
         name: data
         labels:
-          {{- include "umpp.componentLabels" (dict "root" . "component" "redis") | nindent 10 }}
+          {{- include "neilico.componentLabels" (dict "root" . "component" "redis") | nindent 10 }}
         annotations:
-          {{- include "umpp.annotations" . | nindent 10 }}
+          {{- include "neilico.annotations" . | nindent 10 }}
       spec:
         accessModes: ["ReadWriteOnce"]
         resources:
@@ -186,23 +186,23 @@ spec:
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: {{ include "umpp.nats.fullname" . }}
+  name: {{ include "neilico.nats.fullname" . }}
   labels:
-    {{- include "umpp.componentLabels" (dict "root" . "component" "nats") | nindent 4 }}
+    {{- include "neilico.componentLabels" (dict "root" . "component" "nats") | nindent 4 }}
   annotations:
-    {{- include "umpp.annotations" . | nindent 4 }}
+    {{- include "neilico.annotations" . | nindent 4 }}
 spec:
-  serviceName: {{ include "umpp.nats.fullname" . }}
+  serviceName: {{ include "neilico.nats.fullname" . }}
   replicas: 1
   selector:
     matchLabels:
-      {{- include "umpp.selectorLabels" . | nindent 6 }}
+      {{- include "neilico.selectorLabels" . | nindent 6 }}
       app.kubernetes.io/component: nats
   template:
     metadata:
-      {{- include "umpp.podMetadata" (dict "root" . "component" "nats") | nindent 6 }}
+      {{- include "neilico.podMetadata" (dict "root" . "component" "nats") | nindent 6 }}
     spec:
-      serviceAccountName: {{ include "umpp.serviceAccountName" . }}
+      serviceAccountName: {{ include "neilico.serviceAccountName" . }}
       {{- with .Values.image.pullSecrets }}
       imagePullSecrets:
         {{- range . }}
@@ -211,7 +211,7 @@ spec:
       {{- end }}
       containers:
         - name: nats
-          image: {{ include "umpp.image" (dict "root" . "image" .Values.nats.image) }}
+          image: {{ include "neilico.image" (dict "root" . "image" .Values.nats.image) }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           command:
             {{- toYaml .Values.nats.command | nindent 12 }}
@@ -261,9 +261,9 @@ spec:
     - metadata:
         name: data
         labels:
-          {{- include "umpp.componentLabels" (dict "root" . "component" "nats") | nindent 10 }}
+          {{- include "neilico.componentLabels" (dict "root" . "component" "nats") | nindent 10 }}
         annotations:
-          {{- include "umpp.annotations" . | nindent 10 }}
+          {{- include "neilico.annotations" . | nindent 10 }}
       spec:
         accessModes: ["ReadWriteOnce"]
         resources:

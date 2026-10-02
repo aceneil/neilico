@@ -16,7 +16,7 @@
     "keyAlgorithm": "ecdsa",
     "profiles": {
       "default": {
-        "description": "UMPP V1-R1 integration profile",
+        "description": "NEILICO V1-R1 integration profile",
         "validityPeriod": 7776000
       }
     }

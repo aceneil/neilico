@@ -15,9 +15,9 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
-	"umpp/control-plane/internal/config"
-	"umpp/control-plane/internal/db"
-	certcrypto "umpp/control-plane/internal/service/cert"
+	"neilico/control-plane/internal/config"
+	"neilico/control-plane/internal/db"
+	certcrypto "neilico/control-plane/internal/service/cert"
 )
 
 func newTestService(t *testing.T, enabled bool) (*Service, *gorm.DB) {
@@ -39,7 +39,7 @@ func newTestService(t *testing.T, enabled bool) (*Service, *gorm.DB) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return New(handle, crypto, Options{Enabled: enabled, CommonName: "UMPP Test CA", ServerHosts: []string{"api.example.test"}, ServerCertDays: 30, NodeCertDays: 10, RenewBeforeDays: 2}, nil), handle
+	return New(handle, crypto, Options{Enabled: enabled, CommonName: "NEILICO Test CA", ServerHosts: []string{"api.example.test"}, ServerCertDays: 30, NodeCertDays: 10, RenewBeforeDays: 2}, nil), handle
 }
 
 func TestEnsureCAEncryptsAndIsIdempotent(t *testing.T) {

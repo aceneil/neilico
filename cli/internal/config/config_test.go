@@ -7,7 +7,7 @@ import (
 )
 
 func TestCredentialsFilePermissionsAndEnvServer(t *testing.T) {
-	t.Setenv("UMPP_SERVER", "https://env.example.test")
+	t.Setenv("NEILICO_SERVER", "https://env.example.test")
 	path := filepath.Join(t.TempDir(), "nested", "config.yaml")
 	value := Credentials{Server: "https://file.example.test", AccessToken: "secret"}
 	if err := Save(path, value); err != nil {

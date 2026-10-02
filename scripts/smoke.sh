@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
-# UMPP M5 end-to-end smoke. The script is intentionally non-destructive to
-# existing host containers and leaves the UMPP stack running after success.
+# NEILICO M5 end-to-end smoke. The script is intentionally non-destructive to
+# existing host containers and leaves the NEILICO stack running after success.
 set -Eeuo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 COMPOSE_DIR="$ROOT_DIR/deploy/docker-compose"
 COMPOSE_FILE="$COMPOSE_DIR/docker-compose.yml"
 ENV_FILE="$COMPOSE_DIR/.env"
-TMP_DIR="$(mktemp -d /tmp/umpp-m5-smoke.XXXXXX)"
+TMP_DIR="$(mktemp -d /tmp/neilico-m5-smoke.XXXXXX)"
 HTTP_BODY_FILE="$TMP_DIR/http-body"
 AGENT_A_PID=""
 AGENT_B_PID=""
-ECHO_NAME="umpp-m5-smoke-echo-$$"
+ECHO_NAME="neilico-m5-smoke-echo-$$"
 MUTATIONS=0
 STEP_NAMES=()
 STEP_RESULTS=()
@@ -165,7 +165,7 @@ if [[ "$health_ok" != 1 ]]; then
 fi
 dashboard_state="unknown"
 for _ in $(seq 1 60); do
-  dashboard_state="$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' umpp-m5-dashboard-1 2>/dev/null || true)"
+  dashboard_state="$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' neilico-m5-dashboard-1 2>/dev/null || true)"
   [[ "$dashboard_state" == "healthy" ]] && break
   sleep 1
 done
@@ -216,7 +216,7 @@ NETWORK_ID="$(json '.id // empty')"
 finish_step PASS "network=$NETWORK_ID cidr=$NETWORK_CIDR"
 
 start_step "6/12 build and run two real agents in dry-run"
-agent_bin="$TMP_DIR/umpp-agent"
+agent_bin="$TMP_DIR/neilico-agent"
 if ! (cd "$ROOT_DIR/agent" && CGO_ENABLED=0 go build -trimpath -o "$agent_bin" ./cmd/agent) >"$TMP_DIR/agent-build.log" 2>&1; then
   fail_step "agent build failed: $(tail -n 30 "$TMP_DIR/agent-build.log")"
 fi
@@ -303,7 +303,7 @@ finish_step PASS "route advertised to peer B; version $config_version_before -> 
 start_step "9/12 domain, node proxy rule, and builtin reverse proxy"
 # The temporary echo container shares node B's smoke virtual IP on the Compose
 # network, making target_type=node resolvable without changing host networking.
-if docker run -d --name "$ECHO_NAME" --network umpp-m5_default --ip "$NODE_B_VIP" hashicorp/http-echo:1.0 -listen=":$ECHO_PORT" -text=UMPP_SMOKE_ECHO_OK >"$TMP_DIR/echo-start.log" 2>&1; then
+if docker run -d --name "$ECHO_NAME" --network neilico-m5_default --ip "$NODE_B_VIP" hashicorp/http-echo:1.0 -listen=":$ECHO_PORT" -text=NEILICO_SMOKE_ECHO_OK >"$TMP_DIR/echo-start.log" 2>&1; then
   :
 else
   fail_step "temporary echo container failed to start: $(cat "$TMP_DIR/echo-start.log")"
@@ -319,17 +319,17 @@ expect_status 201
 MUTATIONS=$((MUTATIONS + 1))
 proxy_code="$(curl -sS --connect-timeout 5 --max-time 15 -H "Host: $DOMAIN_NAME" -o "$HTTP_BODY_FILE" -w '%{http_code}' "$PROXY_BASE/" 2>"$TMP_DIR/proxy.err" || true)"
 proxy_body="$(cat "$HTTP_BODY_FILE" 2>/dev/null || true)"
-[[ "$proxy_code" == "200" && "$proxy_body" == *UMPP_SMOKE_ECHO_OK* ]] || fail_step "builtin proxy request failed: code=$proxy_code body=${proxy_body:0:500} err=$(cat "$TMP_DIR/proxy.err" 2>/dev/null || true)"
+[[ "$proxy_code" == "200" && "$proxy_body" == *NEILICO_SMOKE_ECHO_OK* ]] || fail_step "builtin proxy request failed: code=$proxy_code body=${proxy_body:0:500} err=$(cat "$TMP_DIR/proxy.err" 2>/dev/null || true)"
 finish_step PASS "Host: $DOMAIN_NAME -> target_type=node -> echo 200"
 
 start_step "10/12 Prometheus metric assertion"
 http_call GET "$API_BASE/metrics" "" ""
 expect_status 200
-metric_line="$(grep -E '^umpp_nodes_online ' "$HTTP_BODY_FILE" | tail -n 1 || true)"
+metric_line="$(grep -E '^neilico_nodes_online ' "$HTTP_BODY_FILE" | tail -n 1 || true)"
 metric_value="$(awk '{print $2}' <<<"$metric_line")"
-[[ -n "$metric_value" ]] || fail_step "/metrics missing umpp_nodes_online; body=${HTTP_BODY:0,1000}"
-awk -v value="$metric_value" 'BEGIN { exit !(value >= 2) }' || fail_step "umpp_nodes_online=$metric_value, want >=2"
-finish_step PASS "umpp_nodes_online=$metric_value"
+[[ -n "$metric_value" ]] || fail_step "/metrics missing neilico_nodes_online; body=${HTTP_BODY:0,1000}"
+awk -v value="$metric_value" 'BEGIN { exit !(value >= 2) }' || fail_step "neilico_nodes_online=$metric_value, want >=2"
+finish_step PASS "neilico_nodes_online=$metric_value"
 
 start_step "11/12 audit-log assertion"
 http_call GET "$API_BASE/api/v1/audit-logs?page=1&page_size=1" "$ADMIN_TOKEN" ""

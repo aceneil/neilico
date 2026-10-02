@@ -10,14 +10,14 @@ import (
 
 	"github.com/google/uuid"
 
-	"umpp/control-plane/internal/api"
-	"umpp/control-plane/internal/auth"
-	"umpp/control-plane/internal/config"
-	"umpp/control-plane/internal/db"
-	"umpp/control-plane/internal/metrics"
-	"umpp/control-plane/internal/service"
-	acmeclient "umpp/control-plane/internal/service/cert/acme"
-	"umpp/control-plane/internal/service/proxy"
+	"neilico/control-plane/internal/api"
+	"neilico/control-plane/internal/auth"
+	"neilico/control-plane/internal/config"
+	"neilico/control-plane/internal/db"
+	"neilico/control-plane/internal/metrics"
+	"neilico/control-plane/internal/service"
+	acmeclient "neilico/control-plane/internal/service/cert/acme"
+	"neilico/control-plane/internal/service/proxy"
 )
 
 func TestCertificatePermissionsAndTenantIsolation(t *testing.T) {

@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"umpp/control-plane/internal/service/mesh"
+	"neilico/control-plane/internal/service/mesh"
 )
 
 func TestRenderExportGolden(t *testing.T) {

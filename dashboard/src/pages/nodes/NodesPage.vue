@@ -260,7 +260,7 @@ void load()
 
 <template>
   <div class="page-container">
-    <PageHeader title="设备管理" subtitle="注册、查看和维护接入 UMPP 的节点设备">
+    <PageHeader title="设备管理" subtitle="注册、查看和维护接入 NEILICO 的节点设备">
       <template #actions>
         <a-button @click="load"><ReloadOutlined /> 刷新</a-button>
         <a-button v-if="canWrite" type="primary" @click="registerOpen = true; resetRegister()">

@@ -11,7 +11,7 @@ import (
 )
 
 const (
-	APITokenPrefix       = "umpp_"
+	APITokenPrefix       = "neilico_"
 	APITokenPrefixLength = 8
 )
 

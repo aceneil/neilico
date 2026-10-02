@@ -16,14 +16,14 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
-	"umpp/control-plane/internal/api"
-	"umpp/control-plane/internal/auth"
-	"umpp/control-plane/internal/config"
-	"umpp/control-plane/internal/db"
-	"umpp/control-plane/internal/metrics"
-	"umpp/control-plane/internal/models"
-	"umpp/control-plane/internal/service"
-	"umpp/control-plane/internal/service/proxy"
+	"neilico/control-plane/internal/api"
+	"neilico/control-plane/internal/auth"
+	"neilico/control-plane/internal/config"
+	"neilico/control-plane/internal/db"
+	"neilico/control-plane/internal/metrics"
+	"neilico/control-plane/internal/models"
+	"neilico/control-plane/internal/service"
+	"neilico/control-plane/internal/service/proxy"
 )
 
 const testJWTSecret = "0123456789abcdef0123456789abcdef"
@@ -217,7 +217,7 @@ func TestCompleteControlPlaneFlow(t *testing.T) {
 
 	status, body = mustRequest(t, app.server, http.MethodGet, "/metrics", "", nil)
 	requireStatus(t, status, http.StatusOK)
-	if !bytes.Contains(body, []byte("umpp_nodes_online")) || !bytes.Contains(body, []byte("umpp_http_requests_total")) {
+	if !bytes.Contains(body, []byte("neilico_nodes_online")) || !bytes.Contains(body, []byte("neilico_http_requests_total")) {
 		t.Fatalf("metrics output missing required metrics:\n%s", body)
 	}
 

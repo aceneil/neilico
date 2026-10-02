@@ -1,4 +1,4 @@
-server: https://api.umpp.example.com
+server: https://api.neilico.example.com
 token: ""
 tls:
   ca_file: ""
@@ -25,6 +25,6 @@ metrics:
   listen: 0.0.0.0:9100
 log:
   level: info
-state_path: /var/lib/umpp-agent/state.json
+state_path: /var/lib/neilico-agent/state.json
 poll_interval: 30s
 heartbeat_interval: 30s

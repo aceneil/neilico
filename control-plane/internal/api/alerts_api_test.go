@@ -16,16 +16,16 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/datatypes"
 
-	"umpp/control-plane/internal/api"
-	"umpp/control-plane/internal/auth"
-	"umpp/control-plane/internal/config"
-	"umpp/control-plane/internal/db"
-	"umpp/control-plane/internal/metrics"
-	"umpp/control-plane/internal/models"
-	"umpp/control-plane/internal/service"
-	alerts "umpp/control-plane/internal/service/alerts"
-	alertservice "umpp/control-plane/internal/service/alerts"
-	"umpp/control-plane/internal/service/proxy"
+	"neilico/control-plane/internal/api"
+	"neilico/control-plane/internal/auth"
+	"neilico/control-plane/internal/config"
+	"neilico/control-plane/internal/db"
+	"neilico/control-plane/internal/metrics"
+	"neilico/control-plane/internal/models"
+	"neilico/control-plane/internal/service"
+	alerts "neilico/control-plane/internal/service/alerts"
+	alertservice "neilico/control-plane/internal/service/alerts"
+	"neilico/control-plane/internal/service/proxy"
 )
 
 func TestAlertsAPIEvaluationSummaryIsolationAndRBAC(t *testing.T) {
@@ -169,22 +169,22 @@ func TestMetricsExposeV1R2RequiredNames(t *testing.T) {
 	status, body := mustRequest(t, app.server, http.MethodGet, "/metrics", "", nil)
 	requireStatus(t, status, http.StatusOK)
 	for _, name := range []string{
-		"umpp_nodes_online",
-		"umpp_tunnel_up",
-		"umpp_p2p_success_rate",
-		"umpp_relay_bytes",
-		"umpp_proxy_requests",
-		"umpp_config_version",
-		"umpp_agent_heartbeat_latency",
-		"umpp_alerts_firing",
+		"neilico_nodes_online",
+		"neilico_tunnel_up",
+		"neilico_p2p_success_rate",
+		"neilico_relay_bytes",
+		"neilico_proxy_requests",
+		"neilico_config_version",
+		"neilico_agent_heartbeat_latency",
+		"neilico_alerts_firing",
 	} {
 		if !bytes.Contains(body, []byte(name)) {
 			t.Fatalf("metrics output missing %s:\n%s", name, body)
 		}
 	}
-	if !bytes.Contains(body, []byte(`umpp_p2p_success_rate 0`)) ||
-		!bytes.Contains(body, []byte(`umpp_relay_bytes 0`)) ||
-		!bytes.Contains(body, []byte(`umpp_agent_heartbeat_latency 0`)) {
+	if !bytes.Contains(body, []byte(`neilico_p2p_success_rate 0`)) ||
+		!bytes.Contains(body, []byte(`neilico_relay_bytes 0`)) ||
+		!bytes.Contains(body, []byte(`neilico_agent_heartbeat_latency 0`)) {
 		t.Fatalf("missing-data gauges are not explicit zero:\n%s", body)
 	}
 }
@@ -255,7 +255,7 @@ func TestAlertWebhookNotificationIntegration(t *testing.T) {
 	}
 	var notification alerts.Notification
 	decodeResponse(t, raw, &notification)
-	if notification.Event != "alert.firing" || notification.Schema != "umpp.alert.v1" || notification.Alert.Rule != alerts.RuleNodeOffline {
+	if notification.Event != "alert.firing" || notification.Schema != "neilico.alert.v1" || notification.Alert.Rule != alerts.RuleNodeOffline {
 		t.Fatalf("webhook notification = %s", raw)
 	}
 	if bytes.Contains(raw, []byte("PRIVATE KEY")) || bytes.Contains(raw, []byte("agent_token")) {

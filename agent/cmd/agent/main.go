@@ -16,26 +16,26 @@ import (
 	"syscall"
 	"time"
 
-	"umpp/agent/internal/client"
-	"umpp/agent/internal/config"
-	"umpp/agent/internal/heartbeat"
-	"umpp/agent/internal/mesh"
-	agentmetrics "umpp/agent/internal/metrics"
-	"umpp/agent/internal/route"
-	"umpp/agent/internal/state"
+	"neilico/agent/internal/client"
+	"neilico/agent/internal/config"
+	"neilico/agent/internal/heartbeat"
+	"neilico/agent/internal/mesh"
+	agentmetrics "neilico/agent/internal/metrics"
+	"neilico/agent/internal/route"
+	"neilico/agent/internal/state"
 )
 
 var version = "dev"
 
 func main() {
 	if err := run(os.Args[1:], os.Stdout, os.Stderr); err != nil {
-		fmt.Fprintln(os.Stderr, "umpp-agent:", err)
+		fmt.Fprintln(os.Stderr, "neilico-agent:", err)
 		os.Exit(1)
 	}
 }
 
 func run(args []string, stdout, stderr io.Writer) error {
-	flags := flag.NewFlagSet("umpp-agent", flag.ContinueOnError)
+	flags := flag.NewFlagSet("neilico-agent", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	configPath := flags.String("config", "configs/agent.example.yaml", "path to YAML configuration")
 	dryRun := flags.Bool("dry-run", false, "print network configuration and commands without writing")
@@ -323,7 +323,7 @@ func detectPublicEndpoint(ctx context.Context, listenPort int) string {
 }
 
 func meshCIDR(_ string, _ config.Config) string {
-	// WireGuard overlay addressing is 100.64.0.0/10 (CGNAT), matching UMPP defaults.
+	// WireGuard overlay addressing is 100.64.0.0/10 (CGNAT), matching NEILICO defaults.
 	return "100.64.0.0/10"
 }
 

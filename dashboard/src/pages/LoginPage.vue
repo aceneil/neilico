@@ -43,7 +43,7 @@ async function submit() {
       <div class="login-visual__content">
         <div class="brand brand--hero">
           <div class="brand__mark">U</div>
-          <div><strong>UMPP</strong><span>统一网络管理平台</span></div>
+          <div><strong>NEILICO</strong><span>统一网络管理平台</span></div>
         </div>
         <h1>安全连接每一个节点</h1>
         <p>统一纳管虚拟网络、域名代理、设备状态与配置下发。</p>
@@ -58,7 +58,7 @@ async function submit() {
       <div class="login-form-wrap">
         <p class="eyebrow">MANAGEMENT CONSOLE</p>
         <h2>登录控制台</h2>
-        <p class="login-subtitle">使用平台账户继续访问 UMPP</p>
+        <p class="login-subtitle">使用平台账户继续访问 NEILICO</p>
         <a-alert v-if="error" type="error" show-icon :message="error" class="login-error" />
         <a-form layout="vertical" size="large" @finish="submit">
           <a-form-item label="邮箱">
@@ -92,7 +92,7 @@ async function submit() {
           </a-button>
         </a-form>
         <div class="login-footer">
-          <span>UMPP Dashboard</span>
+          <span>NEILICO Dashboard</span>
           <span>Vue 3 · Ant Design Vue</span>
         </div>
       </div>

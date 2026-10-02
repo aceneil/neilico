@@ -1,11 +1,11 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: {{ include "umpp.fullname" . }}-config
+  name: {{ include "neilico.fullname" . }}-config
   labels:
-    {{- include "umpp.componentLabels" (dict "root" . "component" "config") | nindent 4 }}
+    {{- include "neilico.componentLabels" (dict "root" . "component" "config") | nindent 4 }}
   annotations:
-    {{- include "umpp.annotations" . | nindent 4 }}
+    {{- include "neilico.annotations" . | nindent 4 }}
 data:
   config.yaml: |
     server:
@@ -76,7 +76,7 @@ data:
       }
 
       location /api/ {
-        proxy_pass http://{{ include "umpp.controlApi.fullname" . }}:{{ .Values.controlApi.service.ports.api }};
+        proxy_pass http://{{ include "neilico.controlApi.fullname" . }}:{{ .Values.controlApi.service.ports.api }};
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
@@ -87,12 +87,12 @@ data:
       }
 
       location = /healthz {
-        proxy_pass http://{{ include "umpp.controlApi.fullname" . }}:{{ .Values.controlApi.service.ports.api }}/healthz;
+        proxy_pass http://{{ include "neilico.controlApi.fullname" . }}:{{ .Values.controlApi.service.ports.api }}/healthz;
         proxy_set_header Host $host;
       }
 
       location = /metrics {
-        proxy_pass http://{{ include "umpp.controlApi.fullname" . }}:{{ .Values.controlApi.service.ports.api }}/metrics;
+        proxy_pass http://{{ include "neilico.controlApi.fullname" . }}:{{ .Values.controlApi.service.ports.api }}/metrics;
         proxy_set_header Host $host;
       }
     }

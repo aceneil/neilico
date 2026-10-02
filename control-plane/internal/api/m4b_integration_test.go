@@ -11,9 +11,9 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/datatypes"
 
-	"umpp/control-plane/internal/auth"
-	"umpp/control-plane/internal/models"
-	"umpp/control-plane/internal/service"
+	"neilico/control-plane/internal/auth"
+	"neilico/control-plane/internal/models"
+	"neilico/control-plane/internal/service"
 )
 
 func TestAuditLogsTenantIsolationPaginationAndFilters(t *testing.T) {
@@ -29,7 +29,7 @@ func TestAuditLogsTenantIsolationPaginationAndFilters(t *testing.T) {
 	for index := 0; index < 5; index++ {
 		record := models.AuditLog{
 			ID: uuid.New(), TenantID: &tenantA, UserID: &userA.User.ID,
-			Action: "umpp.page", Resource: "/test/page", Detail: datatypes.JSON(`{"test":true}`),
+			Action: "neilico.page", Resource: "/test/page", Detail: datatypes.JSON(`{"test":true}`),
 			IP: "127.0.0.1", CreatedAt: base.Add(time.Duration(index) * time.Minute),
 		}
 		if err := app.db.Create(&record).Error; err != nil {
@@ -38,14 +38,14 @@ func TestAuditLogsTenantIsolationPaginationAndFilters(t *testing.T) {
 	}
 	otherTenantID := tenantIDForEmail(t, app, "audit-b@example.test")
 	otherRecord := models.AuditLog{
-		ID: uuid.New(), TenantID: &otherTenantID, Action: "umpp.page", Resource: "/test/page",
+		ID: uuid.New(), TenantID: &otherTenantID, Action: "neilico.page", Resource: "/test/page",
 		Detail: datatypes.JSON(`{"other":true}`), IP: "127.0.0.1", CreatedAt: base.Add(time.Hour),
 	}
 	if err := app.db.Create(&otherRecord).Error; err != nil {
 		t.Fatal(err)
 	}
 
-	status, body := mustRequest(t, app.server, http.MethodGet, "/api/v1/audit-logs?action=umpp.page&page=1&page_size=2&tenant_id="+otherTenantID.String(), userA.Token, nil)
+	status, body := mustRequest(t, app.server, http.MethodGet, "/api/v1/audit-logs?action=neilico.page&page=1&page_size=2&tenant_id="+otherTenantID.String(), userA.Token, nil)
 	requireStatus(t, status, http.StatusOK)
 	var pageOne service.AuditLogList
 	decodeResponse(t, body, &pageOne)
@@ -61,7 +61,7 @@ func TestAuditLogsTenantIsolationPaginationAndFilters(t *testing.T) {
 		}
 	}
 
-	status, body = mustRequest(t, app.server, http.MethodGet, "/api/v1/audit-logs?action=umpp.page&page=3&page_size=2", userA.Token, nil)
+	status, body = mustRequest(t, app.server, http.MethodGet, "/api/v1/audit-logs?action=neilico.page&page=3&page_size=2", userA.Token, nil)
 	requireStatus(t, status, http.StatusOK)
 	var pageThree service.AuditLogList
 	decodeResponse(t, body, &pageThree)
@@ -71,7 +71,7 @@ func TestAuditLogsTenantIsolationPaginationAndFilters(t *testing.T) {
 
 	from := base.Add(2 * time.Minute).Format(time.RFC3339)
 	to := base.Add(3*time.Minute + time.Second).Format(time.RFC3339)
-	path := "/api/v1/audit-logs?action=umpp.page&from=" + url.QueryEscape(from) + "&to=" + url.QueryEscape(to) + "&page_size=200"
+	path := "/api/v1/audit-logs?action=neilico.page&from=" + url.QueryEscape(from) + "&to=" + url.QueryEscape(to) + "&page_size=200"
 	status, body = mustRequest(t, app.server, http.MethodGet, path, userA.Token, nil)
 	requireStatus(t, status, http.StatusOK)
 	var filtered service.AuditLogList
@@ -80,7 +80,7 @@ func TestAuditLogsTenantIsolationPaginationAndFilters(t *testing.T) {
 		t.Fatalf("unexpected filtered audit logs: %#v", filtered)
 	}
 
-	status, body = mustRequest(t, app.server, http.MethodGet, "/api/v1/audit-logs?action=umpp.page&tenant_id="+tenantA.String(), admin.Token, nil)
+	status, body = mustRequest(t, app.server, http.MethodGet, "/api/v1/audit-logs?action=neilico.page&tenant_id="+tenantA.String(), admin.Token, nil)
 	requireStatus(t, status, http.StatusOK)
 	var platformFiltered service.AuditLogList
 	decodeResponse(t, body, &platformFiltered)
@@ -102,7 +102,7 @@ func TestAuditLogsTenantIsolationPaginationAndFilters(t *testing.T) {
 
 	status, body = mustRequest(t, app.server, http.MethodGet, "/metrics", "", nil)
 	requireStatus(t, status, http.StatusOK)
-	if !bytes.Contains(body, []byte(`umpp_http_requests_total{method="GET",path="/api/v1/audit-logs"`)) {
+	if !bytes.Contains(body, []byte(`neilico_http_requests_total{method="GET",path="/api/v1/audit-logs"`)) {
 		t.Fatalf("HTTP request metrics omitted audit endpoint:\n%s", body)
 	}
 }

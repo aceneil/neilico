@@ -19,11 +19,11 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
-	"umpp/control-plane/internal/config"
-	"umpp/control-plane/internal/db"
-	"umpp/control-plane/internal/metrics"
-	certcrypto "umpp/control-plane/internal/service/cert"
-	"umpp/control-plane/internal/service/pki"
+	"neilico/control-plane/internal/config"
+	"neilico/control-plane/internal/db"
+	"neilico/control-plane/internal/metrics"
+	certcrypto "neilico/control-plane/internal/service/cert"
+	"neilico/control-plane/internal/service/pki"
 )
 
 func TestRequireClientCertificateExemptsHealthAndMetrics(t *testing.T) {

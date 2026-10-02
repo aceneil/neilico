@@ -1,4 +1,4 @@
-module umpp/agent
+module neilico/agent
 
 go 1.27
 
@@ -51,7 +51,7 @@ require (
 	github.com/prometheus/client_golang v1.20.5
 	golang.zx2c4.com/wireguard/wgctrl v0.0.0-20241231184526-a9ab2273dd10
 	gopkg.in/yaml.v3 v3.0.1
-	umpp/control-plane v0.0.0
+	neilico/control-plane v0.0.0
 )
 
-replace umpp/control-plane => ../control-plane
+replace neilico/control-plane => ../control-plane

@@ -9,7 +9,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"umpp/control-plane/internal/models"
+	"neilico/control-plane/internal/models"
 )
 
 func TestPasswordHashAndCheck(t *testing.T) {
@@ -115,8 +115,8 @@ func TestAPITokenFormatHashAndScopeTables(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.HasPrefix(plain, "umpp_") || len(plain) != len("umpp_")+43 {
-		t.Fatalf("unexpected API token format length=%d prefix=%t", len(plain), strings.HasPrefix(plain, "umpp_"))
+	if !strings.HasPrefix(plain, "neilico_") || len(plain) != len("neilico_")+43 {
+		t.Fatalf("unexpected API token format length=%d prefix=%t", len(plain), strings.HasPrefix(plain, "neilico_"))
 	}
 	if prefix != plain[:8] || len(hash) != 64 || strings.Contains(hash, plain) {
 		t.Fatal("API token hash or prefix mismatch")

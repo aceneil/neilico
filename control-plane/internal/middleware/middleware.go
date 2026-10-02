@@ -15,9 +15,9 @@ import (
 	"gorm.io/datatypes"
 	"gorm.io/gorm"
 
-	"umpp/control-plane/internal/auth"
-	"umpp/control-plane/internal/metrics"
-	"umpp/control-plane/internal/models"
+	"neilico/control-plane/internal/auth"
+	"neilico/control-plane/internal/metrics"
+	"neilico/control-plane/internal/models"
 )
 
 type contextKey int
@@ -239,7 +239,7 @@ func (w *statusWriter) WriteHeader(status int) {
 	w.ResponseWriter.WriteHeader(status)
 }
 
-var embeddedAPIToken = regexp.MustCompile(`umpp_[A-Za-z0-9_-]{20,}`)
+var embeddedAPIToken = regexp.MustCompile(`neilico_[A-Za-z0-9_-]{20,}`)
 
 func sanitizeDetail(value any) any {
 	switch typed := value.(type) {

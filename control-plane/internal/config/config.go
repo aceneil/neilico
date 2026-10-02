@@ -126,7 +126,7 @@ func Default() Config {
 		},
 		PKI: PKI{
 			Enabled:         false,
-			CACertName:      "UMPP Internal CA",
+			CACertName:      "NEILICO Internal CA",
 			ServerCertDays:  825,
 			NodeCertDays:    365,
 			RenewBeforeDays: 30,
@@ -214,37 +214,37 @@ func applyEnvironment(cfg *Config) error {
 		key string
 		dst *string
 	}{
-		{"UMPP_SERVER_HOST", &cfg.Server.Host},
-		{"UMPP_SERVER_TLS_CERT_FILE", &cfg.Server.TLS.CertFile},
-		{"UMPP_SERVER_TLS_KEY_FILE", &cfg.Server.TLS.KeyFile},
-		{"UMPP_SERVER_TLS_CLIENT_CA_FILE", &cfg.Server.TLS.ClientCAFile},
-		{"UMPP_SERVER_TLS_MIN_VERSION", &cfg.Server.TLS.MinVersion},
-		{"UMPP_SERVER_TLS_CLIENT_AUTH", &cfg.Server.TLS.ClientAuth},
-		{"UMPP_PKI_CA_COMMON_NAME", &cfg.PKI.CACertName},
-		{"UMPP_DATABASE_DRIVER", &cfg.Database.Driver},
-		{"UMPP_DATABASE_DSN", &cfg.Database.DSN},
-		{"UMPP_AUTH_JWT_SECRET", &cfg.Auth.JWTSecret},
-		{"UMPP_BOOTSTRAP_ADMIN_EMAIL", &cfg.Bootstrap.AdminEmail},
-		{"UMPP_BOOTSTRAP_ADMIN_PASSWORD", &cfg.Bootstrap.AdminPassword},
-		{"UMPP_BOOTSTRAP_DEFAULT_TENANT", &cfg.Bootstrap.DefaultTenant},
-		{"UMPP_LOG_LEVEL", &cfg.Log.Level},
-		{"UMPP_LOG_FORMAT", &cfg.Log.Format},
-		{"UMPP_ACME_DIRECTORY_URL", &cfg.ACME.DirectoryURL},
-		{"UMPP_ACME_EMAIL", &cfg.ACME.Email},
-		{"UMPP_ACME_CHALLENGE", &cfg.ACME.Challenge},
-		{"UMPP_ACME_KEY_TYPE", &cfg.ACME.KeyType},
-		{"UMPP_ACME_CA_CERT_FILE", &cfg.ACME.CACertFile},
-		{"UMPP_PROXY_KIND", &cfg.Proxy.Kind},
-		{"UMPP_PROXY_TLS_LISTEN", &cfg.Proxy.TLS.Listen},
-		{"UMPP_PROXY_TLS_MIN_VERSION", &cfg.Proxy.TLS.MinVersion},
-		{"UMPP_PROXY_LISTEN", &cfg.Proxy.Listen},
-		{"UMPP_NPS_CONFIG_PATH", &cfg.Proxy.NPS.ConfigPath},
-		{"UMPP_NPS_BINARY_PATH", &cfg.Proxy.NPS.BinaryPath},
-		{"UMPP_NPS_PID_FILE", &cfg.Proxy.NPS.PIDFile},
-		{"UMPP_NPS_RELOAD_STRATEGY", &cfg.Proxy.NPS.ReloadStrategy},
-		{"UMPP_ALERTS_WEBHOOK_URL", &cfg.Alerts.WebhookURL},
+		{"NEILICO_SERVER_HOST", &cfg.Server.Host},
+		{"NEILICO_SERVER_TLS_CERT_FILE", &cfg.Server.TLS.CertFile},
+		{"NEILICO_SERVER_TLS_KEY_FILE", &cfg.Server.TLS.KeyFile},
+		{"NEILICO_SERVER_TLS_CLIENT_CA_FILE", &cfg.Server.TLS.ClientCAFile},
+		{"NEILICO_SERVER_TLS_MIN_VERSION", &cfg.Server.TLS.MinVersion},
+		{"NEILICO_SERVER_TLS_CLIENT_AUTH", &cfg.Server.TLS.ClientAuth},
+		{"NEILICO_PKI_CA_COMMON_NAME", &cfg.PKI.CACertName},
+		{"NEILICO_DATABASE_DRIVER", &cfg.Database.Driver},
+		{"NEILICO_DATABASE_DSN", &cfg.Database.DSN},
+		{"NEILICO_AUTH_JWT_SECRET", &cfg.Auth.JWTSecret},
+		{"NEILICO_BOOTSTRAP_ADMIN_EMAIL", &cfg.Bootstrap.AdminEmail},
+		{"NEILICO_BOOTSTRAP_ADMIN_PASSWORD", &cfg.Bootstrap.AdminPassword},
+		{"NEILICO_BOOTSTRAP_DEFAULT_TENANT", &cfg.Bootstrap.DefaultTenant},
+		{"NEILICO_LOG_LEVEL", &cfg.Log.Level},
+		{"NEILICO_LOG_FORMAT", &cfg.Log.Format},
+		{"NEILICO_ACME_DIRECTORY_URL", &cfg.ACME.DirectoryURL},
+		{"NEILICO_ACME_EMAIL", &cfg.ACME.Email},
+		{"NEILICO_ACME_CHALLENGE", &cfg.ACME.Challenge},
+		{"NEILICO_ACME_KEY_TYPE", &cfg.ACME.KeyType},
+		{"NEILICO_ACME_CA_CERT_FILE", &cfg.ACME.CACertFile},
+		{"NEILICO_PROXY_KIND", &cfg.Proxy.Kind},
+		{"NEILICO_PROXY_TLS_LISTEN", &cfg.Proxy.TLS.Listen},
+		{"NEILICO_PROXY_TLS_MIN_VERSION", &cfg.Proxy.TLS.MinVersion},
+		{"NEILICO_PROXY_LISTEN", &cfg.Proxy.Listen},
+		{"NEILICO_NPS_CONFIG_PATH", &cfg.Proxy.NPS.ConfigPath},
+		{"NEILICO_NPS_BINARY_PATH", &cfg.Proxy.NPS.BinaryPath},
+		{"NEILICO_NPS_PID_FILE", &cfg.Proxy.NPS.PIDFile},
+		{"NEILICO_NPS_RELOAD_STRATEGY", &cfg.Proxy.NPS.ReloadStrategy},
+		{"NEILICO_ALERTS_WEBHOOK_URL", &cfg.Alerts.WebhookURL},
 	}
-	if value, ok := os.LookupEnv("UMPP_PKI_SERVER_HOSTS"); ok {
+	if value, ok := os.LookupEnv("NEILICO_PKI_SERVER_HOSTS"); ok {
 		cfg.PKI.ServerHosts = nil
 		for _, host := range strings.Split(value, ",") {
 			if host = strings.TrimSpace(host); host != "" {
@@ -257,10 +257,10 @@ func applyEnvironment(cfg *Config) error {
 			*item.dst = value
 		}
 	}
-	if value, ok := os.LookupEnv("UMPP_PROXY_ENABLED"); ok {
+	if value, ok := os.LookupEnv("NEILICO_PROXY_ENABLED"); ok {
 		enabled, err := strconv.ParseBool(value)
 		if err != nil {
-			return fmt.Errorf("UMPP_PROXY_ENABLED must be a boolean: %w", err)
+			return fmt.Errorf("NEILICO_PROXY_ENABLED must be a boolean: %w", err)
 		}
 		cfg.Proxy.Enabled = enabled
 	}
@@ -268,17 +268,17 @@ func applyEnvironment(cfg *Config) error {
 		key string
 		dst *bool
 	}{
-		{"UMPP_RATELIMIT_ENABLED", &cfg.RateLimit.Enabled},
-		{"UMPP_ACME_ENABLED", &cfg.ACME.Enabled},
-		{"UMPP_ACME_AGREE_TOS", &cfg.ACME.AgreeTOS},
-		{"UMPP_ACME_AUTO_RENEW", &cfg.ACME.AutoRenew},
-		{"UMPP_SERVER_TLS_ENABLED", &cfg.Server.TLS.Enabled},
-		{"UMPP_SERVER_TLS_REDIRECT_HTTP", &cfg.Server.TLS.RedirectHTTP},
-		{"UMPP_PKI_ENABLED", &cfg.PKI.Enabled},
-		{"UMPP_PROXY_TLS_ENABLED", &cfg.Proxy.TLS.Enabled},
-		{"UMPP_PROXY_TLS_REDIRECT_HTTP", &cfg.Proxy.TLS.RedirectHTTP},
-		{"UMPP_PROXY_NPS_CRYPT", &cfg.Proxy.NPS.Crypt},
-		{"UMPP_PROXY_NPS_COMPRESS", &cfg.Proxy.NPS.Compress},
+		{"NEILICO_RATELIMIT_ENABLED", &cfg.RateLimit.Enabled},
+		{"NEILICO_ACME_ENABLED", &cfg.ACME.Enabled},
+		{"NEILICO_ACME_AGREE_TOS", &cfg.ACME.AgreeTOS},
+		{"NEILICO_ACME_AUTO_RENEW", &cfg.ACME.AutoRenew},
+		{"NEILICO_SERVER_TLS_ENABLED", &cfg.Server.TLS.Enabled},
+		{"NEILICO_SERVER_TLS_REDIRECT_HTTP", &cfg.Server.TLS.RedirectHTTP},
+		{"NEILICO_PKI_ENABLED", &cfg.PKI.Enabled},
+		{"NEILICO_PROXY_TLS_ENABLED", &cfg.Proxy.TLS.Enabled},
+		{"NEILICO_PROXY_TLS_REDIRECT_HTTP", &cfg.Proxy.TLS.RedirectHTTP},
+		{"NEILICO_PROXY_NPS_CRYPT", &cfg.Proxy.NPS.Crypt},
+		{"NEILICO_PROXY_NPS_COMPRESS", &cfg.Proxy.NPS.Compress},
 	} {
 		value, ok := os.LookupEnv(item.key)
 		if !ok {
@@ -294,11 +294,11 @@ func applyEnvironment(cfg *Config) error {
 		key string
 		dst *int
 	}{
-		{"UMPP_SERVER_PORT", &cfg.Server.Port},
-		{"UMPP_SERVER_TLS_HTTP_PORT", &cfg.Server.TLS.HTTPPort},
-		{"UMPP_RATELIMIT_BURST", &cfg.RateLimit.Burst},
-		{"UMPP_ACME_HTTP_PORT", &cfg.ACME.HTTPPort},
-		{"UMPP_ACME_RENEW_BEFORE_DAYS", &cfg.ACME.RenewBeforeDays},
+		{"NEILICO_SERVER_PORT", &cfg.Server.Port},
+		{"NEILICO_SERVER_TLS_HTTP_PORT", &cfg.Server.TLS.HTTPPort},
+		{"NEILICO_RATELIMIT_BURST", &cfg.RateLimit.Burst},
+		{"NEILICO_ACME_HTTP_PORT", &cfg.ACME.HTTPPort},
+		{"NEILICO_ACME_RENEW_BEFORE_DAYS", &cfg.ACME.RenewBeforeDays},
 	} {
 		value, ok := os.LookupEnv(item.key)
 		if !ok {
@@ -314,27 +314,27 @@ func applyEnvironment(cfg *Config) error {
 		key string
 		dst *time.Duration
 	}{
-		{"UMPP_AUTH_ACCESS_TTL", &cfg.Auth.AccessTTL},
-		{"UMPP_AUTH_REFRESH_TTL", &cfg.Auth.RefreshTTL},
-		{"UMPP_NODE_HEARTBEAT_TIMEOUT", &cfg.Node.HeartbeatTimeout},
-		{"UMPP_ACME_CHECK_INTERVAL", &cfg.ACME.CheckInterval},
-		{"UMPP_ALERTS_EVALUATION_INTERVAL", &cfg.Alerts.EvaluationInterval},
-		{"UMPP_ALERTS_NODE_OFFLINE_AFTER", &cfg.Alerts.NodeOfflineAfter},
-		{"UMPP_ALERTS_CERTIFICATE_EXPIRING_IN", &cfg.Alerts.CertificateExpiringIn},
-		{"UMPP_ALERTS_CERTIFICATE_CRITICAL_IN", &cfg.Alerts.CertificateCriticalIn},
-		{"UMPP_ALERTS_RELAY_BASELINE_WINDOW", &cfg.Alerts.RelayBaselineWindow},
-		{"UMPP_ALERTS_RESOLVED_RETENTION", &cfg.Alerts.ResolvedRetention},
-		{"UMPP_ALERTS_WEBHOOK_TIMEOUT", &cfg.Alerts.WebhookTimeout},
+		{"NEILICO_AUTH_ACCESS_TTL", &cfg.Auth.AccessTTL},
+		{"NEILICO_AUTH_REFRESH_TTL", &cfg.Auth.RefreshTTL},
+		{"NEILICO_NODE_HEARTBEAT_TIMEOUT", &cfg.Node.HeartbeatTimeout},
+		{"NEILICO_ACME_CHECK_INTERVAL", &cfg.ACME.CheckInterval},
+		{"NEILICO_ALERTS_EVALUATION_INTERVAL", &cfg.Alerts.EvaluationInterval},
+		{"NEILICO_ALERTS_NODE_OFFLINE_AFTER", &cfg.Alerts.NodeOfflineAfter},
+		{"NEILICO_ALERTS_CERTIFICATE_EXPIRING_IN", &cfg.Alerts.CertificateExpiringIn},
+		{"NEILICO_ALERTS_CERTIFICATE_CRITICAL_IN", &cfg.Alerts.CertificateCriticalIn},
+		{"NEILICO_ALERTS_RELAY_BASELINE_WINDOW", &cfg.Alerts.RelayBaselineWindow},
+		{"NEILICO_ALERTS_RESOLVED_RETENTION", &cfg.Alerts.ResolvedRetention},
+		{"NEILICO_ALERTS_WEBHOOK_TIMEOUT", &cfg.Alerts.WebhookTimeout},
 	}
 	intOverrides := []struct {
 		key string
 		dst *int
 	}{
-		{"UMPP_ALERTS_WEBHOOK_RETRIES", &cfg.Alerts.WebhookRetries},
-		{"UMPP_PKI_SERVER_CERT_DAYS", &cfg.PKI.ServerCertDays},
-		{"UMPP_PKI_NODE_CERT_DAYS", &cfg.PKI.NodeCertDays},
-		{"UMPP_PKI_RENEW_BEFORE_DAYS", &cfg.PKI.RenewBeforeDays},
-		{"UMPP_PROXY_TLS_HSTS_MAX_AGE", &cfg.Proxy.TLS.HSTSMaxAge},
+		{"NEILICO_ALERTS_WEBHOOK_RETRIES", &cfg.Alerts.WebhookRetries},
+		{"NEILICO_PKI_SERVER_CERT_DAYS", &cfg.PKI.ServerCertDays},
+		{"NEILICO_PKI_NODE_CERT_DAYS", &cfg.PKI.NodeCertDays},
+		{"NEILICO_PKI_RENEW_BEFORE_DAYS", &cfg.PKI.RenewBeforeDays},
+		{"NEILICO_PROXY_TLS_HSTS_MAX_AGE", &cfg.Proxy.TLS.HSTSMaxAge},
 	}
 	for _, item := range intOverrides {
 		value, ok := os.LookupEnv(item.key)
@@ -351,9 +351,9 @@ func applyEnvironment(cfg *Config) error {
 		key string
 		dst *float64
 	}{
-		{"UMPP_RATELIMIT_RPS", &cfg.RateLimit.RPS},
-		{"UMPP_ALERTS_P2P_SUCCESS_RATE_MINIMUM", &cfg.Alerts.P2PSuccessRateMinimum},
-		{"UMPP_ALERTS_RELAY_SPIKE_MULTIPLIER", &cfg.Alerts.RelaySpikeMultiplier},
+		{"NEILICO_RATELIMIT_RPS", &cfg.RateLimit.RPS},
+		{"NEILICO_ALERTS_P2P_SUCCESS_RATE_MINIMUM", &cfg.Alerts.P2PSuccessRateMinimum},
+		{"NEILICO_ALERTS_RELAY_SPIKE_MULTIPLIER", &cfg.Alerts.RelaySpikeMultiplier},
 	}
 	for _, item := range floatOverrides {
 		value, ok := os.LookupEnv(item.key)

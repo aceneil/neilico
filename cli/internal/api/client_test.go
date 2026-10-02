@@ -25,7 +25,7 @@ func TestErrorRedactsSensitiveResponseFields(t *testing.T) {
 }
 
 func TestErrorParsesNestedEnvelopeAndRedactsAPIToken(t *testing.T) {
-	secret := "umpp_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"
+	secret := "neilico_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusForbidden)
 		_, _ = w.Write([]byte(`{"error":{"code":"insufficient_scope","message":"credential ` + secret + ` rejected"}}`))

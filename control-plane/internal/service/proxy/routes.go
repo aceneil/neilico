@@ -12,8 +12,8 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
-	"umpp/control-plane/internal/models"
-	"umpp/control-plane/internal/validation"
+	"neilico/control-plane/internal/models"
+	"neilico/control-plane/internal/validation"
 )
 
 type Route struct {

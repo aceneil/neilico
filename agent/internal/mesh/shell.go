@@ -7,7 +7,7 @@ import (
 	"os"
 	"strings"
 
-	"umpp/agent/internal/route"
+	"neilico/agent/internal/route"
 )
 
 type ShellApplier struct {
@@ -47,7 +47,7 @@ func (a *ShellApplier) Plan(config Config) ([]route.Command, error) {
 	}
 	commands = append(commands,
 		route.Command{Name: "ip", Args: []string{"link", "set", config.Interface, "mtu", fmt.Sprintf("%d", config.MTU), "up"}},
-		route.Command{Name: "wg", Args: []string{"setconf", config.Interface, "/run/umpp-agent/wg.conf"}, Comment: strings.Join(peerNotes, "; ")},
+		route.Command{Name: "wg", Args: []string{"setconf", config.Interface, "/run/neilico-agent/wg.conf"}, Comment: strings.Join(peerNotes, "; ")},
 	)
 	return commands, nil
 }
@@ -93,7 +93,7 @@ func (a *ShellApplier) writeConfig(content string) (string, error) {
 	if err := os.MkdirAll(directory, 0o700); err != nil {
 		return "", fmt.Errorf("create WireGuard temporary directory: %w", err)
 	}
-	file, err := os.CreateTemp(directory, "umpp-wg-*.conf")
+	file, err := os.CreateTemp(directory, "neilico-wg-*.conf")
 	if err != nil {
 		return "", fmt.Errorf("create WireGuard temporary config: %w", err)
 	}

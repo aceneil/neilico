@@ -22,7 +22,7 @@ func NewCrypto(jwtSecret string) (*Crypto, error) {
 	if strings.TrimSpace(jwtSecret) == "" {
 		return nil, errors.New("jwt secret is required for certificate key encryption")
 	}
-	digest := sha256.Sum256([]byte("umpp-certificate-key-v1\x00" + jwtSecret))
+	digest := sha256.Sum256([]byte("neilico-certificate-key-v1\x00" + jwtSecret))
 	return NewCryptoFromKey(digest[:])
 }
 
@@ -30,7 +30,7 @@ func NewCryptoFromKey(key []byte) (*Crypto, error) {
 	if len(key) == 0 {
 		return nil, errors.New("certificate encryption key is required")
 	}
-	digest := sha256.Sum256(append([]byte("umpp-certificate-key-v1\x00"), key...))
+	digest := sha256.Sum256(append([]byte("neilico-certificate-key-v1\x00"), key...))
 	block, err := aes.NewCipher(digest[:])
 	if err != nil {
 		return nil, fmt.Errorf("create certificate cipher: %w", err)

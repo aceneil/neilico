@@ -16,15 +16,15 @@ import (
 	"testing"
 	"time"
 
-	"umpp/control-plane/testkit"
+	"neilico/control-plane/testkit"
 
-	"umpp/agent/internal/client"
-	"umpp/agent/internal/config"
-	"umpp/agent/internal/heartbeat"
-	"umpp/agent/internal/mesh"
-	agentmetrics "umpp/agent/internal/metrics"
-	"umpp/agent/internal/route"
-	"umpp/agent/internal/state"
+	"neilico/agent/internal/client"
+	"neilico/agent/internal/config"
+	"neilico/agent/internal/heartbeat"
+	"neilico/agent/internal/mesh"
+	agentmetrics "neilico/agent/internal/metrics"
+	"neilico/agent/internal/route"
+	"neilico/agent/internal/state"
 )
 
 type integrationApp struct {

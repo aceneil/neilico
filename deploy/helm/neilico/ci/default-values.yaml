@@ -2,11 +2,11 @@
 replicaCount: 1
 controlApi:
   image:
-    repository: localhost/umpp-control-api
+    repository: localhost/neilico-control-api
     tag: ci
 dashboard:
   image:
-    repository: localhost/umpp-dashboard
+    repository: localhost/neilico-dashboard
     tag: ci
 postgres:
   image:

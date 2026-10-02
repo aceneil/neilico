@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"strings"
 
-	"umpp/control-plane/internal/auth"
+	"neilico/control-plane/internal/auth"
 )
 
 type scopePolicy struct {

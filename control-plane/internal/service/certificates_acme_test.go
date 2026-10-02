@@ -18,11 +18,11 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
-	appconfig "umpp/control-plane/internal/config"
-	"umpp/control-plane/internal/db"
-	"umpp/control-plane/internal/models"
-	"umpp/control-plane/internal/service/cert"
-	acmeclient "umpp/control-plane/internal/service/cert/acme"
+	appconfig "neilico/control-plane/internal/config"
+	"neilico/control-plane/internal/db"
+	"neilico/control-plane/internal/models"
+	"neilico/control-plane/internal/service/cert"
+	acmeclient "neilico/control-plane/internal/service/cert/acme"
 )
 
 type lifecycleTransport struct {

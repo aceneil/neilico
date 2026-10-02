@@ -16,10 +16,10 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
-	"umpp/control-plane/internal/auth"
-	"umpp/control-plane/internal/config"
-	"umpp/control-plane/internal/db"
-	"umpp/control-plane/internal/models"
+	"neilico/control-plane/internal/auth"
+	"neilico/control-plane/internal/config"
+	"neilico/control-plane/internal/db"
+	"neilico/control-plane/internal/models"
 )
 
 func TestAuthRequiredAPITokenStatesAndUsageThrottle(t *testing.T) {
@@ -68,7 +68,7 @@ func TestAuthRequiredAPITokenStatesAndUsageThrottle(t *testing.T) {
 		status            int
 	}{
 		{name: "valid", token: valid, code: "", status: http.StatusNoContent},
-		{name: "invalid", token: "umpp_invalid", code: "invalid_token", status: http.StatusUnauthorized},
+		{name: "invalid", token: "neilico_invalid", code: "invalid_token", status: http.StatusUnauthorized},
 		{name: "expired", token: expired, code: "token_expired", status: http.StatusUnauthorized},
 		{name: "revoked", token: revoked, code: "token_revoked", status: http.StatusUnauthorized},
 	} {
@@ -137,11 +137,11 @@ func TestRequireScopeAndRedaction(t *testing.T) {
 	if recorder.Code != http.StatusForbidden || !strings.Contains(recorder.Body.String(), `"code":"insufficient_scope"`) {
 		t.Fatalf("insufficient scope response = %d %s", recorder.Code, recorder.Body.String())
 	}
-	if strings.Contains(recorder.Body.String(), "umpp_") {
+	if strings.Contains(recorder.Body.String(), "neilico_") {
 		t.Fatal("scope error leaked token")
 	}
 
-	plain := "umpp_" + strings.Repeat("A", 43)
+	plain := "neilico_" + strings.Repeat("A", 43)
 	detail := marshalDetail(map[string]any{"token": plain, "message": "used " + plain})
 	if bytes.Contains(detail, []byte(plain)) || !bytes.Contains(detail, []byte(auth.RedactAPIToken(plain))) {
 		t.Fatalf("audit detail was not redacted: %s", detail)

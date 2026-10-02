@@ -6,10 +6,10 @@ import (
 
 	"gorm.io/gorm"
 
-	"umpp/control-plane/internal/auth"
-	"umpp/control-plane/internal/middleware"
-	"umpp/control-plane/internal/models"
-	"umpp/control-plane/internal/service/pki"
+	"neilico/control-plane/internal/auth"
+	"neilico/control-plane/internal/middleware"
+	"neilico/control-plane/internal/models"
+	"neilico/control-plane/internal/service/pki"
 )
 
 func (s *Server) handlePKICA(w http.ResponseWriter, r *http.Request) {

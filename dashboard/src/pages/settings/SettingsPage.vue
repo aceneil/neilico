@@ -295,7 +295,7 @@ void load()
 
       <article class="panel settings-panel settings-panel--about">
         <div class="panel-heading">
-          <div><h2><InfoCircleOutlined /> 关于 UMPP</h2><p>统一网络管理平台 Dashboard</p></div>
+          <div><h2><InfoCircleOutlined /> 关于 NEILICO</h2><p>统一网络管理平台 Dashboard</p></div>
         </div>
         <a-descriptions :column="2" bordered size="small">
           <a-descriptions-item label="前端">{{ health?.version || 'M4b' }}</a-descriptions-item>

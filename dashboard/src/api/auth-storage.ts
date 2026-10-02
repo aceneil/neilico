@@ -1,9 +1,9 @@
 import type { AuthResponse, AuthUser } from '@/types/api'
 
-const TOKEN_KEY = 'umpp.access_token'
-const REFRESH_KEY = 'umpp.refresh_token'
-const USER_KEY = 'umpp.user'
-const REMEMBER_KEY = 'umpp.remember'
+const TOKEN_KEY = 'neilico.access_token'
+const REFRESH_KEY = 'neilico.refresh_token'
+const USER_KEY = 'neilico.user'
+const REMEMBER_KEY = 'neilico.remember'
 
 function storage(): Storage {
   return localStorage.getItem(REMEMBER_KEY) === 'false' ? sessionStorage : localStorage

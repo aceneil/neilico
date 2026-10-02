@@ -2,15 +2,15 @@
 set -Eeuo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PROJECT="umpp-v1f"
+PROJECT="neilico-v1f"
 COMPOSE=(docker compose --project-name "$PROJECT"
   -f "$ROOT/deploy/docker-compose/docker-compose.yml"
   -f "$ROOT/deploy/docker-compose/docker-compose.tls.yml")
 OUT_DIR="$ROOT/dashboard/screenshots"
-RUN_DIR="$(mktemp -d "${TMPDIR:-/tmp}/umpp-v1f-dashboard.XXXXXX")"
+RUN_DIR="$(mktemp -d "${TMPDIR:-/tmp}/neilico-v1f-dashboard.XXXXXX")"
 PROFILE_BASE="$RUN_DIR/chrome-profile"
 CHROME="/usr/bin/google-chrome"
-BASE_URL="${UMPP_V1F_BASE_URL:-http://127.0.0.1:23000}"
+BASE_URL="${NEILICO_V1F_BASE_URL:-http://127.0.0.1:23000}"
 CONTROL_HTTP_PORT=28080
 CONTROL_HTTPS_PORT=28443
 PROXY_HTTP_PORT=28081
@@ -22,7 +22,7 @@ NATS_PORT=24222
 DEBUG_PORT=29222
 
 export POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-$(openssl rand -hex 24)}"
-export UMPP_JWT_SECRET="${UMPP_JWT_SECRET:-$(openssl rand -hex 32)}"
+export NEILICO_JWT_SECRET="${NEILICO_JWT_SECRET:-$(openssl rand -hex 32)}"
 export BOOTSTRAP_ADMIN_EMAIL="${BOOTSTRAP_ADMIN_EMAIL:-admin@v1f.local}"
 export BOOTSTRAP_ADMIN_PASSWORD="${BOOTSTRAP_ADMIN_PASSWORD:-$(openssl rand -hex 18)}"
 export TLS_API_HTTP_PORT="$CONTROL_HTTP_PORT"
@@ -52,7 +52,7 @@ assert_port_free() {
 
 cleanup() {
   local rc=$?
-  if [[ "${KEEP_UMPP_V1F_STACK:-0}" != "1" ]]; then
+  if [[ "${KEEP_NEILICO_V1F_STACK:-0}" != "1" ]]; then
     "${COMPOSE[@]}" --profile disabled down -v --remove-orphans >/dev/null 2>&1 || true
   fi
   rm -rf "$RUN_DIR"
@@ -128,12 +128,12 @@ const expression = `(async () => {
     })
     const session = await response.json()
     if (!response.ok || !session.token) throw new Error('dashboard login failed with status ' + response.status)
-    localStorage.setItem('umpp.remember', 'true')
-    localStorage.setItem('umpp.access_token', session.token)
-    localStorage.setItem('umpp.refresh_token', session.refresh_token)
-    localStorage.setItem('umpp.user', JSON.stringify(session.user))
+    localStorage.setItem('neilico.remember', 'true')
+    localStorage.setItem('neilico.access_token', session.token)
+    localStorage.setItem('neilico.refresh_token', session.refresh_token)
+    localStorage.setItem('neilico.user', JSON.stringify(session.user))
   }
-  localStorage.setItem('umpp.theme', theme)
+  localStorage.setItem('neilico.theme', theme)
   return { ok: true }
 })()`
 const result = await call('Runtime.evaluate', {
@@ -194,7 +194,7 @@ mkdir -p "$OUT_DIR"
 find "$OUT_DIR" -maxdepth 1 -type f -name '*.png' -delete
 openssl req -x509 -newkey rsa:2048 -nodes -days 2 \
   -keyout "$RUN_DIR/upstream.key" -out "$RUN_DIR/upstream.crt" \
-  -subj "/CN=umpp-v1f-upstream" >/dev/null 2>&1
+  -subj "/CN=neilico-v1f-upstream" >/dev/null 2>&1
 chmod 600 "$RUN_DIR/upstream.key"
 
 cat > "$RUN_DIR/dashboard-nginx.conf" <<'NGINX'
@@ -222,17 +222,17 @@ cat > "$RUN_DIR/docker-compose.v1f.yml" <<YAML
 services:
   control-api:
     environment:
-      UMPP_SERVER_TLS_CLIENT_AUTH: "request"
-      UMPP_PKI_ENABLED: "true"
-      UMPP_PKI_CA_COMMON_NAME: "UMPP V1-F Visual QA CA"
-      UMPP_PKI_SERVER_HOSTS: "localhost,127.0.0.1,control-api"
+      NEILICO_SERVER_TLS_CLIENT_AUTH: "request"
+      NEILICO_PKI_ENABLED: "true"
+      NEILICO_PKI_CA_COMMON_NAME: "NEILICO V1-F Visual QA CA"
+      NEILICO_PKI_SERVER_HOSTS: "localhost,127.0.0.1,control-api"
   dashboard:
     volumes:
       - "$RUN_DIR/dashboard-nginx.conf:/etc/nginx/conf.d/default.conf:ro"
 YAML
 
 COMPOSE+=(-f "$RUN_DIR/docker-compose.v1f.yml")
-log "==> starting isolated UMPP V1-F stack (project=$PROJECT)"
+log "==> starting isolated NEILICO V1-F stack (project=$PROJECT)"
 if ! "${COMPOSE[@]}" build dashboard control-api >"$RUN_DIR/compose-build.log" 2>&1; then
   cat "$RUN_DIR/compose-build.log" >&2
   fail "isolated stack image build failed"

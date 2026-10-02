@@ -14,8 +14,8 @@ import (
 	"strings"
 	"text/tabwriter"
 
-	"umpp/cli/internal/api"
-	"umpp/cli/internal/config"
+	"neilico/cli/internal/api"
+	"neilico/cli/internal/config"
 )
 
 type apiTokenItem struct {
@@ -97,8 +97,8 @@ func (a *App) login(ctx context.Context, credentials *config.Credentials, path s
 	}
 	if strings.TrimSpace(*apiToken) != "" {
 		value := strings.TrimSpace(*apiToken)
-		if !strings.HasPrefix(value, "umpp_") || len(value) < 12 {
-			return fmt.Errorf("--token must be a UMPP API token")
+		if !strings.HasPrefix(value, "neilico_") || len(value) < 12 {
+			return fmt.Errorf("--token must be a NEILICO API token")
 		}
 		credentials.AccessToken = value
 		credentials.RefreshToken = ""
@@ -597,14 +597,14 @@ func splitTags(value string) []string {
 }
 
 func errHelpText(name string) error {
-	return fmt.Errorf("%s: missing or invalid subcommand/options; use umppctl --help", name)
+	return fmt.Errorf("%s: missing or invalid subcommand/options; use neilicoctl --help", name)
 }
 
 var _ = os.ErrNotExist
 var _ = filepath.Separator
 
 func writePrivateFile(path string, data []byte, mode os.FileMode) error {
-	temp, err := os.CreateTemp(filepath.Dir(path), ".umppctl-*.tmp")
+	temp, err := os.CreateTemp(filepath.Dir(path), ".neilicoctl-*.tmp")
 	if err != nil {
 		return err
 	}

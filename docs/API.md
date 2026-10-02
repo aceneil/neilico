@@ -1,4 +1,4 @@
-# UMPP Control API
+# NEILICO Control API
 
 本文档由 `control-plane/internal/api` 的真实路由表整理。Base URL 在 Compose 部署中为 `http://127.0.0.1:18080`（生产可替换为 HTTPS 域名）。
 
@@ -7,7 +7,7 @@
 | 场景 | 方式 |
 | :--- | :--- |
 | 管理 API | `Authorization: Bearer <JWT>`，登录 `/api/v1/auth/login` 获取 |
-| 自动化 API | `Authorization: Bearer <API Token>`，明文格式 `umpp_<32-byte base64url>`；只在创建/轮换响应中出现一次 |
+| 自动化 API | `Authorization: Bearer <API Token>`，明文格式 `neilico_<32-byte base64url>`；只在创建/轮换响应中出现一次 |
 | 刷新 | `Authorization: Bearer <refresh token>` 或请求体 `{ "refresh_token": "..." }` |
 | Agent 心跳、流量、端点上报 | `Authorization: Bearer <agent_token>` |
 | Agent config | agent token（返回私钥），或 tenant/platform admin JWT（不返回私钥） |
@@ -90,7 +90,7 @@ scope 不足时还会返回 `detail`；API Token 使用 `insufficient_scope`，J
 
 ## API Token 与 Scope
 
-Token 明文为 `umpp_` 加 32 字节 `base64url` 随机值。服务端只保存 SHA-256 十六进制哈希；`token_prefix` 是完整明文的前 8 字符。`user_id` 为空表示租户级服务账号；所有 Token 都以 `tenant_id` 为隔离根。
+Token 明文为 `neilico_` 加 32 字节 `base64url` 随机值。服务端只保存 SHA-256 十六进制哈希；`token_prefix` 是完整明文的前 8 字符。`user_id` 为空表示租户级服务账号；所有 Token 都以 `tenant_id` 为隔离根。
 
 | Scope | GET 能力 | 写能力 |
 | :--- | :--- | :--- |
@@ -144,7 +144,7 @@ ratelimit:
   burst: 40
 ```
 
-也可用 `UMPP_RATELIMIT_ENABLED`、`UMPP_RATELIMIT_RPS`、`UMPP_RATELIMIT_BURST`。超限返回 `429 rate_limited` 和 `Retry-After`。`/healthz`、`/metrics`、`/.well-known/acme-challenge/*` 不计数；Agent 心跳/流量上报走独立 agent-token 路径，也不进入此 API Token/JWT 桶。
+也可用 `NEILICO_RATELIMIT_ENABLED`、`NEILICO_RATELIMIT_RPS`、`NEILICO_RATELIMIT_BURST`。超限返回 `429 rate_limited` 和 `Retry-After`。`/healthz`、`/metrics`、`/.well-known/acme-challenge/*` 不计数；Agent 心跳/流量上报走独立 agent-token 路径，也不进入此 API Token/JWT 桶。
 
 ## curl 示例
 

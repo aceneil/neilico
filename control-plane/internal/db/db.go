@@ -8,8 +8,8 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 
-	"umpp/control-plane/internal/config"
-	"umpp/control-plane/internal/models"
+	"neilico/control-plane/internal/config"
+	"neilico/control-plane/internal/models"
 )
 
 func Open(cfg config.Database, logLevels ...string) (*gorm.DB, error) {

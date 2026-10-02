@@ -1,18 +1,18 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ include "umpp.controlApi.fullname" . }}
+  name: {{ include "neilico.controlApi.fullname" . }}
   labels:
-    {{- include "umpp.componentLabels" (dict "root" . "component" "control-api") | nindent 4 }}
+    {{- include "neilico.componentLabels" (dict "root" . "component" "control-api") | nindent 4 }}
   annotations:
-    {{- include "umpp.annotations" . | nindent 4 }}
+    {{- include "neilico.annotations" . | nindent 4 }}
     {{- with .Values.controlApi.service.annotations }}
     {{- toYaml . | nindent 4 }}
     {{- end }}
 spec:
   type: {{ .Values.controlApi.service.type }}
   selector:
-    {{- include "umpp.selectorLabels" . | nindent 4 }}
+    {{- include "neilico.selectorLabels" . | nindent 4 }}
     app.kubernetes.io/component: control-api
   ports:
     - name: api
@@ -31,18 +31,18 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ include "umpp.dashboard.fullname" . }}
+  name: {{ include "neilico.dashboard.fullname" . }}
   labels:
-    {{- include "umpp.componentLabels" (dict "root" . "component" "dashboard") | nindent 4 }}
+    {{- include "neilico.componentLabels" (dict "root" . "component" "dashboard") | nindent 4 }}
   annotations:
-    {{- include "umpp.annotations" . | nindent 4 }}
+    {{- include "neilico.annotations" . | nindent 4 }}
     {{- with .Values.dashboard.service.annotations }}
     {{- toYaml . | nindent 4 }}
     {{- end }}
 spec:
   type: {{ .Values.dashboard.service.type }}
   selector:
-    {{- include "umpp.selectorLabels" . | nindent 4 }}
+    {{- include "neilico.selectorLabels" . | nindent 4 }}
     app.kubernetes.io/component: dashboard
   ports:
     - name: http
@@ -54,18 +54,18 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ include "umpp.postgres.fullname" . }}
+  name: {{ include "neilico.postgres.fullname" . }}
   labels:
-    {{- include "umpp.componentLabels" (dict "root" . "component" "postgres") | nindent 4 }}
+    {{- include "neilico.componentLabels" (dict "root" . "component" "postgres") | nindent 4 }}
   annotations:
-    {{- include "umpp.annotations" . | nindent 4 }}
+    {{- include "neilico.annotations" . | nindent 4 }}
     {{- with .Values.postgres.service.annotations }}
     {{- toYaml . | nindent 4 }}
     {{- end }}
 spec:
   clusterIP: None
   selector:
-    {{- include "umpp.selectorLabels" . | nindent 4 }}
+    {{- include "neilico.selectorLabels" . | nindent 4 }}
     app.kubernetes.io/component: postgres
   ports:
     - name: postgres
@@ -78,18 +78,18 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ include "umpp.redis.fullname" . }}
+  name: {{ include "neilico.redis.fullname" . }}
   labels:
-    {{- include "umpp.componentLabels" (dict "root" . "component" "redis") | nindent 4 }}
+    {{- include "neilico.componentLabels" (dict "root" . "component" "redis") | nindent 4 }}
   annotations:
-    {{- include "umpp.annotations" . | nindent 4 }}
+    {{- include "neilico.annotations" . | nindent 4 }}
     {{- with .Values.redis.service.annotations }}
     {{- toYaml . | nindent 4 }}
     {{- end }}
 spec:
   clusterIP: None
   selector:
-    {{- include "umpp.selectorLabels" . | nindent 4 }}
+    {{- include "neilico.selectorLabels" . | nindent 4 }}
     app.kubernetes.io/component: redis
   ports:
     - name: redis
@@ -102,18 +102,18 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ include "umpp.nats.fullname" . }}
+  name: {{ include "neilico.nats.fullname" . }}
   labels:
-    {{- include "umpp.componentLabels" (dict "root" . "component" "nats") | nindent 4 }}
+    {{- include "neilico.componentLabels" (dict "root" . "component" "nats") | nindent 4 }}
   annotations:
-    {{- include "umpp.annotations" . | nindent 4 }}
+    {{- include "neilico.annotations" . | nindent 4 }}
     {{- with .Values.nats.service.annotations }}
     {{- toYaml . | nindent 4 }}
     {{- end }}
 spec:
   clusterIP: None
   selector:
-    {{- include "umpp.selectorLabels" . | nindent 4 }}
+    {{- include "neilico.selectorLabels" . | nindent 4 }}
     app.kubernetes.io/component: nats
   ports:
     - name: client
@@ -130,18 +130,18 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ include "umpp.relay.fullname" . }}
+  name: {{ include "neilico.relay.fullname" . }}
   labels:
-    {{- include "umpp.componentLabels" (dict "root" . "component" "relay") | nindent 4 }}
+    {{- include "neilico.componentLabels" (dict "root" . "component" "relay") | nindent 4 }}
   annotations:
-    {{- include "umpp.annotations" . | nindent 4 }}
+    {{- include "neilico.annotations" . | nindent 4 }}
     {{- with .Values.relay.service.annotations }}
     {{- toYaml . | nindent 4 }}
     {{- end }}
 spec:
   type: NodePort
   selector:
-    {{- include "umpp.selectorLabels" . | nindent 4 }}
+    {{- include "neilico.selectorLabels" . | nindent 4 }}
     app.kubernetes.io/component: relay
   ports:
     - name: wireguard

@@ -151,4 +151,4 @@ func parseErrorEnvelope(raw json.RawMessage, fallback string) (string, string) {
 }
 
 var secretPattern = regexp.MustCompile(`(?i)("?(?:private_key|agent_token|network_secret|refresh_token)"?\s*[:=]\s*)("[^"]*"|\S+)`)
-var embeddedSecretPattern = regexp.MustCompile(`(umpp_[A-Za-z0-9_-]{20,})`)
+var embeddedSecretPattern = regexp.MustCompile(`(neilico_[A-Za-z0-9_-]{20,})`)

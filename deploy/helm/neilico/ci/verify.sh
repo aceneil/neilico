@@ -3,14 +3,14 @@ set -euo pipefail
 
 cd "$(dirname "$0")/../.."
 
-DEFAULT_RENDER="${DEFAULT_RENDER:-/tmp/umpp-render-default.yaml}"
-FULL_RENDER="${FULL_RENDER:-/tmp/umpp-render-full.yaml}"
+DEFAULT_RENDER="${DEFAULT_RENDER:-/tmp/neilico-render-default.yaml}"
+FULL_RENDER="${FULL_RENDER:-/tmp/neilico-render-full.yaml}"
 BAD_VALUES="$(mktemp)"
 BAD_RENDER="$(mktemp)"
 trap 'rm -f "$BAD_VALUES" "$BAD_RENDER"' EXIT
 
-helm template umpp --values umpp/ci/default-values.yaml >"$DEFAULT_RENDER"
-helm template umpp --values umpp/ci/default-values.yaml \
+helm template neilico --values neilico/ci/default-values.yaml >"$DEFAULT_RENDER"
+helm template neilico --values neilico/ci/default-values.yaml \
   --set ingress.enabled=true \
   --set postgres.enabled=true \
   --set redis.enabled=true \
@@ -111,7 +111,7 @@ cat >"$BAD_VALUES" <<'YAML'
 replicaCount: "abc"
 YAML
 set +e
-helm template umpp --values umpp/ci/default-values.yaml --values "$BAD_VALUES" >"$BAD_RENDER" 2>&1
+helm template neilico --values neilico/ci/default-values.yaml --values "$BAD_VALUES" >"$BAD_RENDER" 2>&1
 bad_rc=$?
 set -e
 if [ "$bad_rc" -eq 0 ]; then

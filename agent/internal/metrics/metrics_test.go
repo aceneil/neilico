@@ -28,12 +28,12 @@ func TestRequiredMetricsAreExposed(t *testing.T) {
 	}
 	text := string(payload)
 	for _, name := range []string{
-		"umpp_agent_heartbeat_total",
-		"umpp_agent_config_version",
-		"umpp_agent_config_pull_total",
-		"umpp_agent_apply_total",
-		"umpp_agent_apply_dry_run",
-		"umpp_agent_peers",
+		"neilico_agent_heartbeat_total",
+		"neilico_agent_config_version",
+		"neilico_agent_config_pull_total",
+		"neilico_agent_apply_total",
+		"neilico_agent_apply_dry_run",
+		"neilico_agent_peers",
 	} {
 		if !strings.Contains(text, name) {
 			t.Fatalf("metrics omitted %s:\n%s", name, text)

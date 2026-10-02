@@ -519,7 +519,7 @@ void load()
           <a-form-item label="上游 CA 文件（服务端路径）">
             <a-input
               v-model:value="ruleForm.upstreamCAFile"
-              placeholder="/etc/umpp/upstream-ca.pem"
+              placeholder="/etc/neilico/upstream-ca.pem"
               :disabled="ruleForm.upstreamInsecureSkipVerify"
             />
           </a-form-item>

@@ -15,10 +15,10 @@ import (
 	"gorm.io/datatypes"
 	"gorm.io/gorm"
 
-	"umpp/control-plane/internal/auth"
-	"umpp/control-plane/internal/models"
-	"umpp/control-plane/internal/service/cert"
-	"umpp/control-plane/internal/service/mesh/wireguard"
+	"neilico/control-plane/internal/auth"
+	"neilico/control-plane/internal/models"
+	"neilico/control-plane/internal/service/cert"
+	"neilico/control-plane/internal/service/mesh/wireguard"
 )
 
 const (

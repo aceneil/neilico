@@ -1,4 +1,4 @@
-# UMPP 运维手册
+# NEILICO 运维手册
 
 ## 架构
 
@@ -17,7 +17,7 @@ flowchart LR
   REL[relay placeholder wg-easy :51820/:3478] -. future data plane .- AG1
 ```
 
-M2b 当前只生成 WireGuard 配置和维护 relay 元数据；Compose 的 `relay` 是 wg-easy 占位容器，不是 UMPP 自研中继协议实现。3478/udp 为未来 TURN/ICE 预留。
+M2b 当前只生成 WireGuard 配置和维护 relay 元数据；Compose 的 `relay` 是 wg-easy 占位容器，不是 NEILICO 自研中继协议实现。3478/udp 为未来 TURN/ICE 预留。
 
 ## 端口表
 
@@ -40,23 +40,23 @@ M2b 当前只生成 WireGuard 配置和维护 relay 元数据；Compose 的 `rel
 
 ## Kubernetes 部署
 
-Kubernetes 部署使用 [`deploy/helm/umpp`](../deploy/helm/umpp/README.md)，与 Docker Compose 保持相同组件/端口/环境变量语义：`control-api` 为 Deployment（8080 API、8081 反代、8443 TLS），`dashboard` 为 Deployment，PostgreSQL/Redis/NATS 默认使用外部实例，relay 为 UDP 51820/3478 的 wg-easy 占位 DaemonSet。
+Kubernetes 部署使用 [`deploy/helm/neilico`](../deploy/helm/neilico/README.md)，与 Docker Compose 保持相同组件/端口/环境变量语义：`control-api` 为 Deployment（8080 API、8081 反代、8443 TLS），`dashboard` 为 Deployment，PostgreSQL/Redis/NATS 默认使用外部实例，relay 为 UDP 51820/3478 的 wg-easy 占位 DaemonSet。
 
 ### 安装、升级与卸载
 
 ```bash
 export PATH="$HOME/.local/bin:$PATH"
 cd deploy/helm
-helm lint ./umpp --values ./umpp/ci/default-values.yaml
-helm upgrade --install umpp ./umpp \
-  --namespace umpp --create-namespace \
-  --values /secure/umpp-values.yaml
-helm status umpp --namespace umpp
-helm history umpp --namespace umpp
-helm uninstall umpp --namespace umpp
+helm lint ./neilico --values ./neilico/ci/default-values.yaml
+helm upgrade --install neilico ./neilico \
+  --namespace neilico --create-namespace \
+  --values /secure/neilico-values.yaml
+helm status neilico --namespace neilico
+helm history neilico --namespace neilico
+helm uninstall neilico --namespace neilico
 ```
 
-Chart 的 `values.yaml` 只包含 `CHANGE_ME` 占位符。生产优先设置 `secrets.existingSecret`，或使用 `secrets.create=true` + `--set-file` 注入 `POSTGRES_PASSWORD`、`UMPP_AUTH_JWT_SECRET`、`UMPP_BOOTSTRAP_ADMIN_PASSWORD`。外部数据库密码可用 `externalDatabase.passwordSecret.name/key` 单独引用。ConfigMap 和 Chart 生成的 Secret 带 checksum annotation，值变化会滚动 Pod。
+Chart 的 `values.yaml` 只包含 `CHANGE_ME` 占位符。生产优先设置 `secrets.existingSecret`，或使用 `secrets.create=true` + `--set-file` 注入 `POSTGRES_PASSWORD`、`NEILICO_AUTH_JWT_SECRET`、`NEILICO_BOOTSTRAP_ADMIN_PASSWORD`。外部数据库密码可用 `externalDatabase.passwordSecret.name/key` 单独引用。ConfigMap 和 Chart 生成的 Secret 带 checksum annotation，值变化会滚动 Pod。
 
 ### 外部依赖
 
@@ -67,7 +67,7 @@ Chart 的 `values.yaml` 只包含 `CHANGE_ME` 占位符。生产优先设置 `se
 ### Ingress/TLS 二选一
 
 1. **cert-manager**：设置 `ingress.enabled=true`、IngressClass、hosts、issuer annotation 和 `ingress.tls`，由 cert-manager 终止 Dashboard/API TLS。
-2. **UMPP 自带 ACME**：设置 `acme.enabled=true/agreeTos=true` 与 directory/email，并启用 `controlApi.proxy.tls.*`；把 ACME HTTP-01 端口（生产通常 80）和 8443 以 LoadBalancer/四层入口暴露。V1 仅 HTTP-01。
+2. **NEILICO 自带 ACME**：设置 `acme.enabled=true/agreeTos=true` 与 directory/email，并启用 `controlApi.proxy.tls.*`；把 ACME HTTP-01 端口（生产通常 80）和 8443 以 LoadBalancer/四层入口暴露。V1 仅 HTTP-01。
 
 同一域名不要让两套机制竞争证书。生产反代/ACME/UDP 需要分别规划 L4 入口；不连接测试集群时，`verify.sh` 只做 Helm 离线渲染校验。
 
@@ -76,23 +76,23 @@ Chart 的 `values.yaml` 只包含 `CHANGE_ME` 占位符。生产优先设置 `se
 - 至少两个 control-api/dashboard 副本，启用 HPA/PDB、资源限制、PodSecurity、NetworkPolicy、可信镜像仓库与反亲和。
 - Prometheus 抓取 Service `8080/metrics`；V1-R2 的 P2P/中继/heartbeat latency 指标仍无真实采集源，保持 0。
 - PostgreSQL 备份采用托管快照或 `pg_dump`，升级前同时备份 Secret/TLS/Agent state。卸载不会自动删除开发 StatefulSet PVC。
-- relay 是占位实现，不是 UMPP 中继数据面；不要把 UDP 3478 当作已实现 TURN。
+- relay 是占位实现，不是 NEILICO 中继数据面；不要把 UDP 3478 当作已实现 TURN。
 
 ## API Token 签发、轮换与泄露应急
 
 ### 日常签发
 
 1. 使用 platform_admin/tenant_admin 登录 Dashboard，在「用户与权限 → API Token」创建；scope 遵循最小权限，脚本只读时不要勾选 `*:write`。
-2. CLI 等价操作：`umppctl token create --name=ci --scopes=nodes:read --expires-in-days=90`。完整 Token 只打印一次，立即写入 secrets manager；凭据文件 `~/.umppctl/config.yaml` 权限保持 0600。
+2. CLI 等价操作：`neilicoctl token create --name=ci --scopes=nodes:read --expires-in-days=90`。完整 Token 只打印一次，立即写入 secrets manager；凭据文件 `~/.neilicoctl/config.yaml` 权限保持 0600。
 3. 列表只显示 `token_prefix + "…"`。不要把 Token 传入命令行历史、工单、聊天、审计 detail 或日志；CI 用 masked secret/environment。
 4. 为长期服务设置 `expires_in_days`。无过期时间只用于受控服务账号，并纳入定期轮换。
 
 ### 撤销与轮换
 
 ```bash
-umppctl token list
-umppctl token revoke --id <token-id>
-umppctl token create --name=ci-next --scopes=nodes:read --expires-in-days=90
+neilicoctl token list
+neilicoctl token revoke --id <token-id>
+neilicoctl token create --name=ci-next --scopes=nodes:read --expires-in-days=90
 # 或在 Dashboard/API 使用 rotate：旧 Token 立即失效，新 Token 只显示一次。
 ```
 
@@ -114,10 +114,10 @@ umppctl token create --name=ci-next --scopes=nodes:read --expires-in-days=90
 
 ```bash
 cd deploy/docker-compose
-docker compose exec -T postgres pg_isready -U umpp -d umpp
-docker compose exec -T postgres pg_dump -U umpp -d umpp --format=custom > umpp-$(date +%Y%m%d-%H%M).dump
+docker compose exec -T postgres pg_isready -U neilico -d neilico
+docker compose exec -T postgres pg_dump -U neilico -d neilico --format=custom > neilico-$(date +%Y%m%d-%H%M).dump
 # 恢复到空数据库：
-docker compose exec -T postgres pg_restore -U umpp -d umpp --clean --if-exists < umpp-YYYYmmdd-HHMM.dump
+docker compose exec -T postgres pg_restore -U neilico -d neilico --clean --if-exists < neilico-YYYYmmdd-HHMM.dump
 ```
 
 同时备份 `.env`（放入 secrets manager，不要提交仓库）、TLS 证书和 Agent `state.json`。恢复后重建控制面：`docker compose up -d --build`，再检查 `/healthz`、`/metrics` 和审计日志。
@@ -127,7 +127,7 @@ docker compose exec -T postgres pg_restore -U umpp -d umpp --clean --if-exists <
 1. 阅读 release notes，备份 PostgreSQL 和 `.env`。
 2. 在测试环境执行 `docker compose config -q && bash scripts/smoke.sh`。
 3. 拉取新镜像/代码，运行 `docker compose build --pull`。
-4. `docker compose up -d`，观察 `docker compose ps`、控制面日志、`umpp_nodes_online`。
+4. `docker compose up -d`，观察 `docker compose ps`、控制面日志、`neilico_nodes_online`。
 5. 任一节点配置版本异常时使用 `POST /api/v1/configs/{target_type}/{target_id}/rollback` 回滚到已知版本。
 6. 回滚使用上一步备份的 dump 和镜像 tag；不要删除 pgdata，除非确认恢复成功。
 
@@ -137,7 +137,7 @@ docker compose exec -T postgres pg_restore -U umpp -d umpp --clean --if-exists <
 
 | 规则 ID | 生效条件 | 默认阈值 | 严重级 | 当前数据源 | 配置覆盖键 |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| `node_offline` | `now - node.last_seen` **大于**阈值 | 5 分钟 | `warning` | `nodes.last_seen` | `alerts.node_offline_after` / `UMPP_ALERTS_NODE_OFFLINE_AFTER` |
+| `node_offline` | `now - node.last_seen` **大于**阈值 | 5 分钟 | `warning` | `nodes.last_seen` | `alerts.node_offline_after` / `NEILICO_ALERTS_NODE_OFFLINE_AFTER` |
 | `certificate_expiring` | `status=active` 且 `expires_at - now` **小于**阈值 | 30 天；剩余 **≤7 天** 为 `critical` | `warning/critical` | `certificates.expires_at/status` | `alerts.certificate_expiring_in`、`alerts.certificate_critical_in` |
 | `p2p_success_rate_low` | P2P 成功率 `< 60%` | 60% | `warning` | **未接入**，返回 `data_status=insufficient_data`，不生成假告警 | `alerts.p2p_success_rate_minimum` |
 | `relay_traffic_spike` | 当前中继流量 `>= 24h 均值 × 3` | 3 倍 | `warning` | **未接入**，返回 `data_status=insufficient_data`，不生成假告警 | `alerts.relay_spike_multiplier`、`alerts.relay_baseline_window` |
@@ -160,7 +160,7 @@ docker compose exec -T postgres pg_restore -U umpp -d umpp --clean --if-exists <
 ```json
 {
   "event": "alert.firing",
-  "schema_version": "umpp.alert.v1",
+  "schema_version": "neilico.alert.v1",
   "alert": {
     "id": "<uuid>",
     "rule": "node_offline",
@@ -185,14 +185,14 @@ Prometheus 抓取 `GET :18080/metrics`。**无采集来源的指标保持 0，�
 
 | 指标 | 类型/标签 | V1-R2 数据来源 |
 | :--- | :--- | :--- |
-| `umpp_nodes_online` | gauge | PostgreSQL `nodes.status=online` 实时计数 |
-| `umpp_tunnel_up{network_id,node_id}` | gauge | 由 network member + node online 状态推导；不是 UDP 遥测 |
-| `umpp_p2p_success_rate` | gauge | **数据源未接入，当前恒为 0；V2 接入真实采集** |
-| `umpp_relay_bytes` | gauge | **中继吞吐数据源未接入，当前恒为 0；V2 接入真实采集** |
-| `umpp_proxy_requests` | gauge | 内置反代真实请求计数；标签明细另有 `umpp_proxy_requests_total{domain,status}` |
-| `umpp_config_version{target_type,target_id}` | gauge | `config_versions` 每目标最新版本 |
-| `umpp_agent_heartbeat_latency` | gauge | 当前只记录 heartbeat 成功时间，没有请求耗时样本；**恒为 0，V2 接入真实采集** |
-| `umpp_alerts_firing{severity,rule}` | gauge | `alerts.state=firing` 实时计数，所有已知组合均暴露 |
+| `neilico_nodes_online` | gauge | PostgreSQL `nodes.status=online` 实时计数 |
+| `neilico_tunnel_up{network_id,node_id}` | gauge | 由 network member + node online 状态推导；不是 UDP 遥测 |
+| `neilico_p2p_success_rate` | gauge | **数据源未接入，当前恒为 0；V2 接入真实采集** |
+| `neilico_relay_bytes` | gauge | **中继吞吐数据源未接入，当前恒为 0；V2 接入真实采集** |
+| `neilico_proxy_requests` | gauge | 内置反代真实请求计数；标签明细另有 `neilico_proxy_requests_total{domain,status}` |
+| `neilico_config_version{target_type,target_id}` | gauge | `config_versions` 每目标最新版本 |
+| `neilico_agent_heartbeat_latency` | gauge | 当前只记录 heartbeat 成功时间，没有请求耗时样本；**恒为 0，V2 接入真实采集** |
+| `neilico_alerts_firing{severity,rule}` | gauge | `alerts.state=firing` 实时计数，所有已知组合均暴露 |
 
 原有 ACME、TLS、证书到期和 HTTP 指标继续保留。空数据集的 `_none` 样本仅为保证 metric family 存在，数值为 0，不代表真实目标。
 
@@ -215,7 +215,7 @@ cd ../..
 bash scripts/smoke-acme.sh
 ```
 
-测试端口：API 18080、HTTP 反代 18081、TLS 18443、HTTP-01 18082、Pebble directory 14000、Pebble management 8055。`scripts/smoke-acme.sh` 会执行真实签发、Pebble 链验证、SNI 指纹比对和二次 order 续期，并在失败时打印全部容器日志尾 50 行。overlay 中 `UMPP_ACME_CA_CERT_FILE=/pebble-certs/pebble.minica.pem` 用于信任 Pebble 的目录 TLS；链验证使用 management API 的 `/roots/0` 签发根。
+测试端口：API 18080、HTTP 反代 18081、TLS 18443、HTTP-01 18082、Pebble directory 14000、Pebble management 8055。`scripts/smoke-acme.sh` 会执行真实签发、Pebble 链验证、SNI 指纹比对和二次 order 续期，并在失败时打印全部容器日志尾 50 行。overlay 中 `NEILICO_ACME_CA_CERT_FILE=/pebble-certs/pebble.minica.pem` 用于信任 Pebble 的目录 TLS；链验证使用 management API 的 `/roots/0` 签发根。
 
 ## 日志
 
@@ -234,10 +234,10 @@ bash scripts/smoke-acme.sh
 docker compose ps
 docker compose logs --tail=50 control-api postgres
 curl -fsS http://127.0.0.1:18080/healthz
-docker compose exec postgres pg_isready -U umpp -d umpp
+docker compose exec postgres pg_isready -U neilico -d neilico
 ```
 
-常见原因：`.env` 占位符未替换、Postgres 密码不一致、端口被占用、`UMPP_DATABASE_DSN` 字段写错。
+常见原因：`.env` 占位符未替换、Postgres 密码不一致、端口被占用、`NEILICO_DATABASE_DSN` 字段写错。
 
 ### 节点不上线
 
@@ -263,7 +263,7 @@ docker compose exec postgres pg_isready -U umpp -d umpp
 
 ### 控制面 TLS 与 mTLS
 
-`server.tls.enabled=true` 时 API 使用 TLS；`cert_file/key_file` 与 `pki.enabled` 二选一，均为空且启用 PKI 时自动签发服务端证书。`client_auth=require` 要求客户端证书，`client_ca_file` 或 PKI CA 作为信任锚；缺少信任锚会启动失败并给出错误。`/healthz`、`/metrics`、CA 下载和最小化注册引导不需要客户端证书，以便探针和首次 enrollment 工作；管理接口、Agent 配置和心跳仍需通过认证/mTLS。`redirect_http=true` 时 `server.tls.http_port` 的明文监听器对 `/healthz`、`/metrics`、ACME challenge 直通，其它 GET/HEAD 301、其它方法 308 到 HTTPS。TLS 握手指标为 `umpp_tls_handshakes_total{result,listener}`。
+`server.tls.enabled=true` 时 API 使用 TLS；`cert_file/key_file` 与 `pki.enabled` 二选一，均为空且启用 PKI 时自动签发服务端证书。`client_auth=require` 要求客户端证书，`client_ca_file` 或 PKI CA 作为信任锚；缺少信任锚会启动失败并给出错误。`/healthz`、`/metrics`、CA 下载和最小化注册引导不需要客户端证书，以便探针和首次 enrollment 工作；管理接口、Agent 配置和心跳仍需通过认证/mTLS。`redirect_http=true` 时 `server.tls.http_port` 的明文监听器对 `/healthz`、`/metrics`、ACME challenge 直通，其它 GET/HEAD 301、其它方法 308 到 HTTPS。TLS 握手指标为 `neilico_tls_handshakes_total{result,listener}`。
 
 回退步骤：先把 `server.tls.client_auth` 改为 `none`（或 `request`）并重启，确认健康检查和现有 token；再把 `server.tls.enabled=false` 恢复明文监听。不要在未准备好 CA/客户端证书时直接启用 require。
 
@@ -277,7 +277,7 @@ NPS 配置默认生成 `crypt: true`、`compress: true`（由 `proxy.nps.crypt/c
 
 ### 仍然未加密/未实现的链路
 
-* `internal_ip` 直连上游由调用方网络路径决定，UMPP 不提供传输加密。
+* `internal_ip` 直连上游由调用方网络路径决定，NEILICO 不提供传输加密。
 * relay 数据面仍未实现（V2）；不能把 relay 视为已加密。
 * NPS crypt/compress 只保护 NPS 隧道，不是端到端加密。
 * `upstream_insecure_skip_verify=true` 的 HTTPS 上游会跳过证书验证，只适合隔离测试。

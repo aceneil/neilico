@@ -16,8 +16,8 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
-	"umpp/control-plane/internal/models"
-	umppproxy "umpp/control-plane/internal/service/proxy"
+	"neilico/control-plane/internal/models"
+	neilicoproxy "neilico/control-plane/internal/service/proxy"
 )
 
 type Options struct {
@@ -33,12 +33,12 @@ type Provider struct {
 	db       *gorm.DB
 	options  Options
 	logger   *slog.Logger
-	observer umppproxy.Observer
+	observer neilicoproxy.Observer
 	mu       sync.RWMutex
-	state    umppproxy.State
+	state    neilicoproxy.State
 }
 
-func New(db *gorm.DB, options Options, logger *slog.Logger, observer umppproxy.Observer) *Provider {
+func New(db *gorm.DB, options Options, logger *slog.Logger, observer neilicoproxy.Observer) *Provider {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -59,7 +59,7 @@ func New(db *gorm.DB, options Options, logger *slog.Logger, observer umppproxy.O
 		options:  options,
 		logger:   logger,
 		observer: observer,
-		state:    umppproxy.State{Kind: "nps", Status: "unknown", UpdatedAt: time.Now().UTC()},
+		state:    neilicoproxy.State{Kind: "nps", Status: "unknown", UpdatedAt: time.Now().UTC()},
 	}
 }
 
@@ -125,14 +125,14 @@ func (p *Provider) signalReload() error {
 	return nil
 }
 
-func (p *Provider) State() umppproxy.State {
+func (p *Provider) State() neilicoproxy.State {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	return p.state
 }
 
 func (p *Provider) setStatus(status string, err error) {
-	state := umppproxy.State{Kind: "nps", Status: status, UpdatedAt: time.Now().UTC()}
+	state := neilicoproxy.State{Kind: "nps", Status: status, UpdatedAt: time.Now().UTC()}
 	if err != nil {
 		state.LastError = err.Error()
 	}
@@ -182,15 +182,15 @@ type npsCertificate struct {
 	ExpiresAt string `json:"expires_at,omitempty"`
 }
 
-func loadRoutes(ctx context.Context, db *gorm.DB, tenantID uuid.UUID) ([]umppproxy.Route, error) {
-	set, err := umppproxy.LoadRoutes(ctx, db)
+func loadRoutes(ctx context.Context, db *gorm.DB, tenantID uuid.UUID) ([]neilicoproxy.Route, error) {
+	set, err := neilicoproxy.LoadRoutes(ctx, db)
 	if err != nil {
 		return nil, err
 	}
 	if tenantID == uuid.Nil {
 		return set.Routes, nil
 	}
-	filtered := make([]umppproxy.Route, 0, len(set.Routes))
+	filtered := make([]neilicoproxy.Route, 0, len(set.Routes))
 	for _, route := range set.Routes {
 		if route.TenantID == tenantID {
 			filtered = append(filtered, route)
@@ -199,11 +199,11 @@ func loadRoutes(ctx context.Context, db *gorm.DB, tenantID uuid.UUID) ([]umpppro
 	return filtered, nil
 }
 
-func renderConfig(routes []umppproxy.Route, reloadStrategy string) ([]byte, error) {
+func renderConfig(routes []neilicoproxy.Route, reloadStrategy string) ([]byte, error) {
 	return renderConfigWithOptions(routes, reloadStrategy, true, true)
 }
 
-func renderConfigWithOptions(routes []umppproxy.Route, reloadStrategy string, crypt, compress bool) ([]byte, error) {
+func renderConfigWithOptions(routes []neilicoproxy.Route, reloadStrategy string, crypt, compress bool) ([]byte, error) {
 	config := npsConfig{
 		SchemaVersion: 1,
 		Server:        npsServer{BindPort: 8024, HTTPProxyPort: 8081, ReloadStrategy: "file"},

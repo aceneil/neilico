@@ -1,4 +1,4 @@
-module umpp/control-plane
+module neilico/control-plane
 
 go 1.27
 

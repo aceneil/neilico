@@ -16,30 +16,30 @@ import (
 	"syscall"
 	"time"
 
-	"umpp/control-plane/internal/api"
-	"umpp/control-plane/internal/auth"
-	"umpp/control-plane/internal/config"
-	"umpp/control-plane/internal/db"
-	"umpp/control-plane/internal/metrics"
-	"umpp/control-plane/internal/service"
-	"umpp/control-plane/internal/service/alerts"
-	acmeclient "umpp/control-plane/internal/service/cert/acme"
-	"umpp/control-plane/internal/service/pki"
-	"umpp/control-plane/internal/service/proxy"
-	"umpp/control-plane/internal/service/proxy/nps"
+	"neilico/control-plane/internal/api"
+	"neilico/control-plane/internal/auth"
+	"neilico/control-plane/internal/config"
+	"neilico/control-plane/internal/db"
+	"neilico/control-plane/internal/metrics"
+	"neilico/control-plane/internal/service"
+	"neilico/control-plane/internal/service/alerts"
+	acmeclient "neilico/control-plane/internal/service/cert/acme"
+	"neilico/control-plane/internal/service/pki"
+	"neilico/control-plane/internal/service/proxy"
+	"neilico/control-plane/internal/service/proxy/nps"
 )
 
 var version = "dev"
 
 func main() {
 	if err := run(); err != nil {
-		fmt.Fprintln(os.Stderr, "umpp-api:", err)
+		fmt.Fprintln(os.Stderr, "neilico-api:", err)
 		os.Exit(1)
 	}
 }
 
 func run() error {
-	flags := flag.NewFlagSet("umpp-api", flag.ContinueOnError)
+	flags := flag.NewFlagSet("neilico-api", flag.ContinueOnError)
 	configPath := flags.String("config", "configs/config.example.yaml", "path to YAML configuration")
 	showVersion := flags.Bool("version", false, "print version and exit")
 	if err := flags.Parse(os.Args[1:]); err != nil {
@@ -179,11 +179,11 @@ func run() error {
 		var serveErr error
 		if serverTLSConfig != nil {
 			mode = "https"
-			logger.Info("UMPP API TLS listening", "address", server.Addr, "version", version,
+			logger.Info("NEILICO API TLS listening", "address", server.Addr, "version", version,
 				"min_version", cfg.Server.TLS.MinVersion, "client_auth", cfg.Server.TLS.ClientAuth)
 			serveErr = server.ListenAndServeTLS("", "")
 		} else {
-			logger.Info("UMPP API listening", "address", server.Addr, "version", version)
+			logger.Info("NEILICO API listening", "address", server.Addr, "version", version)
 			serveErr = server.ListenAndServe()
 		}
 		_ = mode
@@ -200,7 +200,7 @@ func run() error {
 			ReadHeaderTimeout: 5 * time.Second,
 		}
 		go func() {
-			logger.Info("UMPP API HTTP redirect listening", "address", redirectServer.Addr, "https_port", cfg.Server.Port)
+			logger.Info("NEILICO API HTTP redirect listening", "address", redirectServer.Addr, "https_port", cfg.Server.Port)
 			redirectErrors <- redirectServer.ListenAndServe()
 		}()
 	}
@@ -214,7 +214,7 @@ func run() error {
 			ReadHeaderTimeout: 5 * time.Second,
 		}
 		go func() {
-			logger.Info("UMPP ACME HTTP-01 challenge listening", "address", challengeServer.Addr)
+			logger.Info("NEILICO ACME HTTP-01 challenge listening", "address", challengeServer.Addr)
 			challengeErrors <- challengeServer.ListenAndServe()
 		}()
 	}
@@ -231,7 +231,7 @@ func run() error {
 			IdleTimeout:       120 * time.Second,
 		}
 		go func() {
-			logger.Info("UMPP proxy listening", "address", proxyServer.Addr, "kind", cfg.Proxy.Kind)
+			logger.Info("NEILICO proxy listening", "address", proxyServer.Addr, "kind", cfg.Proxy.Kind)
 			proxyErrors <- proxyServer.ListenAndServe()
 		}()
 	}
@@ -252,7 +252,7 @@ func run() error {
 			IdleTimeout:       120 * time.Second,
 		}
 		go func() {
-			logger.Info("UMPP proxy TLS listening", "address", tlsServer.Addr, "min_version", cfg.Proxy.TLS.MinVersion)
+			logger.Info("NEILICO proxy TLS listening", "address", tlsServer.Addr, "min_version", cfg.Proxy.TLS.MinVersion)
 			tlsErrors <- tlsServer.ListenAndServeTLS("", "")
 		}()
 	}

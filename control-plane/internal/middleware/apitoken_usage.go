@@ -9,7 +9,7 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
-	"umpp/control-plane/internal/models"
+	"neilico/control-plane/internal/models"
 )
 
 const DefaultAPITokenUsageInterval = time.Minute

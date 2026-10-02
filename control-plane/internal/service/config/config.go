@@ -14,13 +14,13 @@ import (
 	"gorm.io/datatypes"
 	"gorm.io/gorm"
 
-	"umpp/control-plane/internal/metrics"
-	"umpp/control-plane/internal/models"
-	"umpp/control-plane/internal/service"
-	aclengine "umpp/control-plane/internal/service/acl"
-	"umpp/control-plane/internal/service/cert"
-	"umpp/control-plane/internal/service/mesh"
-	"umpp/control-plane/internal/service/mesh/wireguard"
+	"neilico/control-plane/internal/metrics"
+	"neilico/control-plane/internal/models"
+	"neilico/control-plane/internal/service"
+	aclengine "neilico/control-plane/internal/service/acl"
+	"neilico/control-plane/internal/service/cert"
+	"neilico/control-plane/internal/service/mesh"
+	"neilico/control-plane/internal/service/mesh/wireguard"
 )
 
 const (

@@ -11,7 +11,7 @@ import (
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
 
-	"umpp/control-plane/internal/models"
+	"neilico/control-plane/internal/models"
 )
 
 const (

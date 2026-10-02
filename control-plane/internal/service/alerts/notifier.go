@@ -95,7 +95,7 @@ func (n *WebhookNotifier) Notify(ctx context.Context, notification Notification)
 			return fmt.Errorf("create webhook request: %w", err)
 		}
 		request.Header.Set("Content-Type", "application/json")
-		request.Header.Set("User-Agent", "umpp-alert-notifier/1")
+		request.Header.Set("User-Agent", "neilico-alert-notifier/1")
 		response, err := n.client.Do(request)
 		if err != nil {
 			lastErr = err

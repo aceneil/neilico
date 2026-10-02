@@ -22,8 +22,8 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
-	"umpp/control-plane/internal/models"
-	certcrypto "umpp/control-plane/internal/service/cert"
+	"neilico/control-plane/internal/models"
+	certcrypto "neilico/control-plane/internal/service/cert"
 )
 
 var ErrDisabled = errors.New("PKI is disabled; set pki.enabled=true to use internal certificates")
@@ -194,7 +194,7 @@ func (s *Service) IssueServerCert(hosts []string) (IssuedCertificate, error) {
 		SerialNumber: serial,
 		Subject: pkix.Name{
 			CommonName:   firstServerName(dnsNames),
-			Organization: []string{"UMPP"},
+			Organization: []string{"NEILICO"},
 		},
 		NotBefore:             now.Add(-5 * time.Minute),
 		NotAfter:              now.Add(time.Duration(s.options.ServerCertDays) * 24 * time.Hour),
@@ -251,7 +251,7 @@ func (s *Service) IssueNodeCert(nodeID uuid.UUID, commonName string) (IssuedCert
 		SerialNumber: serial,
 		Subject: pkix.Name{
 			CommonName:   commonName,
-			Organization: []string{"UMPP"},
+			Organization: []string{"NEILICO"},
 		},
 		NotBefore:             now.Add(-5 * time.Minute),
 		NotAfter:              now.Add(time.Duration(s.options.NodeCertDays) * 24 * time.Hour),
@@ -348,13 +348,13 @@ func (s *Service) createCA() (models.CA, error) {
 	now := time.Now().UTC()
 	name := strings.TrimSpace(s.options.CommonName)
 	if name == "" {
-		name = "UMPP Internal CA"
+		name = "NEILICO Internal CA"
 	}
 	template := &x509.Certificate{
 		SerialNumber: serial,
 		Subject: pkix.Name{
 			CommonName:   name,
-			Organization: []string{"UMPP"},
+			Organization: []string{"NEILICO"},
 		},
 		NotBefore:             now.Add(-5 * time.Minute),
 		NotAfter:              now.AddDate(10, 0, 0),

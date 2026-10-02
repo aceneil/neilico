@@ -1,24 +1,24 @@
-# NOTES.md — umpp 目录导览
+# NOTES.md — neilico 目录导览
 
 > 用户约定：进入本目录前先读本文件；结构变化后**随时更新**，保证新会话只凭本文件即可开工。
 
 ## 这是什么
-UMPP（Unified Mesh & Proxy Platform）：统一「内网穿透 + Mesh 组网」后台管理系统。三平面：控制面（管理/下发/审计）、穿透代理面（域名反代/隧道）、Mesh 组网面（WireGuard 虚拟网）。
+NEILICO（Unified Mesh & Proxy Platform）：统一「内网穿透 + Mesh 组网」后台管理系统。三平面：控制面（管理/下发/审计）、穿透代理面（域名反代/隧道）、Mesh 组网面（WireGuard 虚拟网）。
 
 ## 文件地图
 | 路径 | 作用 |
 | :--- | :--- |
-| `docs/UMPP_SPEC.md` | **上游需求规格**（用户提供，勿擅改；只可追加「裁决/偏差」附录） |
+| `docs/NEILICO_SPEC.md` | **上游需求规格**（用户提供，勿擅改；只可追加「裁决/偏差」附录） |
 | `PLAN.md` | **执行计划**：里程碑 M1–M5、验收标准、技术裁决 D1–D6 |
 | `docs/API.md` | 真实 REST 路由、认证、curl、错误码 |
 | `docs/USER_GUIDE.md` | 部署、Agent、网络、域名、FAQ |
 | `docs/OPS.md` | 架构、端口、备份恢复、升级、监控告警、排障 |
 | `control-plane/` | Go 控制面 API（stdlib HTTP + GORM + PostgreSQL16；含 ACME 生命周期和 SNI TLS） |
 | `agent/` | Go Agent（注册/心跳/拉配置/应用 WireGuard/子网路由） |
-| `cli/` | `umppctl` 命令行 |
+| `cli/` | `neilicoctl` 命令行 |
 | `dashboard/` | Vue3 + Vite + Ant Design Vue 管理后台 |
 | `deploy/docker-compose/` | 单机一键部署栈 |
-| `deploy/helm/umpp/` | Kubernetes Helm Chart（默认外部 PostgreSQL，含开发依赖/relay 占位） |
+| `deploy/helm/neilico/` | Kubernetes Helm Chart（默认外部 PostgreSQL，含开发依赖/relay 占位） |
 | `scripts/` | `smoke.sh`、`smoke-down.sh`，退出码即判据 |
 
 ## 关键决策（详见 PLAN.md §2）
@@ -35,26 +35,43 @@ UMPP（Unified Mesh & Proxy Platform）：统一「内网穿透 + Mesh 组网」
 | M1 控制面骨架+身份/节点 | ✅ | `c9c8372` | 14 张核心表、JWT/RBAC/租户隔离、节点注册/心跳/离线 sweeper、审计、`/metrics` |
 | M2a 域名/证书/代理面 | ✅ | `c3c4af6` | 域名/证书（私钥 AES-GCM 加密）/代理规则 CRUD、NPS Provider、内置 httputil 反代、流量上报 |
 | M2b Mesh + 配置版本化下发 | ✅ | `a9b753b` | 虚拟网络/成员（VIP 分配）/ACL/子网路由、WireGuard 与 EasyTier Provider、密钥轮换、304/回滚 |
-| M3 Agent + CLI | ✅ | `c1aca8d` | Agent 注册/心跳/端点/配置轮询/wgctrl→shell/dry-run/路由/流量/指标，`umppctl` |
+| M3 Agent + CLI | ✅ | `c1aca8d` | Agent 注册/心跳/端点/配置轮询/wgctrl→shell/dry-run/路由/流量/指标，`neilicoctl` |
 | M4 Dashboard | ✅ | `a10556d` | 登录、仪表盘、设备、域名、网络、用户、日志、设置；npm build |
 | M4b 补齐读接口 | ✅ | `ce43379` | 新增 `GET /api/v1/audit-logs`、`GET /api/v1/nodes/{id}/metrics`、`relay-servers` CRUD（M4 据实报告这些接口后端从未实现，避免前端造假数据）；Dashboard 对应页面接通 |
 | **M5 部署+文档+冒烟** | ✅ | `8e54d34` | Compose + Dockerfile + `scripts/smoke.sh`（12/12 PASS）+ API/USER/OPS/README；smoke 用真实 Agent dry-run |
 | **V1-R2 告警体系+指标补全** | ✅ | （未提交） | 五条规则、状态机/事件、000007、log/webhook notifier、告警 API、Dashboard `/alerts`、指标数据源说明 |
-| **V1-R3 Helm Chart** | ✅ | （未提交） | `deploy/helm/umpp`：control-api/dashboard Deployment、外部 PG 默认、开发 PG/Redis/NATS StatefulSet、relay 占位、Secret/Ingress/HPA/PDB/NetworkPolicy/ServiceMonitor；`ci/verify.sh` 离线断言 |
+| **V1-R3 Helm Chart** | ✅ | （未提交） | `deploy/helm/neilico`：control-api/dashboard Deployment、外部 PG 默认、开发 PG/Redis/NATS StatefulSet、relay 占位、Secret/Ingress/HPA/PDB/NetworkPolicy/ServiceMonitor；`ci/verify.sh` 离线断言 |
 | **V1-R4 API Token/Scope/限流** | ✅ | （未提交） | migration `000008`、API Token 哈希/轮换/撤销、角色→scope 兼容表、`RequireScope`、按 Token/user 令牌桶、CLI token 命令、Dashboard 真实 Token 页面 |
 
-### 当前运行状态（2026-10-02 01:5x 实测）
-- **整个栈仍在运行**（`Up 3 hours (healthy)`）：API `:18080`、内置反代 `:18081`、Dashboard `:13000`、PG `:15432`、Redis `:16379`、NATS `:14222`、relay 占位 UDP `:51820/:3478`
+### 常驻部署（生产用 Docker 目录那份；2026-10-02 落地）
+> **仓库内 `deploy/docker-compose/docker-compose.yml` 仅供开发/冒烟测试栈**（项目名 `neilico-m5`、命名卷、固定端口）。
+> 开机常驻的是 `/home/neil/Documents/Docker/docker-compose.neilico.yaml`（顶层 `name: neilico`），由 devops 按本机目录约定维护。
+
+- 部署文件：`/home/neil/Documents/Docker/docker-compose.neilico.yaml`（build.context 指向本仓库 `control-plane/`、`dashboard/` 绝对路径）
+- 持久数据：`/home/neil/Documents/Docker/data/neilico/{pg,redis,nats}`（宿主目录绑定，替代命名卷）
+- 秘密：`/home/neil/Documents/Docker/data/neilico/neilico.env`（mode 600，非仓库；管理员邮箱 `admin@neilico.local`）
+  查看管理员密码（值不入文档）：`/home/neil/Documents/Docker/data/neilico/show-admin-password.sh`
+- 端口：Dashboard `0.0.0.0:13000`（LAN）、控制面 `18080`、内置反代 `18081`（均 LAN）；PG/Redis/NATS 只绑 `127.0.0.1`（15432/16379/14222）；relay 占位 UDP 51820/3478
+- 全部服务 `restart: unless-stopped`；TLS(18443/8443) 与 ACME 本轮关闭；relay 仍是 wg-easy 占位
+- 启停：`cd /home/neil/Documents/Docker && docker compose -f docker-compose.neilico.yaml up -d|stop`（源码更新后 `up -d --build`；**禁止 `down -v`**）
+- Homepage 导航卡片：`/home/neil/Documents/Docker/data/homepage/config/services.yaml` 的 `- 业务:` 组
+  `neilico`（排 quantdinger 后），href `http://192.168.123.90:13000`，container `neilico-dashboard-1`
+- 2026-10-02 实测：6/6 容器 healthy；`/healthz` = `{"db":"up","status":"ok","version":"v1-resident"}`；
+  LAN `13000` → 200；经 nginx `POST /api/v1/auth/login` → **200 + token**，错密码 → **401**；`/metrics` 44 条 `neilico_*`；
+  `restart control-api dashboard` 后仍可登入。
+
+### 历史运行状态（2026-10-02 01:5x 测试栈实测，现已被上节替代）
+- 测试栈曾整体运行（`Up 3 hours (healthy)`）：API `:18080`、内置反代 `:18081`、Dashboard `:13000`、PG `:15432`、Redis `:16379`、NATS `:14222`、relay 占位 UDP `:51820/:3478`
   （8080/3000/5432/6379/4222 被本机既有容器占用，故整体改端口）
 - **V1-R1 ACME/Pebble overlay 额外端口**：TLS `18443->8443`、HTTP-01 `18082->5002`、Pebble directory `14000`、Pebble management `8055`；挑战测试 DNS 只在 Compose 网络内提供 A 记录，HTTP-01 响应来自 control-plane。
 - 独立在线验证脚本：`bash scripts/verify-live.sh`（只打印状态与计数，不回显任何密钥）
   实测结果：healthz `status=ok db=up`；8 节点注册过（smoke 结束后 offline，属预期）；4 网络 / 3 域名 / 3 代理规则；`audit-logs total=61`；
-  `umpp_proxy_requests_total{domain="smoke-…",status="200"} 1` ← **反代真的服务过 200**；Dashboard 13000 → 200
+  `neilico_proxy_requests_total{domain="smoke-…",status="200"} 1` ← **反代真的服务过 200**；Dashboard 13000 → 200
 - 收尾：`bash scripts/smoke-down.sh --yes` 停栈
 
 ### 流水线自动化（本项目沉淀，可复用）
-- 自主驱动器：`~/.hermes/scripts/umpp-autodrive.sh` + systemd 用户定时器 `umpp-autodrive.timer`（每 5 分钟）
-  状态机 `~/.hermes/cache/umpp-pipeline.state`（`ROUND/PID/HANDLED`）；轮次链 `M1→M2a→M2b→M3→M4→M4b→M5→DONE`。
+- 自主驱动器：`~/.hermes/scripts/neilico-autodrive.sh` + systemd 用户定时器 `neilico-autodrive.timer`（每 5 分钟）
+  状态机 `~/.hermes/cache/neilico-pipeline.state`（`ROUND/PID/HANDLED`）；轮次链 `M1→M2a→M2b→M3→M4→M4b→M5→DONE`。
   **它自己跑完了 M4→M4b→M5（22:20–23:32），无需人干预。**
 - 通知双通道：桌面 `notify-send` + 飞书推送（`hermes -p chatrob send -t feishu:oc_…`，**不需要 gateway 常驻**）。
 - ⚠️ 教训：**不要依赖 Hermes 后台进程退出通知来唤醒 manager**——实测会被 SIGTERM（`process-results/*.json` 里 `exit_code=-15`）；
@@ -68,8 +85,8 @@ UMPP（Unified Mesh & Proxy Platform）：统一「内网穿透 + Mesh 组网」
 - 私有数据保护约定：证书 `key_pem`、节点密钥 `private_key` 一律 `json:"-"` 或一次性返回；agent_token 只存 SHA-256。
 - 告警：`GET /api/v1/alerts`（firing/resolved 筛选）、`/alerts/rules`、`/alerts/summary`、`GET /alerts/{id}` 时间线；`POST /api/v1/alerts/evaluate` 仅 platform_admin/tenant_admin/ops。platform_admin 列表可传 `tenant_id`。
 - `Alert.state` 只有 `firing|resolved`；P2P/中继采集缺失用 `data_status=insufficient_data` 且不落库/不通知。`since` 是最近观测时间，`started_at` 是首次触发时间（Dashboard 持续时长使用后者）。
-- `/metrics` 的 `umpp_p2p_success_rate`、`umpp_relay_bytes`、`umpp_agent_heartbeat_latency` 当前无真实采集，恒为 0，V2 接入；其余 V1-R2 必需指标有数据库或请求真实来源。
-- API Token 明文 `umpp_<32-byte base64url>` 只在 create/rotate 响应出现一次；数据库只存 SHA-256，展示/审计最多 `token_prefix + "…"`。撤销幂等，rotate 旧值立即失效。
+- `/metrics` 的 `neilico_p2p_success_rate`、`neilico_relay_bytes`、`neilico_agent_heartbeat_latency` 当前无真实采集，恒为 0，V2 接入；其余 V1-R2 必需指标有数据库或请求真实来源。
+- API Token 明文 `neilico_<32-byte base64url>` 只在 create/rotate 响应出现一次；数据库只存 SHA-256，展示/审计最多 `token_prefix + "…"`。撤销幂等，rotate 旧值立即失效。
 - API Token scope：`nodes/networks/proxy/certs/tokens/alerts` 的 read/write + `admin`；API Token 严格按自身 scopes 且不能创建更大 scopes 的子 Token。JWT 维持 RBAC，映射表见 `internal/auth/scopes.go` 与 `docs/API.md`。
 - 限流 `ratelimit.enabled/rps/burst`（默认 true/20/40）按 API Token ID 或 JWT user 使用并发安全内存令牌桶；healthz/metrics/ACME challenge 豁免。
 - `target_type=node` 的反代目标是 `<node UUID>:<port>`，节点虚拟 IP 来自 network member；M5 冒烟用临时 echo 容器挂到该 VIP 验证 Host 反代。
@@ -90,7 +107,7 @@ bash scripts/smoke-acme.sh
 bash scripts/smoke-down.sh --yes
 # Helm 离线 lint/render/schema/secret 断言
 export PATH="$HOME/.local/bin:$PATH"
-cd deploy/helm && bash umpp/ci/verify.sh
+cd deploy/helm && bash neilico/ci/verify.sh
 ```
 
 ## 坑与注意
@@ -100,7 +117,7 @@ cd deploy/helm && bash umpp/ci/verify.sh
 - Compose relay 是 **wg-easy 占位**，不是中继数据面；不要把 3478/udp 当作已实现 TURN。当前宿主缺少 iptables NAT 模块时 wg-easy 会记录接口启动错误，健康检查只验证占位 Web 监听。
 - `.env` 已在 `.gitignore`；只提交 `.env.example` 占位符，不要提交真实 JWT/密码/Agent 私钥。
 - ACME 配置默认关闭；只有 `enabled=true` 且显式 `agree_tos=true` 才允许 order。`dns-01` 与 EAB 保留接口位，当前返回 `ErrNotImplemented`。
-- Helm 默认必须接外部 PostgreSQL；`postgres/redis/nats.enabled=true` 只供开发。`secrets.existingSecret` 启用时不渲染 Secret。Chart 详细字段、TLS 二选一和生产限制见 `deploy/helm/umpp/README.md`。
+- Helm 默认必须接外部 PostgreSQL；`postgres/redis/nats.enabled=true` 只供开发。`secrets.existingSecret` 启用时不渲染 Secret。Chart 详细字段、TLS 二选一和生产限制见 `deploy/helm/neilico/README.md`。
 - Helm `verify.sh` 只验证离线渲染，不连接集群；预发布仍需验证 LB/Ingress、UDP、滚动升级、PVC/备份恢复与 NetworkPolicy。
 
 ## V1-S 传输安全记录

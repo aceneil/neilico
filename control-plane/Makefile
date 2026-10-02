@@ -11,7 +11,7 @@ test:
 
 build:
 	mkdir -p bin
-	CGO_ENABLED=0 go build -o bin/umpp-api ./cmd/api
+	CGO_ENABLED=0 go build -o bin/neilico-api ./cmd/api
 
 run:
 	go run ./cmd/api -config configs/config.example.yaml

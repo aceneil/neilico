@@ -10,9 +10,9 @@ import (
 
 	"github.com/google/uuid"
 
-	"umpp/control-plane/internal/auth"
-	"umpp/control-plane/internal/middleware"
-	"umpp/control-plane/internal/service"
+	"neilico/control-plane/internal/auth"
+	"neilico/control-plane/internal/middleware"
+	"neilico/control-plane/internal/service"
 )
 
 func (s *Server) registerM4B(mux *http.ServeMux) {

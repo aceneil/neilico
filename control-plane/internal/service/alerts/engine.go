@@ -11,7 +11,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
-	"umpp/control-plane/internal/models"
+	"neilico/control-plane/internal/models"
 )
 
 type MetricsObserver interface {
@@ -229,7 +229,7 @@ func (e *Engine) createEvent(tx *gorm.DB, alert *models.Alert, now time.Time) er
 }
 
 func (e *Engine) notify(ctx context.Context, event string, alert Alert) {
-	notification := Notification{Event: event, Schema: "umpp.alert.v1", Alert: alert, Timestamp: time.Now().UTC()}
+	notification := Notification{Event: event, Schema: "neilico.alert.v1", Alert: alert, Timestamp: time.Now().UTC()}
 	if err := e.notifier.Notify(ctx, notification); err != nil {
 		// Notification failures must never fail evaluation or the API request.
 		e.logger.Error("alert notification failed", "event", event, "alert_id", alert.ID, "rule", alert.Rule, "error", err)

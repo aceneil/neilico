@@ -91,7 +91,7 @@ function onUserMenuClick({ key }: { key: string | number }) {
       <div class="brand brand--sider">
         <div class="brand__mark">U</div>
         <div v-if="!preferences.sidebarCollapsed">
-          <strong>UMPP</strong>
+          <strong>NEILICO</strong>
           <span>统一网络控制台</span>
         </div>
       </div>
@@ -117,7 +117,7 @@ function onUserMenuClick({ key }: { key: string | number }) {
         </a-button>
         <div class="header-title">
           <strong>{{ route.meta.title }}</strong>
-          <span>UMPP / {{ route.meta.title }}</span>
+          <span>NEILICO / {{ route.meta.title }}</span>
         </div>
         <div class="header-actions">
           <a-tag>后端 API</a-tag>

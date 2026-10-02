@@ -25,9 +25,9 @@ import (
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
 
-	"umpp/control-plane/internal/auth"
-	"umpp/control-plane/internal/models"
-	"umpp/control-plane/internal/service"
+	"neilico/control-plane/internal/auth"
+	"neilico/control-plane/internal/models"
+	"neilico/control-plane/internal/service"
 )
 
 func TestM2AProxyAndCertificateFlow(t *testing.T) {
@@ -281,7 +281,7 @@ func TestM2AProxyAndCertificateFlow(t *testing.T) {
 
 	status, body = mustRequest(t, app.server, http.MethodGet, "/metrics", "", nil)
 	requireStatus(t, status, http.StatusOK)
-	if !bytes.Contains(body, []byte("umpp_proxy_requests_total")) || !bytes.Contains(body, []byte("umpp_proxy_provider_up")) {
+	if !bytes.Contains(body, []byte("neilico_proxy_requests_total")) || !bytes.Contains(body, []byte("neilico_proxy_provider_up")) {
 		t.Fatalf("metrics missing proxy metrics:\n%s", body)
 	}
 
@@ -388,7 +388,7 @@ func doWebSocketRequest(t *testing.T, server *httptest.Server, path string) stri
 		t.Fatal(err)
 	}
 	defer connection.Close()
-	key := base64.StdEncoding.EncodeToString([]byte("umpp-websocket-test"))
+	key := base64.StdEncoding.EncodeToString([]byte("neilico-websocket-test"))
 	_, err = fmt.Fprintf(connection, "GET %s HTTP/1.1\r\nHost: app.example.com\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: %s\r\nSec-WebSocket-Version: 13\r\n\r\n", path, key)
 	if err != nil {
 		t.Fatal(err)

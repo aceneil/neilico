@@ -1,4 +1,4 @@
-# UMPP EasyTier configuration export (export only; not wired to runtime)
+# NEILICO EasyTier configuration export (export only; not wired to runtime)
 network_name = "home"
 network_secret = "NETWORK_SECRET"
 peers = [

@@ -8,14 +8,14 @@ import (
 
 	"github.com/google/uuid"
 
-	"umpp/control-plane/internal/config"
-	"umpp/control-plane/internal/db"
-	umppproxy "umpp/control-plane/internal/service/proxy"
+	"neilico/control-plane/internal/config"
+	"neilico/control-plane/internal/db"
+	neilicoproxy "neilico/control-plane/internal/service/proxy"
 )
 
 func TestRenderConfigGolden(t *testing.T) {
 	t.Parallel()
-	routes := []umppproxy.Route{{
+	routes := []neilicoproxy.Route{{
 		RuleID:         uuid.MustParse("11111111-1111-1111-1111-111111111111"),
 		TenantID:       uuid.MustParse("22222222-2222-2222-2222-222222222222"),
 		DomainID:       uuid.MustParse("33333333-3333-3333-3333-333333333333"),

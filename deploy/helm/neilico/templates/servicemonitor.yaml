@@ -2,18 +2,18 @@
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
-  name: {{ include "umpp.controlApi.fullname" . }}
+  name: {{ include "neilico.controlApi.fullname" . }}
   labels:
-    {{- include "umpp.componentLabels" (dict "root" . "component" "control-api") | nindent 4 }}
+    {{- include "neilico.componentLabels" (dict "root" . "component" "control-api") | nindent 4 }}
     {{- with .Values.prometheus.serviceMonitor.labels }}
     {{- toYaml . | nindent 4 }}
     {{- end }}
   annotations:
-    {{- include "umpp.annotations" . | nindent 4 }}
+    {{- include "neilico.annotations" . | nindent 4 }}
 spec:
   selector:
     matchLabels:
-      {{- include "umpp.selectorLabels" . | nindent 6 }}
+      {{- include "neilico.selectorLabels" . | nindent 6 }}
       app.kubernetes.io/component: control-api
   endpoints:
     - port: api

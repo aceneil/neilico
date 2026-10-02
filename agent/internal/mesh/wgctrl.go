@@ -8,7 +8,7 @@ import (
 	"golang.zx2c4.com/wireguard/wgctrl"
 	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
 
-	"umpp/agent/internal/route"
+	"neilico/agent/internal/route"
 )
 
 type WGCtrlApplier struct {

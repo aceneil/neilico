@@ -1,4 +1,4 @@
-module umpp/cli
+module neilico/cli
 
 go 1.27
 

@@ -14,7 +14,7 @@ import (
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
 
-	"umpp/control-plane/internal/models"
+	"neilico/control-plane/internal/models"
 )
 
 const (
@@ -113,7 +113,7 @@ func (m *Manager) Parse(tokenString, expectedType string) (Claims, error) {
 }
 
 func (m *Manager) CertificateEncryptionKey() []byte {
-	digest := sha256.Sum256([]byte("umpp-auth-jwt-secret-v1\x00" + string(m.secret)))
+	digest := sha256.Sum256([]byte("neilico-auth-jwt-secret-v1\x00" + string(m.secret)))
 	return digest[:]
 }
 

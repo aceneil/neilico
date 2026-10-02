@@ -8,14 +8,14 @@ import (
 	"io"
 	"strings"
 
-	"umpp/cli/internal/api"
-	"umpp/cli/internal/config"
+	"neilico/cli/internal/api"
+	"neilico/cli/internal/config"
 )
 
-const helpText = `umppctl - UMPP control-plane CLI
+const helpText = `neilicoctl - NEILICO control-plane CLI
 
 Usage:
-  umppctl [global options] <command> [command options]
+  neilicoctl [global options] <command> [command options]
 
 Commands:
   login                 Authenticate with password or API token
@@ -33,8 +33,8 @@ Commands:
   agent config          Fetch and print an agent configuration
 
 Global options:
-  --server URL          Control-plane URL (also UMPP_SERVER)
-  --config PATH         Credential file (default ~/.umppctl/config.yaml)
+  --server URL          Control-plane URL (also NEILICO_SERVER)
+  --config PATH         Credential file (default ~/.neilicoctl/config.yaml)
   --help                Show this help
 `
 
@@ -84,7 +84,7 @@ func (a *App) Run(ctx context.Context, args []string) error {
 	case "agent":
 		return a.agent(ctx, client, rest)
 	default:
-		return fmt.Errorf("unknown command %q; run umppctl --help", command)
+		return fmt.Errorf("unknown command %q; run neilicoctl --help", command)
 	}
 }
 

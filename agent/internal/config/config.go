@@ -91,8 +91,8 @@ type Log struct {
 
 func Default() Config {
 	return Config{
-		Server: "https://api.umpp.example.com",
-		Node:   Node{Name: "umpp-node", Tags: []string{}},
+		Server: "https://api.neilico.example.com",
+		Node:   Node{Name: "neilico-node", Tags: []string{}},
 		Mesh: Mesh{
 			Interface: "wg0", MTU: 1420, ListenPort: 51820,
 			CleanupOnExit: true, AllowForwarding: false,
@@ -100,7 +100,7 @@ func Default() Config {
 		Proxy:             Proxy{},
 		Metrics:           Metrics{Enabled: true, Listen: "0.0.0.0:9100"},
 		Log:               Log{Level: "info"},
-		StatePath:         "/var/lib/umpp-agent/state.json",
+		StatePath:         "/var/lib/neilico-agent/state.json",
 		PollInterval:      Duration(30 * time.Second),
 		HeartbeatInterval: Duration(30 * time.Second),
 	}
@@ -130,20 +130,20 @@ func Load(path string) (Config, error) {
 
 func applyEnv(cfg *Config) error {
 	stringsMap := map[string]*string{
-		"UMPP_AGENT_SERVER":                  &cfg.Server,
-		"UMPP_AGENT_TOKEN":                   &cfg.Token,
-		"UMPP_AGENT_NODE_NAME":               &cfg.Node.Name,
-		"UMPP_AGENT_MESH_INTERFACE":          &cfg.Mesh.Interface,
-		"UMPP_AGENT_MESH_PUBLIC_ENDPOINT":    &cfg.Mesh.PublicEndpoint,
-		"UMPP_AGENT_MESH_EXTERNAL_INTERFACE": &cfg.Mesh.ExternalInterface,
-		"UMPP_AGENT_PROXY_NPS_SERVER":        &cfg.Proxy.NPSServer,
-		"UMPP_AGENT_METRICS_LISTEN":          &cfg.Metrics.Listen,
-		"UMPP_AGENT_LOG_LEVEL":               &cfg.Log.Level,
-		"UMPP_AGENT_STATE":                   &cfg.StatePath,
-		"UMPP_AGENT_TLS_CA_FILE":             &cfg.TLS.CAFile,
-		"UMPP_AGENT_TLS_CLIENT_CERT_FILE":    &cfg.TLS.ClientCertFile,
-		"UMPP_AGENT_TLS_CLIENT_KEY_FILE":     &cfg.TLS.ClientKeyFile,
-		"UMPP_AGENT_TLS_SERVER_NAME":         &cfg.TLS.ServerName,
+		"NEILICO_AGENT_SERVER":                  &cfg.Server,
+		"NEILICO_AGENT_TOKEN":                   &cfg.Token,
+		"NEILICO_AGENT_NODE_NAME":               &cfg.Node.Name,
+		"NEILICO_AGENT_MESH_INTERFACE":          &cfg.Mesh.Interface,
+		"NEILICO_AGENT_MESH_PUBLIC_ENDPOINT":    &cfg.Mesh.PublicEndpoint,
+		"NEILICO_AGENT_MESH_EXTERNAL_INTERFACE": &cfg.Mesh.ExternalInterface,
+		"NEILICO_AGENT_PROXY_NPS_SERVER":        &cfg.Proxy.NPSServer,
+		"NEILICO_AGENT_METRICS_LISTEN":          &cfg.Metrics.Listen,
+		"NEILICO_AGENT_LOG_LEVEL":               &cfg.Log.Level,
+		"NEILICO_AGENT_STATE":                   &cfg.StatePath,
+		"NEILICO_AGENT_TLS_CA_FILE":             &cfg.TLS.CAFile,
+		"NEILICO_AGENT_TLS_CLIENT_CERT_FILE":    &cfg.TLS.ClientCertFile,
+		"NEILICO_AGENT_TLS_CLIENT_KEY_FILE":     &cfg.TLS.ClientKeyFile,
+		"NEILICO_AGENT_TLS_SERVER_NAME":         &cfg.TLS.ServerName,
 	}
 	for name, target := range stringsMap {
 		if value, ok := os.LookupEnv(name); ok {
@@ -151,8 +151,8 @@ func applyEnv(cfg *Config) error {
 		}
 	}
 	intsMap := map[string]*int{
-		"UMPP_AGENT_MESH_MTU":         &cfg.Mesh.MTU,
-		"UMPP_AGENT_MESH_LISTEN_PORT": &cfg.Mesh.ListenPort,
+		"NEILICO_AGENT_MESH_MTU":         &cfg.Mesh.MTU,
+		"NEILICO_AGENT_MESH_LISTEN_PORT": &cfg.Mesh.ListenPort,
 	}
 	for name, target := range intsMap {
 		if value, ok := os.LookupEnv(name); ok {
@@ -164,11 +164,11 @@ func applyEnv(cfg *Config) error {
 		}
 	}
 	boolsMap := map[string]*bool{
-		"UMPP_AGENT_MESH_CLEANUP_ON_EXIT":     &cfg.Mesh.CleanupOnExit,
-		"UMPP_AGENT_MESH_ALLOW_FORWARDING":    &cfg.Mesh.AllowForwarding,
-		"UMPP_AGENT_PROXY_ENABLED":            &cfg.Proxy.Enabled,
-		"UMPP_AGENT_METRICS_ENABLED":          &cfg.Metrics.Enabled,
-		"UMPP_AGENT_TLS_INSECURE_SKIP_VERIFY": &cfg.TLS.InsecureSkipVerify,
+		"NEILICO_AGENT_MESH_CLEANUP_ON_EXIT":     &cfg.Mesh.CleanupOnExit,
+		"NEILICO_AGENT_MESH_ALLOW_FORWARDING":    &cfg.Mesh.AllowForwarding,
+		"NEILICO_AGENT_PROXY_ENABLED":            &cfg.Proxy.Enabled,
+		"NEILICO_AGENT_METRICS_ENABLED":          &cfg.Metrics.Enabled,
+		"NEILICO_AGENT_TLS_INSECURE_SKIP_VERIFY": &cfg.TLS.InsecureSkipVerify,
 	}
 	for name, target := range boolsMap {
 		if value, ok := os.LookupEnv(name); ok {
@@ -180,8 +180,8 @@ func applyEnv(cfg *Config) error {
 		}
 	}
 	durationsMap := map[string]*Duration{
-		"UMPP_AGENT_POLL_INTERVAL":      &cfg.PollInterval,
-		"UMPP_AGENT_HEARTBEAT_INTERVAL": &cfg.HeartbeatInterval,
+		"NEILICO_AGENT_POLL_INTERVAL":      &cfg.PollInterval,
+		"NEILICO_AGENT_HEARTBEAT_INTERVAL": &cfg.HeartbeatInterval,
 	}
 	for name, target := range durationsMap {
 		if value, ok := os.LookupEnv(name); ok {
@@ -192,7 +192,7 @@ func applyEnv(cfg *Config) error {
 			*target = Duration(parsed)
 		}
 	}
-	if value, ok := os.LookupEnv("UMPP_AGENT_NODE_TAGS"); ok {
+	if value, ok := os.LookupEnv("NEILICO_AGENT_NODE_TAGS"); ok {
 		cfg.Node.Tags = splitTags(value)
 	}
 	return nil
@@ -246,7 +246,7 @@ func (c Config) Validate() error {
 
 func DefaultStatePath() string {
 	if runtime.GOOS == "windows" {
-		return filepath.Join(os.TempDir(), "umpp-agent", "state.json")
+		return filepath.Join(os.TempDir(), "neilico-agent", "state.json")
 	}
-	return "/var/lib/umpp-agent/state.json"
+	return "/var/lib/neilico-agent/state.json"
 }

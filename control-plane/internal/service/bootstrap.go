@@ -8,9 +8,9 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
-	"umpp/control-plane/internal/auth"
-	"umpp/control-plane/internal/config"
-	"umpp/control-plane/internal/models"
+	"neilico/control-plane/internal/auth"
+	"neilico/control-plane/internal/config"
+	"neilico/control-plane/internal/models"
 )
 
 func Bootstrap(ctx context.Context, db *gorm.DB, cfg config.Bootstrap) error {

@@ -12,14 +12,14 @@ server:
     http_port: 80
 pki:
   enabled: false
-  ca_common_name: "UMPP Internal CA"
+  ca_common_name: "NEILICO Internal CA"
   server_hosts: ["localhost", "127.0.0.1"]
   server_cert_days: 825
   node_cert_days: 365
   renew_before_days: 30
 database:
   driver: postgres
-  dsn: "postgres://umpp:change-me@localhost:5432/umpp?sslmode=disable"
+  dsn: "postgres://neilico:change-me@localhost:5432/neilico?sslmode=disable"
 auth:
   jwt_secret: "replace-with-a-long-random-secret"
   access_ttl: 15m

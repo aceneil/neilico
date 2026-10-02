@@ -2,11 +2,11 @@
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: {{ include "umpp.fullname" . }}
+  name: {{ include "neilico.fullname" . }}
   labels:
-    {{- include "umpp.componentLabels" (dict "root" . "component" "ingress") | nindent 4 }}
+    {{- include "neilico.componentLabels" (dict "root" . "component" "ingress") | nindent 4 }}
   annotations:
-    {{- include "umpp.annotations" . | nindent 4 }}
+    {{- include "neilico.annotations" . | nindent 4 }}
     {{- with .Values.ingress.annotations }}
     {{- toYaml . | nindent 4 }}
     {{- end }}
@@ -29,11 +29,11 @@ spec:
             backend:
               service:
                 {{- if eq .service "controlApi" }}
-                name: {{ include "umpp.controlApi.fullname" $ }}
+                name: {{ include "neilico.controlApi.fullname" $ }}
                 port:
                   name: api
                 {{- else }}
-                name: {{ include "umpp.dashboard.fullname" $ }}
+                name: {{ include "neilico.dashboard.fullname" $ }}
                 port:
                   name: http
                 {{- end }}

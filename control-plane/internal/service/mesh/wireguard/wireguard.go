@@ -8,8 +8,8 @@ import (
 
 	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
 
-	"umpp/control-plane/internal/service/mesh"
-	"umpp/control-plane/internal/service/mesh/easytier"
+	"neilico/control-plane/internal/service/mesh"
+	"neilico/control-plane/internal/service/mesh/easytier"
 )
 
 const (
@@ -48,7 +48,7 @@ func (*Provider) RenderNodeConfig(_ context.Context, node mesh.Node) ([]byte, er
 		return peers[i].PublicKey < peers[j].PublicKey
 	})
 	var output strings.Builder
-	output.WriteString("# UMPP WireGuard configuration\n")
+	output.WriteString("# NEILICO WireGuard configuration\n")
 	fmt.Fprintf(&output, "# policy_filtered: %t\n", node.PolicyFiltered)
 	output.WriteString("[Interface]\n")
 	fmt.Fprintf(&output, "PrivateKey = %s\n", node.PrivateKey)

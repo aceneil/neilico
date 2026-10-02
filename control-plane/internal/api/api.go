@@ -13,17 +13,17 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
-	"umpp/control-plane/internal/auth"
-	"umpp/control-plane/internal/metrics"
-	"umpp/control-plane/internal/middleware"
-	"umpp/control-plane/internal/models"
-	"umpp/control-plane/internal/service"
-	alertservice "umpp/control-plane/internal/service/alerts"
-	"umpp/control-plane/internal/service/cert"
-	acmeclient "umpp/control-plane/internal/service/cert/acme"
-	configservice "umpp/control-plane/internal/service/config"
-	"umpp/control-plane/internal/service/pki"
-	"umpp/control-plane/internal/service/proxy"
+	"neilico/control-plane/internal/auth"
+	"neilico/control-plane/internal/metrics"
+	"neilico/control-plane/internal/middleware"
+	"neilico/control-plane/internal/models"
+	"neilico/control-plane/internal/service"
+	alertservice "neilico/control-plane/internal/service/alerts"
+	"neilico/control-plane/internal/service/cert"
+	acmeclient "neilico/control-plane/internal/service/cert/acme"
+	configservice "neilico/control-plane/internal/service/config"
+	"neilico/control-plane/internal/service/pki"
+	"neilico/control-plane/internal/service/proxy"
 )
 
 const maxRequestBody = 1 << 20

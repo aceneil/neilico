@@ -32,10 +32,10 @@ heartbeat_interval: 20s
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("UMPP_AGENT_NODE_NAME", "env-node")
-	t.Setenv("UMPP_AGENT_NODE_TAGS", "one, two")
-	t.Setenv("UMPP_AGENT_POLL_INTERVAL", "45s")
-	t.Setenv("UMPP_AGENT_MESH_ALLOW_FORWARDING", "true")
+	t.Setenv("NEILICO_AGENT_NODE_NAME", "env-node")
+	t.Setenv("NEILICO_AGENT_NODE_TAGS", "one, two")
+	t.Setenv("NEILICO_AGENT_POLL_INTERVAL", "45s")
+	t.Setenv("NEILICO_AGENT_MESH_ALLOW_FORWARDING", "true")
 	cfg, err := Load(path)
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)

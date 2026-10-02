@@ -2,16 +2,16 @@
 set -Eeuo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-COMPOSE=(docker compose --project-name umpp-v1s-tls -f "$ROOT/deploy/docker-compose/docker-compose.yml" -f "$ROOT/deploy/docker-compose/docker-compose.tls.yml")
-export POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-umpp-smoke-password}"
-export UMPP_JWT_SECRET="${UMPP_JWT_SECRET:-umpp-smoke-jwt-secret-please-change}"
-export BOOTSTRAP_ADMIN_PASSWORD="${BOOTSTRAP_ADMIN_PASSWORD:-umpp-smoke-admin-password}"
+COMPOSE=(docker compose --project-name neilico-v1s-tls -f "$ROOT/deploy/docker-compose/docker-compose.yml" -f "$ROOT/deploy/docker-compose/docker-compose.tls.yml")
+export POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-neilico-smoke-password}"
+export NEILICO_JWT_SECRET="${NEILICO_JWT_SECRET:-neilico-smoke-jwt-secret-please-change}"
+export BOOTSTRAP_ADMIN_PASSWORD="${BOOTSTRAP_ADMIN_PASSWORD:-neilico-smoke-admin-password}"
 export BOOTSTRAP_ADMIN_EMAIL="${BOOTSTRAP_ADMIN_EMAIL:-admin@tls-smoke.test}"
 export TLS_API_HTTP_PORT="${TLS_API_HTTP_PORT:-18080}"
 export TLS_API_HTTPS_PORT="${TLS_API_HTTPS_PORT:-18443}"
 export TLS_PROXY_HTTP_PORT="${TLS_PROXY_HTTP_PORT:-18081}"
 export TLS_PROXY_HTTPS_PORT="${TLS_PROXY_HTTPS_PORT:-18444}"
-export TLS_SMOKE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/umpp-tls-smoke.XXXXXX")"
+export TLS_SMOKE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/neilico-tls-smoke.XXXXXX")"
 TMP="$TLS_SMOKE_DIR"
 PASS=0
 FAIL=0
@@ -87,8 +87,8 @@ HTTP_BODY_FILE="$TMP/http-body"
 : > "$HTTP_BODY_FILE"
 
 start_step "1/10 compose validation and free-port check"
-if docker ps --format '{{.Names}}' | grep -Eq 'umpp-v1s-tls'; then
-  fail_step "an existing UMPP smoke container is present; refusing to touch it"
+if docker ps --format '{{.Names}}' | grep -Eq 'neilico-v1s-tls'; then
+  fail_step "an existing NEILICO smoke container is present; refusing to touch it"
 fi
 "${COMPOSE[@]}" config -q || fail_step "docker compose config -q failed"
 finish_step PASS "compose config -q"
@@ -105,7 +105,7 @@ http {
     server_name upstream.tls.test;
     ssl_certificate /etc/nginx/tls/upstream.crt;
     ssl_certificate_key /etc/nginx/tls/upstream.key;
-    location / { return 200 'UMPP_HTTPS_UPSTREAM_OK\n'; }
+    location / { return 200 'NEILICO_HTTPS_UPSTREAM_OK\n'; }
   }
 }
 NGINX
@@ -204,8 +204,8 @@ heartbeat_interval: 2s
 log: {level: info}
 AGENT
 chmod 600 "$TMP/agent.yaml"
-(cd "$ROOT/agent" && CGO_ENABLED=0 go build -o "$TMP/umpp-agent" ./cmd/agent) || fail_step "build Agent"
-"$TMP/umpp-agent" --dry-run --config "$TMP/agent.yaml" --state "$TMP/state.json" >"$TMP/agent.log" 2>&1 &
+(cd "$ROOT/agent" && CGO_ENABLED=0 go build -o "$TMP/neilico-agent" ./cmd/agent) || fail_step "build Agent"
+"$TMP/neilico-agent" --dry-run --config "$TMP/agent.yaml" --state "$TMP/state.json" >"$TMP/agent.log" 2>&1 &
 AGENT_PID=$!
 sleep 4
 kill -0 "$AGENT_PID" 2>/dev/null || fail_step "Agent exited unexpectedly during successful TLS run"
@@ -239,7 +239,7 @@ poll_interval: 2s
 heartbeat_interval: 2s
 log: {level: info}
 AGENT
-"$TMP/umpp-agent" --dry-run --config "$TMP/agent-no-ca.yaml" --state "$TMP/state.json" >"$TMP/agent-no-ca.log" 2>&1 &
+"$TMP/neilico-agent" --dry-run --config "$TMP/agent-no-ca.yaml" --state "$TMP/state.json" >"$TMP/agent-no-ca.log" 2>&1 &
 NO_CA_PID=$!
 sleep 4
 kill -0 "$NO_CA_PID" 2>/dev/null || fail_step "Agent crashed after CA removal"
@@ -271,7 +271,7 @@ RULE_ID="$(jq -r '.id // empty' "$HTTP_BODY_FILE")"
 [[ -n "$RULE_ID" ]] || fail_step "proxy rule creation omitted id"
 HTTP_CODE="$(curl -sk --resolve "app.tls.test:$TLS_PROXY_HTTPS_PORT:127.0.0.1" -o "$HTTP_BODY_FILE" -w '%{http_code}' "https://app.tls.test:$TLS_PROXY_HTTPS_PORT/" || true)"
 expect_status 200
-grep -q 'UMPP_HTTPS_UPSTREAM_OK' "$HTTP_BODY_FILE" || fail_step "HTTPS upstream response body mismatch"
+grep -q 'NEILICO_HTTPS_UPSTREAM_OK' "$HTTP_BODY_FILE" || fail_step "HTTPS upstream response body mismatch"
 HTTP_HEADERS="$TMP/headers"; curl -sk --resolve "app.tls.test:$TLS_PROXY_HTTPS_PORT:127.0.0.1" -D "$HTTP_HEADERS" -o /dev/null "https://app.tls.test:$TLS_PROXY_HTTPS_PORT/" || true
 grep -qi '^Strict-Transport-Security: max-age=31536000' "$HTTP_HEADERS" || fail_step "HSTS header missing or incorrect"
 # A rule without a trust anchor must fail closed and explain certificate verification.
@@ -289,8 +289,8 @@ finish_step PASS "HTTPS upstream trusted with CA, fails closed without CA, insec
 
 start_step "9/10 transport security metrics"
 curl -fsS --cacert "$TMP/ca.crt" --max-time 5 "https://127.0.0.1:$TLS_API_HTTPS_PORT/metrics" > "$TMP/metrics.txt" || fail_step "fetch metrics"
-grep -q '^umpp_pki_certificates_issued_total' "$TMP/metrics.txt" || fail_step "PKI issuance metric missing"
-grep -q '^umpp_tls_handshakes_total' "$TMP/metrics.txt" || fail_step "TLS handshake metric missing"
+grep -q '^neilico_pki_certificates_issued_total' "$TMP/metrics.txt" || fail_step "PKI issuance metric missing"
+grep -q '^neilico_tls_handshakes_total' "$TMP/metrics.txt" || fail_step "TLS handshake metric missing"
 finish_step PASS "PKI and TLS handshake metrics present"
 
 start_step "10/10 summary and compose state"

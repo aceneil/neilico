@@ -70,7 +70,7 @@ function downloadCA() {
   const url = URL.createObjectURL(blob)
   const anchor = document.createElement('a')
   anchor.href = url
-  anchor.download = 'umpp-ca.crt'
+  anchor.download = 'neilico-ca.crt'
   anchor.click()
   URL.revokeObjectURL(url)
 }

@@ -1,0 +1,31 @@
+{{- if .Values.podDisruptionBudget.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "neilico.controlApi.fullname" . }}
+  labels:
+    {{- include "neilico.componentLabels" (dict "root" . "component" "control-api") | nindent 4 }}
+  annotations:
+    {{- include "neilico.annotations" . | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.podDisruptionBudget.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "neilico.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: control-api
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "neilico.dashboard.fullname" . }}
+  labels:
+    {{- include "neilico.componentLabels" (dict "root" . "component" "dashboard") | nindent 4 }}
+  annotations:
+    {{- include "neilico.annotations" . | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.podDisruptionBudget.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "neilico.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: dashboard
+{{- end }}

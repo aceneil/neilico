@@ -16,9 +16,9 @@ import (
 	"gorm.io/datatypes"
 	"gorm.io/gorm"
 
-	"umpp/control-plane/internal/config"
-	"umpp/control-plane/internal/db"
-	"umpp/control-plane/internal/models"
+	"neilico/control-plane/internal/config"
+	"neilico/control-plane/internal/db"
+	"neilico/control-plane/internal/models"
 )
 
 func TestRuleThresholdBoundaries(t *testing.T) {
@@ -169,7 +169,7 @@ func TestWebhookRetriesAreBounded(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	notification := Notification{Event: "alert.firing", Schema: "umpp.alert.v1", Timestamp: time.Now().UTC()}
+	notification := Notification{Event: "alert.firing", Schema: "neilico.alert.v1", Timestamp: time.Now().UTC()}
 	if err := notifier.Notify(context.Background(), notification); err != nil {
 		t.Fatal(err)
 	}

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# UMPP V1-R1 real ACME integration smoke using Pebble. No Let's Encrypt
+# NEILICO V1-R1 real ACME integration smoke using Pebble. No Let's Encrypt
 # production endpoint is used. Exit status is the acceptance result.
 set -Eeuo pipefail
 
@@ -8,8 +8,8 @@ COMPOSE_DIR="$ROOT_DIR/deploy/docker-compose"
 BASE_FILE="$COMPOSE_DIR/docker-compose.yml"
 ACME_FILE="$COMPOSE_DIR/docker-compose.acme.yml"
 ENV_FILE="$COMPOSE_DIR/.env"
-PROJECT_NAME="umpp-v1r1-acme"
-TMP_DIR="$(mktemp -d /tmp/umpp-acme-smoke.XXXXXX)"
+PROJECT_NAME="neilico-v1r1-acme"
+TMP_DIR="$(mktemp -d /tmp/neilico-acme-smoke.XXXXXX)"
 HTTP_BODY_FILE="$TMP_DIR/http-body"
 STEP_NAMES=()
 STEP_RESULTS=()
@@ -210,11 +210,11 @@ tls_fingerprint="$(openssl x509 -in "$TMP_DIR/tls-leaf.pem" -outform DER | sha25
 finish_step PASS "SNI $DOMAIN_NAME matched issued certificate fingerprint"
 
 start_step "8/10 assert ACME and expiry metrics"
-expiry_metric="umpp_certificate_expiry_days{domain=\"$DOMAIN_NAME\"}"
+expiry_metric="neilico_certificate_expiry_days{domain=\"$DOMAIN_NAME\"}"
 expiry_value="$(metric_value "$expiry_metric")"
-orders_value="$(metric_value 'umpp_acme_orders_total{result="success"}')"
+orders_value="$(metric_value 'neilico_acme_orders_total{result="success"}')"
 awk -v value="$expiry_value" 'BEGIN { exit !(value > 0) }' || fail_step "$expiry_metric=$expiry_value, want > 0"
-awk -v value="$orders_value" 'BEGIN { exit !(value >= 1) }' || fail_step "umpp_acme_orders_total{result=\"success\"}=$orders_value, want >= 1"
+awk -v value="$orders_value" 'BEGIN { exit !(value >= 1) }' || fail_step "neilico_acme_orders_total{result=\"success\"}=$orders_value, want >= 1"
 finish_step PASS "expiry_days=$expiry_value orders_success=$orders_value"
 
 start_step "9/10 manual renewal creates a second real order"
@@ -223,7 +223,7 @@ http_call POST "$API_BASE/api/v1/certificates/$CERT_ID/renew" "$ADMIN_TOKEN" ""
 expect_status 202
 renewed=0
 for _ in $(seq 1 120); do
-  orders_now="$(metric_value 'umpp_acme_orders_total{result="success"}')"
+  orders_now="$(metric_value 'neilico_acme_orders_total{result="success"}')"
   http_call GET "$API_BASE/api/v1/certificates/$CERT_ID" "$ADMIN_TOKEN" ""
   renew_count="$(json '.renew_count // 0')"
   if awk -v now="$orders_now" -v before="$orders_before" 'BEGIN { exit !(now >= before + 1) }' && [[ "$renew_count" =~ ^[0-9]+$ ]] && (( renew_count >= 1 )); then

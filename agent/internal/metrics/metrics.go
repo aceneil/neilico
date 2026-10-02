@@ -26,31 +26,31 @@ func New() *Metrics {
 	m := &Metrics{
 		registry: prometheus.NewRegistry(),
 		heartbeat: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "umpp_agent_heartbeat_total", Help: "Agent heartbeat attempts by result.",
+			Name: "neilico_agent_heartbeat_total", Help: "Agent heartbeat attempts by result.",
 		}, []string{"result"}),
 		configPull: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "umpp_agent_config_pull_total", Help: "Agent configuration pulls by result.",
+			Name: "neilico_agent_config_pull_total", Help: "Agent configuration pulls by result.",
 		}, []string{"result"}),
 		apply: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "umpp_agent_apply_total", Help: "Agent configuration applications by result.",
+			Name: "neilico_agent_apply_total", Help: "Agent configuration applications by result.",
 		}, []string{"result"}),
 		configVersion: prometheus.NewGauge(prometheus.GaugeOpts{
-			Name: "umpp_agent_config_version", Help: "Last applied control-plane configuration version.",
+			Name: "neilico_agent_config_version", Help: "Last applied control-plane configuration version.",
 		}),
 		applyDryRun: prometheus.NewGauge(prometheus.GaugeOpts{
-			Name: "umpp_agent_apply_dry_run", Help: "Whether network application is in dry-run mode.",
+			Name: "neilico_agent_apply_dry_run", Help: "Whether network application is in dry-run mode.",
 		}),
 		peers: prometheus.NewGauge(prometheus.GaugeOpts{
-			Name: "umpp_agent_peers", Help: "Number of configured WireGuard peers.",
+			Name: "neilico_agent_peers", Help: "Number of configured WireGuard peers.",
 		}),
 		proxyPending: prometheus.NewGauge(prometheus.GaugeOpts{
-			Name: "umpp_agent_proxy_pending", Help: "Whether an NPS proxy client is pending integration.",
+			Name: "neilico_agent_proxy_pending", Help: "Whether an NPS proxy client is pending integration.",
 		}),
 		trafficReports: *prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "umpp_agent_traffic_report_total", Help: "Traffic report batches by result.",
+			Name: "neilico_agent_traffic_report_total", Help: "Traffic report batches by result.",
 		}, []string{"result"}),
 		trafficBytes: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "umpp_agent_traffic_bytes_total", Help: "Reported interface traffic bytes.",
+			Name: "neilico_agent_traffic_bytes_total", Help: "Reported interface traffic bytes.",
 		}, []string{"direction"}),
 	}
 	m.registry.MustRegister(m.heartbeat, m.configPull, m.apply, m.configVersion, m.applyDryRun, m.peers, m.proxyPending, &m.trafficReports, m.trafficBytes)

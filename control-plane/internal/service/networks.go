@@ -13,10 +13,10 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
-	"umpp/control-plane/internal/models"
-	aclengine "umpp/control-plane/internal/service/acl"
-	"umpp/control-plane/internal/service/cert"
-	"umpp/control-plane/internal/validation"
+	"neilico/control-plane/internal/models"
+	aclengine "neilico/control-plane/internal/service/acl"
+	"neilico/control-plane/internal/service/cert"
+	"neilico/control-plane/internal/validation"
 )
 
 type NetworkService struct {

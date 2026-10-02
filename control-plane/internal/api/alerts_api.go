@@ -8,9 +8,9 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
-	"umpp/control-plane/internal/auth"
-	"umpp/control-plane/internal/middleware"
-	alertservice "umpp/control-plane/internal/service/alerts"
+	"neilico/control-plane/internal/auth"
+	"neilico/control-plane/internal/middleware"
+	alertservice "neilico/control-plane/internal/service/alerts"
 )
 
 func (s *Server) registerAlerts(mux *http.ServeMux) {

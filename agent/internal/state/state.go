@@ -50,7 +50,7 @@ func Save(path string, stored State) error {
 	if err := os.MkdirAll(directory, 0o700); err != nil {
 		return fmt.Errorf("create state directory: %w", err)
 	}
-	if directoryCreated || filepath.Base(directory) == "umpp-agent" {
+	if directoryCreated || filepath.Base(directory) == "neilico-agent" {
 		if err := os.Chmod(directory, 0o700); err != nil {
 			return fmt.Errorf("secure state directory: %w", err)
 		}

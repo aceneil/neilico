@@ -12,9 +12,9 @@ import (
 	"os"
 	"strings"
 
-	"umpp/agent/internal/client"
-	"umpp/agent/internal/route"
-	"umpp/agent/internal/state"
+	"neilico/agent/internal/client"
+	"neilico/agent/internal/route"
+	"neilico/agent/internal/state"
 )
 
 type ApplyObserver interface {

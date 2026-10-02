@@ -21,7 +21,7 @@ import (
 
 	xacme "golang.org/x/crypto/acme"
 
-	parentcert "umpp/control-plane/internal/service/cert"
+	parentcert "neilico/control-plane/internal/service/cert"
 )
 
 // X509Transport is the RFC 8555 implementation backed by x/crypto/acme.
@@ -231,7 +231,7 @@ func (t *X509Transport) ensureClient() (*xacme.Client, error) {
 			}
 			return 50 * time.Millisecond
 		},
-		UserAgent: "umpp-control-plane/1.0",
+		UserAgent: "neilico-control-plane/1.0",
 	}
 	return t.client, nil
 }

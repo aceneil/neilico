@@ -10,7 +10,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"gorm.io/gorm"
 
-	"umpp/control-plane/internal/models"
+	"neilico/control-plane/internal/models"
 )
 
 type Metrics struct {
@@ -41,12 +41,12 @@ type Metrics struct {
 func New(db *gorm.DB) *Metrics {
 	registry := prometheus.NewRegistry()
 	httpRequests := prometheus.NewCounterVec(prometheus.CounterOpts{
-		Name: "umpp_http_requests_total",
-		Help: "Total HTTP requests handled by the UMPP control plane.",
+		Name: "neilico_http_requests_total",
+		Help: "Total HTTP requests handled by the NEILICO control plane.",
 	}, []string{"method", "path", "status"})
 	nodesOnline := prometheus.NewGaugeFunc(prometheus.GaugeOpts{
-		Name: "umpp_nodes_online",
-		Help: "Current number of online UMPP nodes.",
+		Name: "neilico_nodes_online",
+		Help: "Current number of online NEILICO nodes.",
 	}, func() float64 {
 		var count int64
 		if err := db.Model(&models.Node{}).Where("status = ?", "online").Count(&count).Error; err != nil {
@@ -55,76 +55,76 @@ func New(db *gorm.DB) *Metrics {
 		return float64(count)
 	})
 	proxyRequests := prometheus.NewCounterVec(prometheus.CounterOpts{
-		Name: "umpp_proxy_requests_total",
-		Help: "Total requests handled by the UMPP proxy plane.",
+		Name: "neilico_proxy_requests_total",
+		Help: "Total requests handled by the NEILICO proxy plane.",
 	}, []string{"domain", "status"})
 	proxyRequestsGauge := prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "umpp_proxy_requests",
-		Help: "Requests handled by the UMPP proxy plane (labelled breakdown is umpp_proxy_requests_total).",
+		Name: "neilico_proxy_requests",
+		Help: "Requests handled by the NEILICO proxy plane (labelled breakdown is neilico_proxy_requests_total).",
 	})
 	p2pSuccessRate := prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "umpp_p2p_success_rate",
+		Name: "neilico_p2p_success_rate",
 		Help: "P2P hole-punch success rate from 0 to 1; no collector is connected in V1-R2.",
 	})
 	relayBytes := prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "umpp_relay_bytes",
+		Name: "neilico_relay_bytes",
 		Help: "Relay traffic bytes; no relay throughput collector is connected in V1-R2.",
 	})
 	heartbeatLatency := prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "umpp_agent_heartbeat_latency",
+		Name: "neilico_agent_heartbeat_latency",
 		Help: "Agent heartbeat request latency; no heartbeat latency samples are collected in V1-R2.",
 	})
 	alertsFiring := prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Name: "umpp_alerts_firing",
-		Help: "Current firing UMPP alerts by severity and rule.",
+		Name: "neilico_alerts_firing",
+		Help: "Current firing NEILICO alerts by severity and rule.",
 	}, []string{"severity", "rule"})
 	proxyProviderUp := prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Name: "umpp_proxy_provider_up",
-		Help: "Whether a UMPP proxy provider is ready (1) or unavailable (0).",
+		Name: "neilico_proxy_provider_up",
+		Help: "Whether a NEILICO proxy provider is ready (1) or unavailable (0).",
 	}, []string{"kind"})
 	tunnelUp := prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Name: "umpp_tunnel_up",
-		Help: "Whether a UMPP mesh tunnel is up (1) or down (0).",
+		Name: "neilico_tunnel_up",
+		Help: "Whether a NEILICO mesh tunnel is up (1) or down (0).",
 	}, []string{"network_id", "node_id"})
 	configVersion := prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Name: "umpp_config_version",
-		Help: "Latest UMPP configuration version for a target.",
+		Name: "neilico_config_version",
+		Help: "Latest NEILICO configuration version for a target.",
 	}, []string{"target_type", "target_id"})
 	aclDenied := prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "umpp_acl_denied_total",
-		Help: "Total UMPP traffic decisions denied by ACL policy.",
+		Name: "neilico_acl_denied_total",
+		Help: "Total NEILICO traffic decisions denied by ACL policy.",
 	})
 	acmeOrders := prometheus.NewCounterVec(prometheus.CounterOpts{
-		Name: "umpp_acme_orders_total",
+		Name: "neilico_acme_orders_total",
 		Help: "Total ACME certificate orders by result.",
 	}, []string{"result"})
 	acmeOrderDuration := prometheus.NewHistogram(prometheus.HistogramOpts{
-		Name:    "umpp_acme_order_duration_seconds",
+		Name:    "neilico_acme_order_duration_seconds",
 		Help:    "Duration of ACME certificate order attempts in seconds.",
 		Buckets: prometheus.DefBuckets,
 	})
 	certificateExpiry := prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Name: "umpp_certificate_expiry_days",
+		Name: "neilico_certificate_expiry_days",
 		Help: "Days until each managed domain certificate expires.",
 	}, []string{"domain"})
 	certificateRenewals := prometheus.NewCounterVec(prometheus.CounterOpts{
-		Name: "umpp_certificate_renewals_total",
+		Name: "neilico_certificate_renewals_total",
 		Help: "Total automatic or manual certificate renewals by result.",
 	}, []string{"result"})
 	tlsHandshakes := prometheus.NewCounterVec(prometheus.CounterOpts{
-		Name: "umpp_tls_handshakes_total",
+		Name: "neilico_tls_handshakes_total",
 		Help: "Total TLS handshakes by result and listener.",
 	}, []string{"result", "listener"})
 	pkiCAExpiry := prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "umpp_pki_ca_not_after_timestamp",
-		Help: "Unix timestamp when the active UMPP PKI CA expires.",
+		Name: "neilico_pki_ca_not_after_timestamp",
+		Help: "Unix timestamp when the active NEILICO PKI CA expires.",
 	})
 	pkiIssued := prometheus.NewCounterVec(prometheus.CounterOpts{
-		Name: "umpp_pki_certificates_issued_total",
+		Name: "neilico_pki_certificates_issued_total",
 		Help: "Total PKI certificates issued by kind.",
 	}, []string{"kind"})
 	pkiCertificateExpiry := prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Name: "umpp_pki_certificate_expiry_days",
+		Name: "neilico_pki_certificate_expiry_days",
 		Help: "Days until the latest PKI certificate of each kind expires.",
 	}, []string{"kind"})
 	pkiIssued.WithLabelValues("ca").Add(0)

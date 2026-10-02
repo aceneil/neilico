@@ -22,14 +22,14 @@ type Credentials struct {
 }
 
 func DefaultPath() (string, error) {
-	if value := os.Getenv("UMPPCTL_CONFIG"); value != "" {
+	if value := os.Getenv("NEILICOCTL_CONFIG"); value != "" {
 		return value, nil
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", fmt.Errorf("find home directory: %w", err)
 	}
-	return filepath.Join(home, ".umppctl", "config.yaml"), nil
+	return filepath.Join(home, ".neilicoctl", "config.yaml"), nil
 }
 
 func Load(path, serverOverride string) (Credentials, error) {
@@ -44,14 +44,14 @@ func Load(path, serverOverride string) (Credentials, error) {
 	data, err := os.ReadFile(path)
 	if err == nil {
 		if err := yaml.Unmarshal(data, &credentials); err != nil {
-			return Credentials{}, fmt.Errorf("decode umppctl config: %w", err)
+			return Credentials{}, fmt.Errorf("decode neilicoctl config: %w", err)
 		}
 	} else if !errors.Is(err, os.ErrNotExist) {
-		return Credentials{}, fmt.Errorf("read umppctl config: %w", err)
+		return Credentials{}, fmt.Errorf("read neilicoctl config: %w", err)
 	}
 	if serverOverride != "" {
 		credentials.Server = serverOverride
-	} else if value := os.Getenv("UMPP_SERVER"); value != "" {
+	} else if value := os.Getenv("NEILICO_SERVER"); value != "" {
 		credentials.Server = value
 	}
 	return credentials, nil
@@ -73,7 +73,7 @@ func Save(path string, credentials Credentials) error {
 	}
 	data, err := yaml.Marshal(credentials)
 	if err != nil {
-		return fmt.Errorf("encode umppctl config: %w", err)
+		return fmt.Errorf("encode neilicoctl config: %w", err)
 	}
 	temp, err := os.CreateTemp(filepath.Dir(path), ".config-*.tmp")
 	if err != nil {
@@ -93,7 +93,7 @@ func Save(path string, credentials Credentials) error {
 		return fmt.Errorf("close temporary config: %w", err)
 	}
 	if err := os.Rename(name, path); err != nil {
-		return fmt.Errorf("replace umppctl config: %w", err)
+		return fmt.Errorf("replace neilicoctl config: %w", err)
 	}
 	return os.Chmod(path, 0o600)
 }

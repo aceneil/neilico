@@ -23,10 +23,10 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
-	"umpp/control-plane/internal/auth"
-	"umpp/control-plane/internal/models"
-	certservice "umpp/control-plane/internal/service/cert"
-	acmepkg "umpp/control-plane/internal/service/cert/acme"
+	"neilico/control-plane/internal/auth"
+	"neilico/control-plane/internal/models"
+	certservice "neilico/control-plane/internal/service/cert"
+	acmepkg "neilico/control-plane/internal/service/cert/acme"
 )
 
 type Builtin struct {
@@ -157,7 +157,7 @@ func (p *Builtin) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		username, password, ok := r.BasicAuth()
 		if !ok || username != route.AccessControl.BasicAuth.Username || !auth.CheckPassword(route.AccessControl.BasicAuth.PasswordHash, password) {
 			p.observe(domain, http.StatusUnauthorized)
-			w.Header().Set("WWW-Authenticate", `Basic realm="umpp"`)
+			w.Header().Set("WWW-Authenticate", `Basic realm="neilico"`)
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}

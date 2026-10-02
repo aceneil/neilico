@@ -1,22 +1,22 @@
-{{- define "umpp.name" -}}
+{{- define "neilico.name" -}}
 {{- default .Chart.Name .Values.nameOverride | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
 
-{{- define "umpp.fullname" -}}
+{{- define "neilico.fullname" -}}
 {{- if .Values.fullnameOverride -}}
 {{- .Values.fullnameOverride | trunc 63 | trimSuffix "-" -}}
 {{- else -}}
-{{- printf "%s-%s" .Release.Name (include "umpp.name" .) | trunc 63 | trimSuffix "-" -}}
+{{- printf "%s-%s" .Release.Name (include "neilico.name" .) | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
 {{- end -}}
 
-{{- define "umpp.chart" -}}
+{{- define "neilico.chart" -}}
 {{- printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
 
-{{- define "umpp.commonLabels" -}}
-helm.sh/chart: {{ include "umpp.chart" . }}
-app.kubernetes.io/name: {{ include "umpp.name" . }}
+{{- define "neilico.commonLabels" -}}
+helm.sh/chart: {{ include "neilico.chart" . }}
+app.kubernetes.io/name: {{ include "neilico.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}
@@ -25,56 +25,56 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- end }}
 {{- end -}}
 
-{{- define "umpp.selectorLabels" -}}
-app.kubernetes.io/name: {{ include "umpp.name" . }}
+{{- define "neilico.selectorLabels" -}}
+app.kubernetes.io/name: {{ include "neilico.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end -}}
 
-{{- define "umpp.componentLabels" -}}
-{{ include "umpp.commonLabels" .root }}
+{{- define "neilico.componentLabels" -}}
+{{ include "neilico.commonLabels" .root }}
 app.kubernetes.io/component: {{ .component }}
 {{- end -}}
 
-{{- define "umpp.annotations" -}}
-helm.sh/chart: {{ include "umpp.chart" . }}
+{{- define "neilico.annotations" -}}
+helm.sh/chart: {{ include "neilico.chart" . }}
 {{- with .Values.global.commonAnnotations }}
 {{ toYaml . }}
 {{- end }}
 {{- end -}}
 
-{{- define "umpp.controlApi.fullname" -}}
-{{- printf "%s-control-api" (include "umpp.fullname" .) | trunc 63 | trimSuffix "-" -}}
+{{- define "neilico.controlApi.fullname" -}}
+{{- printf "%s-control-api" (include "neilico.fullname" .) | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
 
-{{- define "umpp.dashboard.fullname" -}}
-{{- printf "%s-dashboard" (include "umpp.fullname" .) | trunc 63 | trimSuffix "-" -}}
+{{- define "neilico.dashboard.fullname" -}}
+{{- printf "%s-dashboard" (include "neilico.fullname" .) | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
 
-{{- define "umpp.postgres.fullname" -}}
-{{- printf "%s-postgres" (include "umpp.fullname" .) | trunc 63 | trimSuffix "-" -}}
+{{- define "neilico.postgres.fullname" -}}
+{{- printf "%s-postgres" (include "neilico.fullname" .) | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
 
-{{- define "umpp.redis.fullname" -}}
-{{- printf "%s-redis" (include "umpp.fullname" .) | trunc 63 | trimSuffix "-" -}}
+{{- define "neilico.redis.fullname" -}}
+{{- printf "%s-redis" (include "neilico.fullname" .) | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
 
-{{- define "umpp.nats.fullname" -}}
-{{- printf "%s-nats" (include "umpp.fullname" .) | trunc 63 | trimSuffix "-" -}}
+{{- define "neilico.nats.fullname" -}}
+{{- printf "%s-nats" (include "neilico.fullname" .) | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
 
-{{- define "umpp.relay.fullname" -}}
-{{- printf "%s-relay" (include "umpp.fullname" .) | trunc 63 | trimSuffix "-" -}}
+{{- define "neilico.relay.fullname" -}}
+{{- printf "%s-relay" (include "neilico.fullname" .) | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
 
-{{- define "umpp.serviceAccountName" -}}
+{{- define "neilico.serviceAccountName" -}}
 {{- if .Values.serviceAccount.create -}}
-{{- default (include "umpp.fullname" .) .Values.serviceAccount.name -}}
+{{- default (include "neilico.fullname" .) .Values.serviceAccount.name -}}
 {{- else -}}
 {{- default "default" .Values.serviceAccount.name -}}
 {{- end -}}
 {{- end -}}
 
-{{- define "umpp.image" -}}
+{{- define "neilico.image" -}}
 {{- $registry := .root.Values.global.imageRegistry -}}
 {{- if $registry -}}
 {{- printf "%s/%s:%s" $registry .image.repository (default .root.Chart.AppVersion .image.tag) -}}
@@ -83,19 +83,19 @@ helm.sh/chart: {{ include "umpp.chart" . }}
 {{- end -}}
 {{- end -}}
 
-{{- define "umpp.secretName" -}}
-{{- default (include "umpp.fullname" .) .Values.secrets.existingSecret -}}
+{{- define "neilico.secretName" -}}
+{{- default (include "neilico.fullname" .) .Values.secrets.existingSecret -}}
 {{- end -}}
 
-{{- define "umpp.externalDatabaseSecretName" -}}
+{{- define "neilico.externalDatabaseSecretName" -}}
 {{- if .Values.postgres.enabled -}}
-{{- include "umpp.secretName" . -}}
+{{- include "neilico.secretName" . -}}
 {{- else -}}
-{{- default (include "umpp.secretName" .) .Values.externalDatabase.passwordSecret.name -}}
+{{- default (include "neilico.secretName" .) .Values.externalDatabase.passwordSecret.name -}}
 {{- end -}}
 {{- end -}}
 
-{{- define "umpp.externalDatabasePasswordKey" -}}
+{{- define "neilico.externalDatabasePasswordKey" -}}
 {{- if or .Values.postgres.enabled (not .Values.externalDatabase.passwordSecret.name) -}}
 {{- .Values.secrets.keys.postgresPassword -}}
 {{- else -}}
@@ -103,7 +103,7 @@ helm.sh/chart: {{ include "umpp.chart" . }}
 {{- end -}}
 {{- end -}}
 
-{{- define "umpp.secretChecksum" -}}
+{{- define "neilico.secretChecksum" -}}
 {{- if .Values.secrets.existingSecret -}}
 {{- $existing := lookup "v1" "Secret" .Release.Namespace .Values.secrets.existingSecret -}}
 {{- if $existing -}}
@@ -116,23 +116,23 @@ helm.sh/chart: {{ include "umpp.chart" . }}
 {{- end -}}
 {{- end -}}
 
-{{- define "umpp.proxyPort" -}}
+{{- define "neilico.proxyPort" -}}
 {{- regexFind "[0-9]+$" .Values.controlApi.proxy.listen | int -}}
 {{- end -}}
 
-{{- define "umpp.tlsPort" -}}
+{{- define "neilico.tlsPort" -}}
 {{- regexFind "[0-9]+$" .Values.controlApi.proxy.tls.listen | int -}}
 {{- end -}}
 
-{{- define "umpp.postgresHost" -}}
+{{- define "neilico.postgresHost" -}}
 {{- if .Values.postgres.enabled -}}
-{{- include "umpp.postgres.fullname" . -}}
+{{- include "neilico.postgres.fullname" . -}}
 {{- else -}}
 {{- .Values.externalDatabase.host -}}
 {{- end -}}
 {{- end -}}
 
-{{- define "umpp.postgresPort" -}}
+{{- define "neilico.postgresPort" -}}
 {{- if .Values.postgres.enabled -}}
 {{- .Values.postgres.service.port -}}
 {{- else -}}
@@ -140,7 +140,7 @@ helm.sh/chart: {{ include "umpp.chart" . }}
 {{- end -}}
 {{- end -}}
 
-{{- define "umpp.postgresDatabase" -}}
+{{- define "neilico.postgresDatabase" -}}
 {{- if .Values.postgres.enabled -}}
 {{- .Values.postgres.database -}}
 {{- else -}}
@@ -148,7 +148,7 @@ helm.sh/chart: {{ include "umpp.chart" . }}
 {{- end -}}
 {{- end -}}
 
-{{- define "umpp.postgresUser" -}}
+{{- define "neilico.postgresUser" -}}
 {{- if .Values.postgres.enabled -}}
 {{- .Values.postgres.user -}}
 {{- else -}}
@@ -156,16 +156,16 @@ helm.sh/chart: {{ include "umpp.chart" . }}
 {{- end -}}
 {{- end -}}
 
-{{- define "umpp.podMetadata" -}}
+{{- define "neilico.podMetadata" -}}
 {{- $root := .root -}}
 annotations:
   checksum/config: {{ include (print $root.Template.BasePath "/configmap.yaml") $root | sha256sum }}
-  checksum/secret: {{ include "umpp.secretChecksum" $root }}
+  checksum/secret: {{ include "neilico.secretChecksum" $root }}
   {{- with $root.Values.podAnnotations }}
   {{- toYaml . | nindent 2 }}
   {{- end }}
 labels:
-  {{- include "umpp.componentLabels" (dict "root" $root "component" .component) | nindent 2 }}
+  {{- include "neilico.componentLabels" (dict "root" $root "component" .component) | nindent 2 }}
   {{- with $root.Values.podLabels }}
   {{- toYaml . | nindent 2 }}
   {{- end }}

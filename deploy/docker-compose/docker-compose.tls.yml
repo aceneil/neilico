@@ -1,26 +1,26 @@
 # V1-S TLS/mTLS smoke overlay. It intentionally changes only transport settings;
 # the base stack defaults remain valid for existing deployments.
-name: umpp-v1s-tls
+name: neilico-v1s-tls
 
 services:
   control-api:
     environment:
-      UMPP_PKI_ENABLED: "true"
-      UMPP_PKI_CA_COMMON_NAME: "UMPP Smoke Internal CA"
-      UMPP_PKI_SERVER_HOSTS: "localhost,127.0.0.1"
-      UMPP_PKI_SERVER_CERT_DAYS: "30"
-      UMPP_PKI_NODE_CERT_DAYS: "30"
-      UMPP_PKI_RENEW_BEFORE_DAYS: "3"
-      UMPP_SERVER_TLS_ENABLED: "true"
-      UMPP_SERVER_TLS_MIN_VERSION: "1.2"
-      UMPP_SERVER_TLS_REDIRECT_HTTP: "true"
-      UMPP_SERVER_TLS_CLIENT_AUTH: "require"
-      UMPP_SERVER_TLS_HTTP_PORT: "8082"
-      UMPP_PROXY_TLS_ENABLED: "true"
-      UMPP_PROXY_TLS_LISTEN: ":8443"
-      UMPP_PROXY_TLS_MIN_VERSION: "1.2"
-      UMPP_PROXY_TLS_REDIRECT_HTTP: "true"
-      UMPP_PROXY_TLS_HSTS_MAX_AGE: "31536000"
+      NEILICO_PKI_ENABLED: "true"
+      NEILICO_PKI_CA_COMMON_NAME: "NEILICO Smoke Internal CA"
+      NEILICO_PKI_SERVER_HOSTS: "localhost,127.0.0.1"
+      NEILICO_PKI_SERVER_CERT_DAYS: "30"
+      NEILICO_PKI_NODE_CERT_DAYS: "30"
+      NEILICO_PKI_RENEW_BEFORE_DAYS: "3"
+      NEILICO_SERVER_TLS_ENABLED: "true"
+      NEILICO_SERVER_TLS_MIN_VERSION: "1.2"
+      NEILICO_SERVER_TLS_REDIRECT_HTTP: "true"
+      NEILICO_SERVER_TLS_CLIENT_AUTH: "require"
+      NEILICO_SERVER_TLS_HTTP_PORT: "8082"
+      NEILICO_PROXY_TLS_ENABLED: "true"
+      NEILICO_PROXY_TLS_LISTEN: ":8443"
+      NEILICO_PROXY_TLS_MIN_VERSION: "1.2"
+      NEILICO_PROXY_TLS_REDIRECT_HTTP: "true"
+      NEILICO_PROXY_TLS_HSTS_MAX_AGE: "31536000"
     ports: !override
       - "${TLS_API_HTTP_PORT:-18080}:8082"
       - "${TLS_API_HTTPS_PORT:-18443}:8080"

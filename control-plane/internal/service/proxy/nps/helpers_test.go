@@ -1,6 +1,6 @@
 package nps
 
-import "umpp/control-plane/internal/models"
+import "neilico/control-plane/internal/models"
 
 func accessControlValue() models.AccessControl {
 	return models.AccessControl{

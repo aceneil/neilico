@@ -7,7 +7,7 @@ import (
 	"log/slog"
 	"os"
 
-	"umpp/agent/internal/route"
+	"neilico/agent/internal/route"
 )
 
 type DryRunApplier struct {
@@ -33,7 +33,7 @@ func (a *DryRunApplier) Apply(ctx context.Context, config Config) error {
 			return err
 		}
 	}
-	fmt.Fprintln(a.output, "=== UMPP agent dry-run: complete WireGuard configuration ===")
+	fmt.Fprintln(a.output, "=== NEILICO agent dry-run: complete WireGuard configuration ===")
 	fmt.Fprint(a.output, config.WireGuardConfig)
 	if config.WireGuardConfig != "" && config.WireGuardConfig[len(config.WireGuardConfig)-1] != '\n' {
 		fmt.Fprintln(a.output)

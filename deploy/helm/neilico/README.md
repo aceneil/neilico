@@ -1,6 +1,6 @@
-# UMPP Helm Chart
+# NEILICO Helm Chart
 
-本 Chart 部署 UMPP `control-api`、`dashboard`，并可选用开发依赖与 relay 占位组件。默认使用**外部 PostgreSQL**；内置 PostgreSQL、Redis、NATS 默认关闭。
+本 Chart 部署 NEILICO `control-api`、`dashboard`，并可选用开发依赖与 relay 占位组件。默认使用**外部 PostgreSQL**；内置 PostgreSQL、Redis、NATS 默认关闭。
 
 > **安全要求**：仓库内所有凭据只能是 `CHANGE_ME`/空占位符。生产安装请使用 `existingSecret`、`externalDatabase.passwordSecret` 或不入库的 values 文件。不要 `helm get values` 后回显 Secret，也不要把渲染产物提交到仓库。
 
@@ -30,21 +30,21 @@
 以下命令在 `deploy/helm` 目录执行。先创建不入库的 `prod-values.yaml`，只放非敏感配置；敏感值使用 Secret。
 
 ```bash
-helm lint ./umpp --values ./umpp/ci/default-values.yaml
-helm upgrade --install umpp ./umpp \
-  --namespace umpp --create-namespace \
+helm lint ./neilico --values ./neilico/ci/default-values.yaml
+helm upgrade --install neilico ./neilico \
+  --namespace neilico --create-namespace \
   --values prod-values.yaml \
   --set externalDatabase.host=db.example.internal \
-  --set externalDatabase.user=umpp \
-  --set externalDatabase.database=umpp
+  --set externalDatabase.user=neilico \
+  --set externalDatabase.database=neilico
 ```
 
 开发依赖全开仅用于测试：
 
 ```bash
-helm upgrade --install umpp-dev ./umpp \
-  --namespace umpp-dev --create-namespace \
-  --values ./umpp/ci/default-values.yaml \
+helm upgrade --install neilico-dev ./neilico \
+  --namespace neilico-dev --create-namespace \
+  --values ./neilico/ci/default-values.yaml \
   --set postgres.enabled=true --set redis.enabled=true --set nats.enabled=true \
   --set-file secrets.postgresPassword=/run/secrets/postgres-password \
   --set-file secrets.jwtSecret=/run/secrets/jwt-secret \
@@ -54,15 +54,15 @@ helm upgrade --install umpp-dev ./umpp \
 升级前备份 PostgreSQL、TLS 材料与外部 Secret。升级命令与安装相同；Chart 对 ConfigMap/生成 Secret 计算 checksum，配置变化会滚动 Pod。
 
 ```bash
-helm upgrade umpp ./umpp --namespace umpp --values prod-values.yaml
-helm history umpp --namespace umpp
-helm rollback umpp <REVISION> --namespace umpp
+helm upgrade neilico ./neilico --namespace neilico --values prod-values.yaml
+helm history neilico --namespace neilico
+helm rollback neilico <REVISION> --namespace neilico
 ```
 
 卸载：
 
 ```bash
-helm uninstall umpp --namespace umpp
+helm uninstall neilico --namespace neilico
 ```
 
 卸载不会自动删除 StatefulSet 的 PVC；确认备份后再按 PVC 名称清理。外部数据库/Redis/NATS 不受卸载影响。
@@ -74,9 +74,9 @@ helm uninstall umpp --namespace umpp
 默认 `secrets.create=true`、`secrets.existingSecret=""`。`templates/secret.yaml` 从 values 的 `secrets.*` 读取 `stringData`，提交文件中只允许占位符。必需 key 为：
 
 - `POSTGRES_PASSWORD`
-- `UMPP_AUTH_JWT_SECRET`
-- `UMPP_BOOTSTRAP_ADMIN_PASSWORD`
-- `UMPP_ALERTS_WEBHOOK_URL`（仅 `alerts.webhook.enabled=true`）
+- `NEILICO_AUTH_JWT_SECRET`
+- `NEILICO_BOOTSTRAP_ADMIN_PASSWORD`
+- `NEILICO_ALERTS_WEBHOOK_URL`（仅 `alerts.webhook.enabled=true`）
 
 可用 `--set-file` 从权限受控的临时文件读取，避免进入 shell history。生成 Secret 的内容参与 Pod checksum；升级时 Secret values 改变会滚动 Pod。
 
@@ -84,7 +84,7 @@ helm uninstall umpp --namespace umpp
 
 设置 `secrets.existingSecret=<name>` 后，Chart **不渲染 Secret**，Deployment 只引用该名称。Secret key 可由 `secrets.keys.*` 覆盖。外部数据库密码还可由 `externalDatabase.passwordSecret.name/key` 单独引用。升级时 Chart 通过 `lookup` 读取该 Secret 的 `metadata.resourceVersion` 写入 checksum；因此外部 Secret 轮换后执行 `helm upgrade` 会滚动 Pod。纯 `helm template` 无集群上下文时该 checksum 固定，但不会连接集群。
 
-控制面实现只接受 `UMPP_DATABASE_DSN`，Chart 由 Kubernetes 环境变量引用展开 DSN。因此数据库密码应使用 URL-safe 值（例如 `openssl rand -hex 32`）；若密码包含 `@ : / ? #` 等字符，必须先得到可安全嵌入 DSN 的 Secret 管理方式。
+控制面实现只接受 `NEILICO_DATABASE_DSN`，Chart 由 Kubernetes 环境变量引用展开 DSN。因此数据库密码应使用 URL-safe 值（例如 `openssl rand -hex 32`）；若密码包含 `@ : / ? #` 等字符，必须先得到可安全嵌入 DSN 的 Secret 管理方式。
 
 ## Ingress 与 TLS：二选一
 
@@ -99,20 +99,20 @@ ingress:
   annotations:
     cert-manager.io/cluster-issuer: letsencrypt-prod
   hosts:
-    - host: umpp.example.com
+    - host: neilico.example.com
       paths:
         - {path: /, pathType: Prefix, service: dashboard}
         - {path: /api, pathType: Prefix, service: controlApi}
   tls:
-    - hosts: [umpp.example.com]
-      secretName: umpp-ingress-tls
+    - hosts: [neilico.example.com]
+      secretName: neilico-ingress-tls
 ```
 
-### UMPP 自带 ACME
+### NEILICO 自带 ACME
 
 适合 control-api 内置代理管理的域名。设置 `acme.enabled=true`、`acme.agreeTos=true`、`acme.directoryUrl`、`acme.email`、`acme.httpPort`，并设置 `controlApi.proxy.tls.enabled=true`。HTTP-01 由 control-api 的独立 listener 处理，必须把 `acme.httpPort`（生产通常 `80`）和 TLS `8443` 暴露到 CA 可达的入口；可使用 `controlApi.service.type=LoadBalancer` 或四层 Ingress/NodePort 转发。
 
-同一公网域名不要同时让 cert-manager 与 UMPP ACME 写同一 TLS Secret/终止同一入口。`dns-01`、EAB、ACME revoke 在 V1 尚未实现。
+同一公网域名不要同时让 cert-manager 与 NEILICO ACME 写同一 TLS Secret/终止同一入口。`dns-01`、EAB、ACME revoke 在 V1 尚未实现。
 
 ## Values 全字段
 
@@ -138,7 +138,7 @@ ingress:
 
 | 字段 | 默认值 | 说明 |
 | --- | --- | --- |
-| `controlApi.image.repository` | `umpp-control-api` | 控制面镜像仓库 |
+| `controlApi.image.repository` | `neilico-control-api` | 控制面镜像仓库 |
 | `controlApi.image.tag` | `latest` | 控制面镜像 tag |
 | `controlApi.service.type` | `ClusterIP` | Service 类型 |
 | `controlApi.service.annotations` | `{}` | Service annotation |
@@ -149,7 +149,7 @@ ingress:
 | `controlApi.resources.limits` | `500m/512Mi` | CPU/内存限制 |
 | `controlApi.securityContext` | 非 root、只读根、drop ALL | Pod 容器安全上下文 |
 | `controlApi.env` | `[]` | 追加 `name/value/valueFrom` 环境变量 |
-| `controlApi.command` | `/usr/local/bin/umpp-api` | 容器命令 |
+| `controlApi.command` | `/usr/local/bin/neilico-api` | 容器命令 |
 | `controlApi.args` | `--config /app/configs/config.example.yaml` | 容器参数 |
 | `controlApi.auth.accessTtl` | `15m` | access token TTL |
 | `controlApi.auth.refreshTtl` | `168h` | refresh token TTL |
@@ -171,7 +171,7 @@ ingress:
 
 | 字段 | 默认值 | 说明 |
 | --- | --- | --- |
-| `dashboard.image.repository` | `umpp-dashboard` | Dashboard 镜像仓库 |
+| `dashboard.image.repository` | `neilico-dashboard` | Dashboard 镜像仓库 |
 | `dashboard.image.tag` | `latest` | Dashboard 镜像 tag |
 | `dashboard.service.type` | `ClusterIP` | Service 类型 |
 | `dashboard.service.annotations` | `{}` | Service annotation |
@@ -215,13 +215,13 @@ ingress:
 | `secrets.jwtSecret` | `CHANGE_ME` | JWT secret |
 | `secrets.bootstrapAdminPassword` | `CHANGE_ME` | 初始管理员密码 |
 | `secrets.keys.postgresPassword` | `POSTGRES_PASSWORD` | Secret key |
-| `secrets.keys.jwtSecret` | `UMPP_AUTH_JWT_SECRET` | Secret key |
-| `secrets.keys.bootstrapAdminPassword` | `UMPP_BOOTSTRAP_ADMIN_PASSWORD` | Secret key |
-| `secrets.keys.webhookUrl` | `UMPP_ALERTS_WEBHOOK_URL` | Secret key |
+| `secrets.keys.jwtSecret` | `NEILICO_AUTH_JWT_SECRET` | Secret key |
+| `secrets.keys.bootstrapAdminPassword` | `NEILICO_BOOTSTRAP_ADMIN_PASSWORD` | Secret key |
+| `secrets.keys.webhookUrl` | `NEILICO_ALERTS_WEBHOOK_URL` | Secret key |
 | `externalDatabase.host` | `CHANGE_ME` | 外部 PostgreSQL host |
 | `externalDatabase.port` | `5432` | 外部 PostgreSQL port |
-| `externalDatabase.user` | `umpp` | 外部 PostgreSQL user |
-| `externalDatabase.database` | `umpp` | 外部数据库名 |
+| `externalDatabase.user` | `neilico` | 外部 PostgreSQL user |
+| `externalDatabase.database` | `neilico` | 外部数据库名 |
 | `externalDatabase.sslmode` | `disable` | PostgreSQL DSN sslmode |
 | `externalDatabase.passwordSecret.name` | `""` | 空则使用主 Secret |
 | `externalDatabase.passwordSecret.key` | `POSTGRES_PASSWORD` | 密码 Secret key |
@@ -238,7 +238,7 @@ ingress:
 | `postgres.image.repository/tag` | `postgres/16` | 开发镜像 |
 | `postgres.service.annotations` | `{}` | Service annotation |
 | `postgres.service.port` | `5432` | Service 端口 |
-| `postgres.database/user` | `umpp/umpp` | 数据库/用户 |
+| `postgres.database/user` | `neilico/neilico` | 数据库/用户 |
 | `postgres.resources.*` | `100m/256Mi` 至 `1/1Gi` | 资源 |
 | `postgres.persistence.enabled/size/storageClass` | `true/8Gi/""` | PVC 配置 |
 | `redis.enabled` | `false` | 开发 Redis StatefulSet |
@@ -269,7 +269,7 @@ ingress:
 | `ingress.enabled` | `false` | 创建 Ingress |
 | `ingress.className` | `""` | IngressClass |
 | `ingress.annotations` | `{}` | Ingress annotation |
-| `ingress.hosts` | `umpp.example.com` 的 `/`、`/api` | host/path/service 路由 |
+| `ingress.hosts` | `neilico.example.com` 的 `/`、`/api` | host/path/service 路由 |
 | `ingress.tls` | `[]` | `{hosts, secretName}` TLS 列表 |
 | `autoscaling.enabled` | `false` | control-api/dashboard HPA |
 | `autoscaling.minReplicas/maxReplicas` | `2/10` | HPA 范围 |
@@ -294,7 +294,7 @@ ingress:
 
 ## 已知限制
 
-- `relay` 只是对齐 compose 的 wg-easy 占位；它不是 UMPP 中继数据面，UDP `3478` 只是未来 TURN/ICE 预留。
+- `relay` 只是对齐 compose 的 wg-easy 占位；它不是 NEILICO 中继数据面，UDP `3478` 只是未来 TURN/ICE 预留。
 - 没有 PostgreSQL/Redis/NATS Operator 或 CRD 封装，也没有备份/恢复 Operator。
 - V1 ACME 仅 HTTP-01；DNS-01、EAB、revoke 未实现。
 - 当前 control-api 未消费 Redis/NATS 连接环境变量，Chart 不发明这些变量。

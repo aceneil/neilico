@@ -1,24 +1,24 @@
 {{- if .Values.relay.enabled }}
-# PLACEHOLDER ONLY: wg-easy is not the UMPP relay data plane. The real relay
+# PLACEHOLDER ONLY: wg-easy is not the NEILICO relay data plane. The real relay
 # implementation is a V2 deliverable.
 apiVersion: apps/v1
 kind: DaemonSet
 metadata:
-  name: {{ include "umpp.relay.fullname" . }}
+  name: {{ include "neilico.relay.fullname" . }}
   labels:
-    {{- include "umpp.componentLabels" (dict "root" . "component" "relay") | nindent 4 }}
+    {{- include "neilico.componentLabels" (dict "root" . "component" "relay") | nindent 4 }}
   annotations:
-    {{- include "umpp.annotations" . | nindent 4 }}
+    {{- include "neilico.annotations" . | nindent 4 }}
 spec:
   selector:
     matchLabels:
-      {{- include "umpp.selectorLabels" . | nindent 6 }}
+      {{- include "neilico.selectorLabels" . | nindent 6 }}
       app.kubernetes.io/component: relay
   template:
     metadata:
-      {{- include "umpp.podMetadata" (dict "root" . "component" "relay") | nindent 6 }}
+      {{- include "neilico.podMetadata" (dict "root" . "component" "relay") | nindent 6 }}
     spec:
-      serviceAccountName: {{ include "umpp.serviceAccountName" . }}
+      serviceAccountName: {{ include "neilico.serviceAccountName" . }}
       {{- with .Values.image.pullSecrets }}
       imagePullSecrets:
         {{- range . }}
@@ -31,7 +31,7 @@ spec:
       {{- end }}
       containers:
         - name: relay
-          image: {{ include "umpp.image" (dict "root" . "image" .Values.relay.image) }}
+          image: {{ include "neilico.image" (dict "root" . "image" .Values.relay.image) }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           env:
             {{- toYaml .Values.relay.env | nindent 12 }}

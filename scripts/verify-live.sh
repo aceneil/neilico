@@ -1,7 +1,7 @@
 #!/bin/bash
-# UMPP 独立验证：直连正在运行的栈，只打印状态与计数，绝不回显任何密钥
+# NEILICO 独立验证：直连正在运行的栈，只打印状态与计数，绝不回显任何密钥
 set -u
-cd /home/neil/Documents/Projects/umpp/deploy/docker-compose || exit 1
+cd /home/neil/Documents/Projects/neilico/deploy/docker-compose || exit 1
 API=http://127.0.0.1:18080
 PW=$(grep -E '^BOOTSTRAP_ADMIN_PASSWORD=' .env | cut -d= -f2-)
 EMAIL=$(grep -E '^BOOTSTRAP_ADMIN_EMAIL=' .env | cut -d= -f2-)
@@ -29,7 +29,7 @@ echo "== 7. 操作日志（M4b 新增端点）=="
 curl -s "$API/api/v1/audit-logs?page_size=5" -H "$AUTH" \
  | python3 -c 'import sys,json;d=json.load(sys.stdin);print("audit total=%s 最近项:"%d.get("total"));[print("   ",i.get("action"),i.get("resource")) for i in d.get("items",[])[:5]]'
 echo "== 8. Prometheus 指标 =="
-curl -s "$API/metrics" | grep -E '^umpp_(nodes_online|config_version|acl_denied_total|proxy_requests_total)' | head -8
+curl -s "$API/metrics" | grep -E '^neilico_(nodes_online|config_version|acl_denied_total|proxy_requests_total)' | head -8
 echo "== 9. 内置反向代理端口是否在监听 =="
 curl -s -o /dev/null -w "proxy 18081 -> %{http_code}\n" -H 'Host: nonexistent.invalid' "http://127.0.0.1:18081/" || true
 echo "== 10. Dashboard（nginx）=="

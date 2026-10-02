@@ -11,7 +11,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"umpp/control-plane/internal/auth"
+	"neilico/control-plane/internal/auth"
 )
 
 type m2bNetworkCreate struct {
@@ -299,7 +299,7 @@ func TestM2BMeshConfigAndRollbackFlow(t *testing.T) {
 	}
 
 	metricsBody := directM2BRequest(t, app, http.MethodGet, "/metrics", "", nil).Body.String()
-	for _, name := range []string{"umpp_tunnel_up", "umpp_config_version", "umpp_acl_denied_total"} {
+	for _, name := range []string{"neilico_tunnel_up", "neilico_config_version", "neilico_acl_denied_total"} {
 		if !strings.Contains(metricsBody, name) {
 			t.Fatalf("metrics omitted %s:\n%s", name, metricsBody)
 		}

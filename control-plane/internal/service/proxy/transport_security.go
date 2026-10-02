@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	acmepkg "umpp/control-plane/internal/service/cert/acme"
+	acmepkg "neilico/control-plane/internal/service/cert/acme"
 )
 
 func SecurityHeaders(next http.Handler, hstsMaxAge int) http.Handler {

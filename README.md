@@ -1,8 +1,8 @@
-# UMPP — Unified Mesh & Proxy Platform
+# NEILICO — Unified Mesh & Proxy Platform
 
 统一的内网穿透 + Mesh 组网后台管理系统。「普通用户用域名访问内网服务」与「技术用户设备间 P2P 直连」共用一套控制面。
 
-- 📄 需求规格：[docs/UMPP_SPEC.md](docs/UMPP_SPEC.md)
+- 📄 需求规格：[docs/NEILICO_SPEC.md](docs/NEILICO_SPEC.md)
 - 🗺️ 执行计划：[PLAN.md](PLAN.md)
 - 🧭 目录导览：[NOTES.md](NOTES.md)
 - 📚 API 文档：[docs/API.md](docs/API.md)
@@ -23,7 +23,7 @@
 | :--- | :--- | :--- |
 | `control-plane/` | ✅ M1–M2b/M4b/V1-R1/V1-R2 | REST API、JWT/RBAC、租户隔离、配置版本、ACME 自动签发/续期、SNI TLS、告警规则引擎、metrics |
 | `agent/` | ✅ M3 | 注册/心跳/配置轮询、WireGuard shell applier、dry-run、指标、Dockerfile |
-| `cli/` | ✅ M3 | `umppctl` 登录、节点、网络、域名、状态 |
+| `cli/` | ✅ M3 | `neilicoctl` 登录、节点、网络、域名、状态 |
 | `dashboard/` | ✅ M4/V1-R2 | Vue 3 + Ant Design Vue + ECharts；告警中心与证书剩余天数 |
 | NPS 配置集成 | ✅ MVP | 生成配置；NPS 数据面由外部服务提供 |
 | Mesh 配置生成 | ✅ MVP | WireGuard 配置生成、ACL/子网路由、版本化下发 |
@@ -32,7 +32,7 @@
 | ACME/TLS overlay | ✅ V1-R1 | Pebble RFC 8555 真实 HTTP-01、CA 信任、SNI TLS，`scripts/smoke-acme.sh` |
 | 告警体系 | ✅ V1-R2 | 五条 §15.2 规则、状态机/事件、log/webhook、告警 API 与 Dashboard |
 | 端到端冒烟 | ✅ M5 | `scripts/smoke.sh`，真实 Agent dry-run + builtin 反代 + metrics/audit 断言 |
-| Helm Chart | ✅ V1-R3 | `deploy/helm/umpp`，默认外部 PostgreSQL，含开发依赖开关、Secret/Ingress/HPA/PDB/NetworkPolicy/ServiceMonitor |
+| Helm Chart | ✅ V1-R3 | `deploy/helm/neilico`，默认外部 PostgreSQL，含开发依赖开关、Secret/Ingress/HPA/PDB/NetworkPolicy/ServiceMonitor |
 
 ## 一键启动
 
@@ -65,11 +65,11 @@ bash scripts/smoke-down.sh --yes
 
 ## Kubernetes
 
-集群部署使用 `deploy/helm/umpp`；安装、外部 PostgreSQL/Redis/NATS、Secret、Ingress/ACME 与生产检查见 [Chart README](deploy/helm/umpp/README.md) 和 [运维手册](docs/OPS.md#kubernetes-部署)。离线断言可运行：
+集群部署使用 `deploy/helm/neilico`；安装、外部 PostgreSQL/Redis/NATS、Secret、Ingress/ACME 与生产检查见 [Chart README](deploy/helm/neilico/README.md) 和 [运维手册](docs/OPS.md#kubernetes-部署)。离线断言可运行：
 
 ```bash
 export PATH="$HOME/.local/bin:$PATH"
-cd deploy/helm && bash umpp/ci/verify.sh
+cd deploy/helm && bash neilico/ci/verify.sh
 ```
 
 ## 开发状态

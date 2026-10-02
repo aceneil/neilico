@@ -12,7 +12,7 @@ import (
 	"testing"
 )
 
-const testAPIToken = "umpp_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+const testAPIToken = "neilico_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
 
 func TestLoginWithAPITokenSavesSecureCredentialWithoutEcho(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.yaml")
@@ -51,18 +51,18 @@ func TestTokenCommandsListCreateAndRevoke(t *testing.T) {
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"items": []map[string]any{{
 					"id": "11111111-1111-1111-1111-111111111111", "name": "ci",
-					"token_prefix": "umpp_AAA", "scopes": []string{"nodes:read"},
+					"token_prefix": "neilico_AAA", "scopes": []string{"nodes:read"},
 				}},
 				"total": 1,
 			})
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/api-tokens":
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"token": testAPIToken, "notice": "此 token 只显示一次",
-				"api_token": map[string]any{"id": "22222222-2222-2222-2222-222222222222", "token_prefix": "umpp_AAA"},
+				"api_token": map[string]any{"id": "22222222-2222-2222-2222-222222222222", "token_prefix": "neilico_AAA"},
 			})
 		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/api-tokens/22222222-2222-2222-2222-222222222222":
 			_ = json.NewEncoder(w).Encode(map[string]any{
-				"api_token":       map[string]any{"id": "22222222-2222-2222-2222-222222222222", "token_prefix": "umpp_AAA"},
+				"api_token":       map[string]any{"id": "22222222-2222-2222-2222-222222222222", "token_prefix": "neilico_AAA"},
 				"already_revoked": false,
 			})
 		default:
@@ -83,7 +83,7 @@ func TestTokenCommandsListCreateAndRevoke(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out, "umpp_AAA\u2026") || strings.Contains(out, testAPIToken) {
+	if !strings.Contains(out, "neilico_AAA\u2026") || strings.Contains(out, testAPIToken) {
 		t.Fatal("token list was not masked")
 	}
 
@@ -101,7 +101,7 @@ func TestTokenCommandsListCreateAndRevoke(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(out, testAPIToken) || !strings.Contains(out, "umpp_AAA\u2026") {
+	if strings.Contains(out, testAPIToken) || !strings.Contains(out, "neilico_AAA\u2026") {
 		t.Fatal("token revoke output leaked credential or omitted mask")
 	}
 }

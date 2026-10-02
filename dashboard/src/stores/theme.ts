@@ -2,7 +2,7 @@ import { computed, ref, watch } from 'vue'
 import { defineStore } from 'pinia'
 
 export type ThemePreference = 'system' | 'light' | 'dark'
-const THEME_KEY = 'umpp.theme'
+const THEME_KEY = 'neilico.theme'
 const media = window.matchMedia('(prefers-color-scheme: dark)')
 
 export const useThemeStore = defineStore('theme', () => {

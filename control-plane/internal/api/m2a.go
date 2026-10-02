@@ -8,12 +8,12 @@ import (
 	"strings"
 	"time"
 
-	"umpp/control-plane/internal/auth"
-	"umpp/control-plane/internal/middleware"
-	"umpp/control-plane/internal/service"
-	alertservice "umpp/control-plane/internal/service/alerts"
-	acmeclient "umpp/control-plane/internal/service/cert/acme"
-	"umpp/control-plane/internal/service/proxy"
+	"neilico/control-plane/internal/auth"
+	"neilico/control-plane/internal/middleware"
+	"neilico/control-plane/internal/service"
+	alertservice "neilico/control-plane/internal/service/alerts"
+	acmeclient "neilico/control-plane/internal/service/cert/acme"
+	"neilico/control-plane/internal/service/proxy"
 )
 
 type ProxyOptions struct {
@@ -436,7 +436,7 @@ func (s *Server) handleProxyRender(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-UMPP-Proxy-Kind", s.proxy.Kind())
+	w.Header().Set("X-NEILICO-Proxy-Kind", s.proxy.Kind())
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(data)
 }
