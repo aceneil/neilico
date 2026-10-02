@@ -136,6 +136,9 @@ cd deploy/helm && bash neilico/ci/verify.sh
 - Helm 默认必须接外部 PostgreSQL；`postgres/redis/nats.enabled=true` 只供开发。`secrets.existingSecret` 启用时不渲染 Secret。Chart 详细字段、TLS 二选一和生产限制见 `deploy/helm/neilico/README.md`。
 - Helm `verify.sh` 只验证离线渲染，不连接集群；预发布仍需验证 LB/Ingress、UDP、滚动升级、PVC/备份恢复与 NetworkPolicy。
 - **登录表单必须保留 `:model="form"`**（`dashboard/src/pages/LoginPage.vue`）：AntDV 的 `Form.js handleSubmit` 只在 `props.model` 存在时才 `validateFields().then(emit('finish'))`；缺了它 → 原生 submit 被 preventDefault、`finish` 永不触发 → **点击登录零请求、零报错、按钮不进 loading**（看着像后端挂了）。改这里务必在真浏览器点一次表单复验。
+- **AntDV 的 `Layout.Sider` / `Layout.Header` 默认背景是硬编码深色 `#001529`，必须显式覆盖且要 `!important`**（AntDV 的运行时注入样式排在 main.css 之后，同权重时它赢）。我们踩的坑：侧栏和 header 都露着深色底，而文字用 `var(--text)`（浅色主题下是深墨色）→ **对比度 1.13:1，肉眼看不见**。
+  - 约定：**侧栏 = 深色面**（`--sider-bg`，日/夜一致，菜单恒 `theme="dark"`，文字一律 `rgba(255,255,255,.88)`/白）；**header 属于内容区**，跟随主题（`background: var(--surface) !important`）。`.ant-layout` 的默认灰底 `#f5f5f5` 也要归位成 `--page-bg`。
+  - 验证方式：逐元素读 `getComputedStyle(el).color/backgroundColor` 算对比度，**两套主题都要量**（header 那条只在浅色模式暴露，深色模式看不出来）。当前实测：侧栏文字 13–18:1、header 标题 14–16:1；选中项 4.1:1（AntDV 蓝底白字）。
 
 ## 验收方法论教训（本项目实测踩到）
 

@@ -20,14 +20,12 @@ import {
 } from '@ant-design/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import { usePreferencesStore } from '@/stores/preferences'
-import { useThemeStore } from '@/stores/theme'
 import ThemeToggle from '@/components/ThemeToggle.vue'
 
 const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
 const preferences = usePreferencesStore()
-const theme = useThemeStore()
 
 const iconMap: Record<string, unknown> = {
   dashboard: DashboardOutlined,
@@ -95,8 +93,10 @@ function onUserMenuClick({ key }: { key: string | number }) {
           <span>统一网络控制台</span>
         </div>
       </div>
+      <!-- 侧栏统一是深色面（--sider-bg，day/night 一致），菜单恒用 dark 调色板，
+           否则浅色主题下 AntDV 会给深墨色文字 → 落在深底上对比度 1.13:1 看不见。 -->
       <a-menu
-        :theme="theme.resolved === 'dark' ? 'dark' : 'light'"
+        theme="dark"
         mode="inline"
         :selected-keys="selectedKeys"
         :items="menuItems"
