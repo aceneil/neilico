@@ -135,6 +135,15 @@ cd deploy/helm && bash neilico/ci/verify.sh
 - ACME 配置默认关闭；只有 `enabled=true` 且显式 `agree_tos=true` 才允许 order。`dns-01` 与 EAB 保留接口位，当前返回 `ErrNotImplemented`。
 - Helm 默认必须接外部 PostgreSQL；`postgres/redis/nats.enabled=true` 只供开发。`secrets.existingSecret` 启用时不渲染 Secret。Chart 详细字段、TLS 二选一和生产限制见 `deploy/helm/neilico/README.md`。
 - Helm `verify.sh` 只验证离线渲染，不连接集群；预发布仍需验证 LB/Ingress、UDP、滚动升级、PVC/备份恢复与 NetworkPolicy。
+- **登录表单必须保留 `:model="form"`**（`dashboard/src/pages/LoginPage.vue`）：AntDV 的 `Form.js handleSubmit` 只在 `props.model` 存在时才 `validateFields().then(emit('finish'))`；缺了它 → 原生 submit 被 preventDefault、`finish` 永不触发 → **点击登录零请求、零报错、按钮不进 loading**（看着像后端挂了）。改这里务必在真浏览器点一次表单复验。
+
+## 验收方法论教训（本项目实测踩到）
+
+- **验「API 能登录」≠ 验「用户能登录」**：`curl POST /api/v1/auth/login` 返回 200 曾让我误判登录可用；而 UI 表单从 M4 起就是哑的（缺 `:model`），一路躲过所有验收。
+- **截图脚本注入 token 会掩盖坏掉表单**：V1F 那 18 张「已登录」截图是往 localStorage 写 token 拿到的，没走表单。凡交付含交互（表单/按钮/参数提交），验收必须**真点一遍**。
+- **权威网络证据用 `performance.getEntriesByType('resource')`**（页面内 patch fetch/XHR 可能被绕过）：点击后看有无**新增** `/api/` 条目。
+- 复验「登录后」而不碰真密码：`curl` 取 token → 注入 localStorage（键 `neilico.access_token/refresh_token/user/remember`）→ 断言 URL 不回落 `/login` + 已鉴权 API 全通 + 侧栏渲染。
+- 默认浏览器视口可能只有 800×479：按 `getBoundingClientRect()` 算的坐标常落在视口外，`elementFromPoint` 返回 null；且 `overflow:auto` 在内容容器上时 `window.scrollTo` 无效、`documentElement.scrollHeight` 也不变——**别据此报「按钮被裁掉」的假 bug**（本机 820px 断点已有 `display:block; overflow:auto`）。
 
 ## V1-S 传输安全记录
 
