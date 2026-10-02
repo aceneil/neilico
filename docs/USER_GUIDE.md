@@ -212,3 +212,7 @@ sudo wg show
 ### 配置没有更新
 
 `GET /api/v1/agent/config?version=N` 只有在 N 等于最新版本时才返回 304。落后版本会返回最新配置；如果 Agent 持续 304，确认 state 中 `applied_version` 已写入并查看 Agent 日志。
+
+## 启用传输安全
+
+Agent 配置可设置 `tls.ca_file`、`tls.client_cert_file`、`tls.client_key_file`、`tls.server_name`；对应环境变量沿用 `UMPP_AGENT_TLS_*`。`tls.insecure_skip_verify=true` 只用于隔离测试，启动会打印醒目告警。使用 `umppctl login --ca-file ca.crt` 保存信任锚；`umppctl node trust-ca --out ca.crt` 下载 CA；`umppctl node mtls --node <id> --out-dir ./certs` 下载客户端证书和私钥（文件权限 0600，私钥只显示一次）。

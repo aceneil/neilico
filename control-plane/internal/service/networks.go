@@ -36,6 +36,7 @@ type NetworkInput struct {
 type NetworkCreateOutput struct {
 	models.VirtualNetwork
 	NetworkSecret string `json:"network_secret"`
+	PresharedKey  string `json:"preshared_key"`
 }
 
 type NetworkList struct {
@@ -98,16 +99,25 @@ func (s *NetworkService) Create(ctx context.Context, tenantID uuid.UUID, input N
 	if err != nil {
 		return NetworkCreateOutput{}, err
 	}
+	psk, err := generateNetworkSecret()
+	if err != nil {
+		return NetworkCreateOutput{}, err
+	}
+	encryptedPSK, err := s.crypto.Encrypt(psk)
+	if err != nil {
+		return NetworkCreateOutput{}, fmt.Errorf("encrypt network preshared key: %w", err)
+	}
 	encrypted, err := s.crypto.Encrypt(secret)
 	if err != nil {
 		return NetworkCreateOutput{}, fmt.Errorf("encrypt network secret: %w", err)
 	}
 	item := models.VirtualNetwork{
-		ID:       uuid.New(),
-		TenantID: tenantID,
-		Name:     name,
-		CIDR:     prefix.String(),
-		Secret:   encrypted,
+		ID:           uuid.New(),
+		TenantID:     tenantID,
+		Name:         name,
+		CIDR:         prefix.String(),
+		Secret:       encrypted,
+		PresharedKey: encryptedPSK,
 	}
 	if err := s.db.WithContext(ctx).Create(&item).Error; err != nil {
 		if isUniqueViolation(err) {
@@ -115,7 +125,7 @@ func (s *NetworkService) Create(ctx context.Context, tenantID uuid.UUID, input N
 		}
 		return NetworkCreateOutput{}, fmt.Errorf("create virtual network: %w", err)
 	}
-	return NetworkCreateOutput{VirtualNetwork: item, NetworkSecret: secret}, nil
+	return NetworkCreateOutput{VirtualNetwork: item, NetworkSecret: secret, PresharedKey: psk}, nil
 }
 
 func (s *NetworkService) Update(ctx context.Context, id uuid.UUID, tenantID *uuid.UUID, input NetworkInput) (models.VirtualNetwork, error) {
@@ -564,6 +574,26 @@ func (s *NetworkService) DeleteRoute(ctx context.Context, networkID, routeID uui
 		return ErrNotFound
 	}
 	return nil
+}
+
+func (s *NetworkService) RotatePSK(ctx context.Context, id uuid.UUID, tenantID *uuid.UUID) (string, error) {
+	item, err := s.Get(ctx, id, tenantID)
+	if err != nil {
+		return "", err
+	}
+	psk, err := generateNetworkSecret()
+	if err != nil {
+		return "", err
+	}
+	encrypted, err := s.crypto.Encrypt(psk)
+	if err != nil {
+		return "", fmt.Errorf("encrypt rotated network preshared key: %w", err)
+	}
+	if err := s.db.WithContext(ctx).Model(&models.VirtualNetwork{}).
+		Where("id = ?", item.ID).Update("preshared_key", encrypted).Error; err != nil {
+		return "", fmt.Errorf("store rotated network preshared key: %w", err)
+	}
+	return psk, nil
 }
 
 func generateNetworkSecret() (string, error) {

@@ -75,3 +75,7 @@ cd deploy/helm && bash umpp/ci/verify.sh
 ## 开发状态
 
 里程碑进度、端口、启动命令和已知坑见 [NOTES.md](NOTES.md#当前状态)。
+
+## V1-S 传输安全
+
+支持内置 PKI、控制面 TLS/mTLS、代理 HTTPS/HSTS/HTTPS 上游、NPS 隧道 crypt/compress 和 WireGuard PSK。默认配置保持历史行为；启用前阅读 `docs/OPS.md` 的 CA 保管、回退和未加密链路说明。真实验证：`bash scripts/smoke-tls.sh`。

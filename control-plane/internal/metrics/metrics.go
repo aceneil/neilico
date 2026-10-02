@@ -14,25 +14,28 @@ import (
 )
 
 type Metrics struct {
-	db                  *gorm.DB
-	registry            *prometheus.Registry
-	httpRequests        *prometheus.CounterVec
-	nodesOnline         prometheus.GaugeFunc
-	proxyRequests       *prometheus.CounterVec
-	proxyRequestsGauge  prometheus.Gauge
-	p2pSuccessRate      prometheus.Gauge
-	relayBytes          prometheus.Gauge
-	heartbeatLatency    prometheus.Gauge
-	alertsFiring        *prometheus.GaugeVec
-	proxyProviderUp     *prometheus.GaugeVec
-	tunnelUp            *prometheus.GaugeVec
-	configVersion       *prometheus.GaugeVec
-	aclDenied           prometheus.Counter
-	acmeOrders          *prometheus.CounterVec
-	acmeOrderDuration   prometheus.Histogram
-	certificateExpiry   *prometheus.GaugeVec
-	certificateRenewals *prometheus.CounterVec
-	tlsHandshakes       *prometheus.CounterVec
+	db                   *gorm.DB
+	registry             *prometheus.Registry
+	httpRequests         *prometheus.CounterVec
+	nodesOnline          prometheus.GaugeFunc
+	proxyRequests        *prometheus.CounterVec
+	proxyRequestsGauge   prometheus.Gauge
+	p2pSuccessRate       prometheus.Gauge
+	relayBytes           prometheus.Gauge
+	heartbeatLatency     prometheus.Gauge
+	alertsFiring         *prometheus.GaugeVec
+	proxyProviderUp      *prometheus.GaugeVec
+	tunnelUp             *prometheus.GaugeVec
+	configVersion        *prometheus.GaugeVec
+	aclDenied            prometheus.Counter
+	acmeOrders           *prometheus.CounterVec
+	acmeOrderDuration    prometheus.Histogram
+	certificateExpiry    *prometheus.GaugeVec
+	certificateRenewals  *prometheus.CounterVec
+	tlsHandshakes        *prometheus.CounterVec
+	pkiCAExpiry          prometheus.Gauge
+	pkiIssued            *prometheus.CounterVec
+	pkiCertificateExpiry *prometheus.GaugeVec
 }
 
 func New(db *gorm.DB) *Metrics {
@@ -110,8 +113,23 @@ func New(db *gorm.DB) *Metrics {
 	}, []string{"result"})
 	tlsHandshakes := prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "umpp_tls_handshakes_total",
-		Help: "Total TLS handshakes served by the built-in proxy by result.",
-	}, []string{"result"})
+		Help: "Total TLS handshakes by result and listener.",
+	}, []string{"result", "listener"})
+	pkiCAExpiry := prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "umpp_pki_ca_not_after_timestamp",
+		Help: "Unix timestamp when the active UMPP PKI CA expires.",
+	})
+	pkiIssued := prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "umpp_pki_certificates_issued_total",
+		Help: "Total PKI certificates issued by kind.",
+	}, []string{"kind"})
+	pkiCertificateExpiry := prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "umpp_pki_certificate_expiry_days",
+		Help: "Days until the latest PKI certificate of each kind expires.",
+	}, []string{"kind"})
+	pkiIssued.WithLabelValues("ca").Add(0)
+	pkiIssued.WithLabelValues("server").Add(0)
+	pkiIssued.WithLabelValues("node").Add(0)
 	for _, severity := range []string{"critical", "warning", "info"} {
 		for _, rule := range []string{"node_offline", "certificate_expiring", "p2p_success_rate_low", "relay_traffic_spike", "config_dispatch_failed"} {
 			alertsFiring.WithLabelValues(severity, rule).Set(0)
@@ -124,27 +142,31 @@ func New(db *gorm.DB) *Metrics {
 		p2pSuccessRate, relayBytes, heartbeatLatency, alertsFiring,
 		proxyProviderUp, tunnelUp, configVersion, aclDenied, acmeOrders,
 		acmeOrderDuration, certificateExpiry, certificateRenewals, tlsHandshakes,
+		pkiCAExpiry, pkiIssued, pkiCertificateExpiry,
 	)
 	return &Metrics{
-		db:                  db,
-		registry:            registry,
-		httpRequests:        httpRequests,
-		nodesOnline:         nodesOnline,
-		proxyRequests:       proxyRequests,
-		proxyRequestsGauge:  proxyRequestsGauge,
-		p2pSuccessRate:      p2pSuccessRate,
-		relayBytes:          relayBytes,
-		heartbeatLatency:    heartbeatLatency,
-		alertsFiring:        alertsFiring,
-		proxyProviderUp:     proxyProviderUp,
-		tunnelUp:            tunnelUp,
-		configVersion:       configVersion,
-		aclDenied:           aclDenied,
-		acmeOrders:          acmeOrders,
-		acmeOrderDuration:   acmeOrderDuration,
-		certificateExpiry:   certificateExpiry,
-		certificateRenewals: certificateRenewals,
-		tlsHandshakes:       tlsHandshakes,
+		db:                   db,
+		registry:             registry,
+		httpRequests:         httpRequests,
+		nodesOnline:          nodesOnline,
+		proxyRequests:        proxyRequests,
+		proxyRequestsGauge:   proxyRequestsGauge,
+		p2pSuccessRate:       p2pSuccessRate,
+		relayBytes:           relayBytes,
+		heartbeatLatency:     heartbeatLatency,
+		alertsFiring:         alertsFiring,
+		proxyProviderUp:      proxyProviderUp,
+		tunnelUp:             tunnelUp,
+		configVersion:        configVersion,
+		aclDenied:            aclDenied,
+		acmeOrders:           acmeOrders,
+		acmeOrderDuration:    acmeOrderDuration,
+		certificateExpiry:    certificateExpiry,
+		certificateRenewals:  certificateRenewals,
+		tlsHandshakes:        tlsHandshakes,
+		pkiCAExpiry:          pkiCAExpiry,
+		pkiIssued:            pkiIssued,
+		pkiCertificateExpiry: pkiCertificateExpiry,
 	}
 }
 
@@ -260,6 +282,18 @@ func (m *Metrics) ObserveCertificateRenewal(result string) {
 	m.certificateRenewals.WithLabelValues(result).Inc()
 }
 
-func (m *Metrics) ObserveTLSHandshake(result string) {
-	m.tlsHandshakes.WithLabelValues(result).Inc()
+func (m *Metrics) ObserveTLSHandshake(result, listener string) {
+	m.tlsHandshakes.WithLabelValues(result, listener).Inc()
+}
+
+func (m *Metrics) IncPKICertificatesIssued(kind string) {
+	m.pkiIssued.WithLabelValues(kind).Inc()
+}
+
+func (m *Metrics) SetPKICAExpiry(timestamp float64) {
+	m.pkiCAExpiry.Set(timestamp)
+}
+
+func (m *Metrics) SetPKICertificateExpiry(kind string, days float64) {
+	m.pkiCertificateExpiry.WithLabelValues(kind).Set(days)
 }

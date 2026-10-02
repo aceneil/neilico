@@ -89,6 +89,9 @@ func (a *App) login(ctx context.Context, credentials *config.Credentials, path s
 	email := set.String("email", "", "account email")
 	password := set.String("password", "", "account password (read from stdin when omitted)")
 	apiToken := set.String("token", "", "API token (saved directly without password login)")
+	caFile := set.String("ca-file", "", "CA certificate file for the control plane")
+	clientCertFile := set.String("client-cert-file", "", "mTLS client certificate file")
+	clientKeyFile := set.String("client-key-file", "", "mTLS client private key file")
 	if err := set.Parse(args); err != nil {
 		return err
 	}
@@ -100,6 +103,9 @@ func (a *App) login(ctx context.Context, credentials *config.Credentials, path s
 		credentials.AccessToken = value
 		credentials.RefreshToken = ""
 		credentials.UserEmail = ""
+		credentials.CAFile = *caFile
+		credentials.ClientCertFile = *clientCertFile
+		credentials.ClientKeyFile = *clientKeyFile
 		if err := config.Save(path, *credentials); err != nil {
 			return err
 		}
@@ -122,7 +128,12 @@ func (a *App) login(ctx context.Context, credentials *config.Credentials, path s
 	if value == "" {
 		return fmt.Errorf("password is required")
 	}
-	client := api.New(credentials.Server, "")
+	client, err := api.NewWithTLS(credentials.Server, "", api.TLSOptions{
+		CAFile: *caFile, ClientCertFile: *clientCertFile, ClientKeyFile: *clientKeyFile,
+	})
+	if err != nil {
+		return err
+	}
 	var response loginResponse
 	if err := client.Do(ctx, "POST", "/api/v1/auth/login", map[string]string{"email": *email, "password": value}, &response); err != nil {
 		return err
@@ -130,6 +141,9 @@ func (a *App) login(ctx context.Context, credentials *config.Credentials, path s
 	credentials.AccessToken = response.Token
 	credentials.RefreshToken = response.RefreshToken
 	credentials.UserEmail = response.User.Email
+	credentials.CAFile = *caFile
+	credentials.ClientCertFile = *clientCertFile
+	credentials.ClientKeyFile = *clientKeyFile
 	if err := config.Save(path, *credentials); err != nil {
 		return err
 	}
@@ -280,6 +294,55 @@ func (a *App) node(ctx context.Context, client *api.Client, credentials *config.
 			return err
 		}
 		fmt.Fprintf(a.Stdout, "registered node %s (%s)\nprivate_key=***\n", response.NodeID, *name)
+		return nil
+	case "mtls":
+		set := newFlagSet("node mtls", a.Stderr)
+		nodeRef := set.String("node", credentials.NodeID, "node ID or name")
+		outDir := set.String("out-dir", ".", "output directory")
+		if err := set.Parse(args[1:]); err != nil {
+			return err
+		}
+		if err := requireFlag(*nodeRef, "node"); err != nil {
+			return err
+		}
+		nodeID, err := resolveNode(ctx, client, *nodeRef)
+		if err != nil {
+			return err
+		}
+		var issued struct {
+			ClientCertPEM string `json:"client_cert_pem"`
+			ClientKeyPEM  string `json:"client_key_pem"`
+		}
+		if err := client.Do(ctx, "POST", "/api/v1/nodes/"+url.PathEscape(nodeID)+"/mtls", nil, &issued); err != nil {
+			return err
+		}
+		if err := os.MkdirAll(*outDir, 0o700); err != nil {
+			return err
+		}
+		if err := writePrivateFile(filepath.Join(*outDir, "client.crt"), []byte(issued.ClientCertPEM), 0o600); err != nil {
+			return err
+		}
+		if err := writePrivateFile(filepath.Join(*outDir, "client.key"), []byte(issued.ClientKeyPEM), 0o600); err != nil {
+			return err
+		}
+		fmt.Fprintf(a.Stdout, "wrote mTLS client certificate and private key to %s\n", *outDir)
+		return nil
+	case "trust-ca":
+		set := newFlagSet("node trust-ca", a.Stderr)
+		out := set.String("out", "ca.crt", "CA certificate output path")
+		if err := set.Parse(args[1:]); err != nil {
+			return err
+		}
+		var result struct {
+			CACertPEM string `json:"ca_cert_pem"`
+		}
+		if err := client.Do(ctx, "GET", "/api/v1/pki/ca", nil, &result); err != nil {
+			return err
+		}
+		if err := writePrivateFile(*out, []byte(result.CACertPEM), 0o600); err != nil {
+			return err
+		}
+		fmt.Fprintf(a.Stdout, "wrote CA certificate to %s\n", *out)
 		return nil
 	default:
 		return errHelpText("node")
@@ -539,3 +602,24 @@ func errHelpText(name string) error {
 
 var _ = os.ErrNotExist
 var _ = filepath.Separator
+
+func writePrivateFile(path string, data []byte, mode os.FileMode) error {
+	temp, err := os.CreateTemp(filepath.Dir(path), ".umppctl-*.tmp")
+	if err != nil {
+		return err
+	}
+	name := temp.Name()
+	defer os.Remove(name)
+	if err := temp.Chmod(mode); err != nil {
+		temp.Close()
+		return err
+	}
+	if _, err := temp.Write(data); err != nil {
+		temp.Close()
+		return err
+	}
+	if err := temp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(name, path)
+}

@@ -6,12 +6,14 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/netip"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -169,7 +171,11 @@ func (p *Builtin) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	target, err := url.Parse("http://" + route.Target)
+	scheme := route.UpstreamScheme
+	if scheme == "" {
+		scheme = "http"
+	}
+	target, err := url.Parse(scheme + "://" + route.Target)
 	if err != nil {
 		p.observe(domain, http.StatusBadGateway)
 		http.Error(w, "bad gateway", http.StatusBadGateway)
@@ -182,6 +188,22 @@ func (p *Builtin) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	recorder := &responseRecorder{ResponseWriter: w, status: http.StatusOK}
 	proxy := httputil.NewSingleHostReverseProxy(target)
+	if scheme == "https" {
+		transport, transportErr := upstreamTransport(*route, target)
+		if transportErr != nil {
+			p.logger.Error("https upstream transport configuration failed", "route_id", route.RuleID, "error", transportErr)
+			p.observe(domain, http.StatusBadGateway)
+			http.Error(w, "bad gateway: https upstream transport configuration failed", http.StatusBadGateway)
+			return
+		}
+		proxy.Transport = transport
+		proxy.ErrorHandler = func(writer http.ResponseWriter, request *http.Request, proxyErr error) {
+			p.logger.Error("https upstream request failed", "route_id", route.RuleID, "target", target.Host,
+				"insecure_skip_verify", route.UpstreamInsecureSkipVerify, "error", proxyErr)
+			p.observe(domain, http.StatusBadGateway)
+			http.Error(writer, "bad gateway: https upstream request failed: "+proxyErr.Error(), http.StatusBadGateway)
+		}
+	}
 	director := proxy.Director
 	proxy.Director = func(req *http.Request) {
 		director(req)
@@ -279,8 +301,8 @@ func (p *Builtin) InvalidateCertificate(domain string) {
 }
 
 func (p *Builtin) observeTLS(result string) {
-	if observer, ok := p.observer.(interface{ ObserveTLSHandshake(string) }); ok {
-		observer.ObserveTLSHandshake(result)
+	if observer, ok := p.observer.(interface{ ObserveTLSHandshake(string, string) }); ok {
+		observer.ObserveTLSHandshake(result, "proxy")
 	}
 }
 
@@ -383,4 +405,29 @@ func (r *responseRecorder) Flush() {
 	if flusher, ok := r.ResponseWriter.(http.Flusher); ok {
 		flusher.Flush()
 	}
+}
+
+func upstreamTransport(route Route, target *url.URL) (*http.Transport, error) {
+	base := http.DefaultTransport.(*http.Transport).Clone()
+	tlsConfig := &tls.Config{
+		MinVersion:         tls.VersionTLS12,
+		ServerName:         target.Hostname(),
+		InsecureSkipVerify: route.UpstreamInsecureSkipVerify,
+	}
+	if route.UpstreamCAFile != "" {
+		pemData, err := os.ReadFile(route.UpstreamCAFile)
+		if err != nil {
+			return nil, fmt.Errorf("read upstream CA file: %w", err)
+		}
+		pool, err := x509.SystemCertPool()
+		if err != nil || pool == nil {
+			pool = x509.NewCertPool()
+		}
+		if !pool.AppendCertsFromPEM(pemData) {
+			return nil, errors.New("upstream CA file contains no certificates")
+		}
+		tlsConfig.RootCAs = pool
+	}
+	base.TLSClientConfig = tlsConfig
+	return base, nil
 }

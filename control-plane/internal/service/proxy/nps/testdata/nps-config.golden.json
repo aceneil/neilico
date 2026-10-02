@@ -18,6 +18,8 @@
           "rule_id": "11111111-1111-1111-1111-111111111111",
           "domain_id": "33333333-3333-3333-3333-333333333333",
           "enabled": true,
+          "crypt": true,
+          "compress": true,
           "access_control": {
             "ip_whitelist": [
               "1.2.3.4/32"

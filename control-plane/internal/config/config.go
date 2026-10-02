@@ -12,8 +12,20 @@ import (
 )
 
 type Server struct {
-	Host string `yaml:"host"`
-	Port int    `yaml:"port"`
+	Host string    `yaml:"host"`
+	Port int       `yaml:"port"`
+	TLS  ServerTLS `yaml:"tls"`
+}
+
+type ServerTLS struct {
+	Enabled      bool   `yaml:"enabled"`
+	CertFile     string `yaml:"cert_file"`
+	KeyFile      string `yaml:"key_file"`
+	ClientCAFile string `yaml:"client_ca_file"`
+	MinVersion   string `yaml:"min_version"`
+	RedirectHTTP bool   `yaml:"redirect_http"`
+	ClientAuth   string `yaml:"client_auth"`
+	HTTPPort     int    `yaml:"http_port"`
 }
 
 type Database struct {
@@ -76,8 +88,18 @@ type Log struct {
 	Format string `yaml:"format"`
 }
 
+type PKI struct {
+	Enabled         bool     `yaml:"enabled"`
+	CACertName      string   `yaml:"ca_common_name"`
+	ServerHosts     []string `yaml:"server_hosts"`
+	ServerCertDays  int      `yaml:"server_cert_days"`
+	NodeCertDays    int      `yaml:"node_cert_days"`
+	RenewBeforeDays int      `yaml:"renew_before_days"`
+}
+
 type Config struct {
 	Server    Server    `yaml:"server"`
+	PKI       PKI       `yaml:"pki"`
 	Database  Database  `yaml:"database"`
 	Auth      Auth      `yaml:"auth"`
 	Bootstrap Bootstrap `yaml:"bootstrap"`
@@ -91,7 +113,24 @@ type Config struct {
 
 func Default() Config {
 	return Config{
-		Server: Server{Host: "0.0.0.0", Port: 8080},
+		Server: Server{
+			Host: "0.0.0.0",
+			Port: 8080,
+			TLS: ServerTLS{
+				Enabled:      false,
+				MinVersion:   "1.2",
+				RedirectHTTP: true,
+				ClientAuth:   "none",
+				HTTPPort:     80,
+			},
+		},
+		PKI: PKI{
+			Enabled:         false,
+			CACertName:      "UMPP Internal CA",
+			ServerCertDays:  825,
+			NodeCertDays:    365,
+			RenewBeforeDays: 30,
+		},
 		Database: Database{
 			Driver: "postgres",
 			DSN:    "",
@@ -116,15 +155,19 @@ func Default() Config {
 			Kind:    "builtin",
 			Listen:  ":8081",
 			TLS: ProxyTLS{
-				Enabled:    false,
-				Listen:     ":8443",
-				MinVersion: "1.2",
+				Enabled:      false,
+				Listen:       ":8443",
+				MinVersion:   "1.2",
+				RedirectHTTP: true,
+				HSTSMaxAge:   31536000,
 			},
 			NPS: ProxyNPS{
 				ConfigPath:     "data/nps/config.json",
 				BinaryPath:     "/usr/bin/nps",
 				PIDFile:        "data/nps/nps.pid",
 				ReloadStrategy: "signal",
+				Crypt:          true,
+				Compress:       true,
 			},
 		},
 		Alerts: Alerts{
@@ -172,6 +215,12 @@ func applyEnvironment(cfg *Config) error {
 		dst *string
 	}{
 		{"UMPP_SERVER_HOST", &cfg.Server.Host},
+		{"UMPP_SERVER_TLS_CERT_FILE", &cfg.Server.TLS.CertFile},
+		{"UMPP_SERVER_TLS_KEY_FILE", &cfg.Server.TLS.KeyFile},
+		{"UMPP_SERVER_TLS_CLIENT_CA_FILE", &cfg.Server.TLS.ClientCAFile},
+		{"UMPP_SERVER_TLS_MIN_VERSION", &cfg.Server.TLS.MinVersion},
+		{"UMPP_SERVER_TLS_CLIENT_AUTH", &cfg.Server.TLS.ClientAuth},
+		{"UMPP_PKI_CA_COMMON_NAME", &cfg.PKI.CACertName},
 		{"UMPP_DATABASE_DRIVER", &cfg.Database.Driver},
 		{"UMPP_DATABASE_DSN", &cfg.Database.DSN},
 		{"UMPP_AUTH_JWT_SECRET", &cfg.Auth.JWTSecret},
@@ -195,6 +244,14 @@ func applyEnvironment(cfg *Config) error {
 		{"UMPP_NPS_RELOAD_STRATEGY", &cfg.Proxy.NPS.ReloadStrategy},
 		{"UMPP_ALERTS_WEBHOOK_URL", &cfg.Alerts.WebhookURL},
 	}
+	if value, ok := os.LookupEnv("UMPP_PKI_SERVER_HOSTS"); ok {
+		cfg.PKI.ServerHosts = nil
+		for _, host := range strings.Split(value, ",") {
+			if host = strings.TrimSpace(host); host != "" {
+				cfg.PKI.ServerHosts = append(cfg.PKI.ServerHosts, host)
+			}
+		}
+	}
 	for _, item := range stringOverrides {
 		if value, ok := os.LookupEnv(item.key); ok {
 			*item.dst = value
@@ -215,7 +272,13 @@ func applyEnvironment(cfg *Config) error {
 		{"UMPP_ACME_ENABLED", &cfg.ACME.Enabled},
 		{"UMPP_ACME_AGREE_TOS", &cfg.ACME.AgreeTOS},
 		{"UMPP_ACME_AUTO_RENEW", &cfg.ACME.AutoRenew},
+		{"UMPP_SERVER_TLS_ENABLED", &cfg.Server.TLS.Enabled},
+		{"UMPP_SERVER_TLS_REDIRECT_HTTP", &cfg.Server.TLS.RedirectHTTP},
+		{"UMPP_PKI_ENABLED", &cfg.PKI.Enabled},
 		{"UMPP_PROXY_TLS_ENABLED", &cfg.Proxy.TLS.Enabled},
+		{"UMPP_PROXY_TLS_REDIRECT_HTTP", &cfg.Proxy.TLS.RedirectHTTP},
+		{"UMPP_PROXY_NPS_CRYPT", &cfg.Proxy.NPS.Crypt},
+		{"UMPP_PROXY_NPS_COMPRESS", &cfg.Proxy.NPS.Compress},
 	} {
 		value, ok := os.LookupEnv(item.key)
 		if !ok {
@@ -232,6 +295,7 @@ func applyEnvironment(cfg *Config) error {
 		dst *int
 	}{
 		{"UMPP_SERVER_PORT", &cfg.Server.Port},
+		{"UMPP_SERVER_TLS_HTTP_PORT", &cfg.Server.TLS.HTTPPort},
 		{"UMPP_RATELIMIT_BURST", &cfg.RateLimit.Burst},
 		{"UMPP_ACME_HTTP_PORT", &cfg.ACME.HTTPPort},
 		{"UMPP_ACME_RENEW_BEFORE_DAYS", &cfg.ACME.RenewBeforeDays},
@@ -267,6 +331,10 @@ func applyEnvironment(cfg *Config) error {
 		dst *int
 	}{
 		{"UMPP_ALERTS_WEBHOOK_RETRIES", &cfg.Alerts.WebhookRetries},
+		{"UMPP_PKI_SERVER_CERT_DAYS", &cfg.PKI.ServerCertDays},
+		{"UMPP_PKI_NODE_CERT_DAYS", &cfg.PKI.NodeCertDays},
+		{"UMPP_PKI_RENEW_BEFORE_DAYS", &cfg.PKI.RenewBeforeDays},
+		{"UMPP_PROXY_TLS_HSTS_MAX_AGE", &cfg.Proxy.TLS.HSTSMaxAge},
 	}
 	for _, item := range intOverrides {
 		value, ok := os.LookupEnv(item.key)
@@ -324,6 +392,21 @@ func (c Config) Validate() error {
 	if c.Server.Port < 1 || c.Server.Port > 65535 {
 		return fmt.Errorf("server.port must be between 1 and 65535")
 	}
+	if c.Server.TLS.HTTPPort < 1 || c.Server.TLS.HTTPPort > 65535 {
+		return fmt.Errorf("server.tls.http_port must be between 1 and 65535")
+	}
+	if c.Server.TLS.MinVersion != "1.2" && c.Server.TLS.MinVersion != "1.3" {
+		return fmt.Errorf("server.tls.min_version must be 1.2 or 1.3")
+	}
+	if c.Server.TLS.ClientAuth != "none" && c.Server.TLS.ClientAuth != "request" && c.Server.TLS.ClientAuth != "require" {
+		return fmt.Errorf("server.tls.client_auth must be none, request, or require")
+	}
+	if c.Server.TLS.Enabled && (strings.TrimSpace(c.Server.TLS.CertFile) == "") != (strings.TrimSpace(c.Server.TLS.KeyFile) == "") {
+		return fmt.Errorf("server.tls.cert_file and server.tls.key_file must be set together")
+	}
+	if c.PKI.ServerCertDays < 1 || c.PKI.NodeCertDays < 1 || c.PKI.RenewBeforeDays < 0 {
+		return fmt.Errorf("pki certificate day values must be positive and renew_before_days must not be negative")
+	}
 	if c.Auth.AccessTTL <= 0 || c.Auth.RefreshTTL <= 0 {
 		return fmt.Errorf("auth token TTLs must be positive")
 	}
@@ -373,6 +456,9 @@ func (c Config) Validate() error {
 	if c.Proxy.TLS.MinVersion != "1.2" && c.Proxy.TLS.MinVersion != "1.3" {
 		return fmt.Errorf("proxy.tls.min_version must be 1.2 or 1.3")
 	}
+	if c.Proxy.TLS.HSTSMaxAge < 0 {
+		return fmt.Errorf("proxy.tls.hsts_max_age must not be negative")
+	}
 	if strings.TrimSpace(c.Proxy.NPS.ConfigPath) == "" {
 		return fmt.Errorf("proxy.nps.config_path is required")
 	}
@@ -383,9 +469,11 @@ func (c Config) Validate() error {
 }
 
 type ProxyTLS struct {
-	Enabled    bool   `yaml:"enabled"`
-	Listen     string `yaml:"listen"`
-	MinVersion string `yaml:"min_version"`
+	Enabled      bool   `yaml:"enabled"`
+	Listen       string `yaml:"listen"`
+	MinVersion   string `yaml:"min_version"`
+	RedirectHTTP bool   `yaml:"redirect_http"`
+	HSTSMaxAge   int    `yaml:"hsts_max_age"`
 }
 
 type ProxyNPS struct {
@@ -393,6 +481,8 @@ type ProxyNPS struct {
 	BinaryPath     string `yaml:"binary_path"`
 	PIDFile        string `yaml:"pid_file"`
 	ReloadStrategy string `yaml:"reload_strategy"`
+	Crypt          bool   `yaml:"crypt"`
+	Compress       bool   `yaml:"compress"`
 }
 
 type Proxy struct {

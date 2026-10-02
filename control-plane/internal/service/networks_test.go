@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/netip"
+	"strings"
 	"sync"
 	"testing"
 
@@ -30,6 +31,23 @@ func TestNetworkValidationAndConflicts(t *testing.T) {
 	}
 	if first.NetworkSecret == "" || first.Secret == "" || first.Secret == first.NetworkSecret {
 		t.Fatal("network secret was not returned exactly once and encrypted at rest")
+	}
+	if first.PresharedKey == "" || first.PresharedKey == first.NetworkSecret || strings.Contains(first.PresharedKey, first.PresharedKey) && first.PresharedKey == "" {
+		t.Fatal("network preshared key was not generated")
+	}
+	var stored models.VirtualNetwork
+	if err := handle.Where("id = ?", first.ID).First(&stored).Error; err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(stored.PresharedKey, first.PresharedKey) || stored.PresharedKey == "" {
+		t.Fatal("network preshared key was not encrypted at rest")
+	}
+	rotated, err := service.RotatePSK(context.Background(), first.ID, &tenantID)
+	if err != nil || rotated == first.PresharedKey {
+		t.Fatalf("PSK rotation failed or reused key: %v", err)
+	}
+	if err := handle.Where("id = ?", first.ID).First(&stored).Error; err != nil || strings.Contains(stored.PresharedKey, rotated) {
+		t.Fatalf("rotated PSK storage is not encrypted: %v", err)
 	}
 	if _, err := service.Create(context.Background(), tenantID, NetworkInput{Name: "home", CIDR: "10.2.0.0/24"}); !errors.Is(err, ErrConflict) {
 		t.Fatalf("duplicate name error = %v, want conflict", err)

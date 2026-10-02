@@ -1,0 +1,59 @@
+# V1-S TLS/mTLS smoke overlay. It intentionally changes only transport settings;
+# the base stack defaults remain valid for existing deployments.
+name: umpp-v1s-tls
+
+services:
+  control-api:
+    environment:
+      UMPP_PKI_ENABLED: "true"
+      UMPP_PKI_CA_COMMON_NAME: "UMPP Smoke Internal CA"
+      UMPP_PKI_SERVER_HOSTS: "localhost,127.0.0.1"
+      UMPP_PKI_SERVER_CERT_DAYS: "30"
+      UMPP_PKI_NODE_CERT_DAYS: "30"
+      UMPP_PKI_RENEW_BEFORE_DAYS: "3"
+      UMPP_SERVER_TLS_ENABLED: "true"
+      UMPP_SERVER_TLS_MIN_VERSION: "1.2"
+      UMPP_SERVER_TLS_REDIRECT_HTTP: "true"
+      UMPP_SERVER_TLS_CLIENT_AUTH: "require"
+      UMPP_SERVER_TLS_HTTP_PORT: "8082"
+      UMPP_PROXY_TLS_ENABLED: "true"
+      UMPP_PROXY_TLS_LISTEN: ":8443"
+      UMPP_PROXY_TLS_MIN_VERSION: "1.2"
+      UMPP_PROXY_TLS_REDIRECT_HTTP: "true"
+      UMPP_PROXY_TLS_HSTS_MAX_AGE: "31536000"
+    ports: !override
+      - "${TLS_API_HTTP_PORT:-18080}:8082"
+      - "${TLS_API_HTTPS_PORT:-18443}:8080"
+      - "${TLS_PROXY_HTTP_PORT:-18081}:8081"
+      - "${TLS_PROXY_HTTPS_PORT:-18444}:8443"
+    volumes:
+      - "${TLS_SMOKE_DIR}/upstream.crt:/certs/upstream.crt:ro"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8082/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 40
+      start_period: 15s
+
+  dashboard:
+    profiles: ["disabled"]
+
+  relay:
+    profiles: ["disabled"]
+
+  https-upstream:
+    image: nginx:1.27-alpine
+    profiles: ["tls-smoke"]
+    networks:
+      default:
+        ipv4_address: 100.64.252.9
+    volumes:
+      - "${TLS_SMOKE_DIR}/upstream.crt:/etc/nginx/tls/upstream.crt:ro"
+      - "${TLS_SMOKE_DIR}/upstream.key:/etc/nginx/tls/upstream.key:ro"
+      - "${TLS_SMOKE_DIR}/nginx.conf:/etc/nginx/nginx.conf:ro"
+
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 100.64.252.0/24

@@ -254,3 +254,31 @@ docker compose exec postgres pg_isready -U umpp -d umpp
 ### 磁盘/日志增长
 
 确认 json-file `max-size=10m`、`max-file=3`，归档并清理旧 `pg_dump`，监控 Docker 磁盘水位。
+
+## 传输安全（V1-S / §10.3）
+
+### 内置 CA 与保管
+
+设置 `pki.enabled=true` 后，控制面首次启动会生成 ECDSA P-256 CA。CA 私钥以现有 `cert.Crypto`（AES-GCM，密钥由 `jwt_secret` 派生）加密存入 `cas.encrypted_key_pem`，不会通过 API 回显。`GET /api/v1/pki/ca` 只返回 CA 证书 PEM，供 Agent/CLI 配置信任锚。CA 轮换由 platform_admin 调用 `POST /api/v1/pki/ca/rotate`；旧 CA 行继续留在 `cas` 作为信任锚，便于旧证书在有效期内继续校验。生产环境应备份数据库和 `jwt_secret`，二者同时丢失无法恢复私钥。证书有效期由 `pki.server_cert_days`、`pki.node_cert_days` 控制，`pki.renew_before_days` 用于提前续期；节点客户端证书通过 `POST /api/v1/nodes/{id}/mtls` 签发/续签，响应中的私钥只出现一次。
+
+### 控制面 TLS 与 mTLS
+
+`server.tls.enabled=true` 时 API 使用 TLS；`cert_file/key_file` 与 `pki.enabled` 二选一，均为空且启用 PKI 时自动签发服务端证书。`client_auth=require` 要求客户端证书，`client_ca_file` 或 PKI CA 作为信任锚；缺少信任锚会启动失败并给出错误。`/healthz`、`/metrics`、CA 下载和最小化注册引导不需要客户端证书，以便探针和首次 enrollment 工作；管理接口、Agent 配置和心跳仍需通过认证/mTLS。`redirect_http=true` 时 `server.tls.http_port` 的明文监听器对 `/healthz`、`/metrics`、ACME challenge 直通，其它 GET/HEAD 301、其它方法 308 到 HTTPS。TLS 握手指标为 `umpp_tls_handshakes_total{result,listener}`。
+
+回退步骤：先把 `server.tls.client_auth` 改为 `none`（或 `request`）并重启，确认健康检查和现有 token；再把 `server.tls.enabled=false` 恢复明文监听。不要在未准备好 CA/客户端证书时直接启用 require。
+
+### HSTS 与 HTTPS 上游
+
+代理 `proxy.tls.enabled=true` 时 `proxy.tls.redirect_http`（默认 true）让明文端口只服务 `/healthz`、`/metrics`、ACME challenge，其它请求按 GET/HEAD 301、其它方法 308 跳转；HTTPS 响应带 `Strict-Transport-Security: max-age=proxy.tls.hsts_max_age`（默认 31536000，0 不发送）。`proxy_rules.upstream_scheme` 默认 `http`，可设 `https`；`upstream_ca_file` 用于自签/私有 CA，`upstream_insecure_skip_verify` 只能显式开启且会跳过证书校验，生产不应使用。`upstream_scheme=http` 的既有行为完全不变。
+
+### NPS 与 WireGuard
+
+NPS 配置默认生成 `crypt: true`、`compress: true`（由 `proxy.nps.crypt/compress` 配置）。NPS 的 crypt 是隧道内对称加密，**不是端到端 AEAD**；真正的端到端加密由 WireGuard 承载。WireGuard 网络创建时生成网络级 `preshared_key`，以 `cert.Crypto` 加密落库，同一网络的所有 `[Peer]` 下发同一个 PSK；创建响应和 Agent 下发才包含明文。`POST /api/v1/networks/{id}/psk/rotate` 轮换并递增相关节点配置版本。
+
+### 仍然未加密/未实现的链路
+
+* `internal_ip` 直连上游由调用方网络路径决定，UMPP 不提供传输加密。
+* relay 数据面仍未实现（V2）；不能把 relay 视为已加密。
+* NPS crypt/compress 只保护 NPS 隧道，不是端到端加密。
+* `upstream_insecure_skip_verify=true` 的 HTTPS 上游会跳过证书验证，只适合隔离测试。
+* 默认配置（PKI、API TLS、proxy TLS 均关闭，`upstream_scheme=http`）保持历史明文行为，升级前必须按上述步骤启用。

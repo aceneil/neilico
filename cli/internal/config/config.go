@@ -11,11 +11,14 @@ import (
 )
 
 type Credentials struct {
-	Server       string `yaml:"server"`
-	AccessToken  string `yaml:"access_token,omitempty"`
-	RefreshToken string `yaml:"refresh_token,omitempty"`
-	UserEmail    string `yaml:"user_email,omitempty"`
-	NodeID       string `yaml:"node_id,omitempty"`
+	Server         string `yaml:"server"`
+	AccessToken    string `yaml:"access_token,omitempty"`
+	RefreshToken   string `yaml:"refresh_token,omitempty"`
+	UserEmail      string `yaml:"user_email,omitempty"`
+	NodeID         string `yaml:"node_id,omitempty"`
+	CAFile         string `yaml:"ca_file,omitempty"`
+	ClientCertFile string `yaml:"client_cert_file,omitempty"`
+	ClientKeyFile  string `yaml:"client_key_file,omitempty"`
 }
 
 func DefaultPath() (string, error) {

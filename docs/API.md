@@ -264,3 +264,13 @@ curl -sS -X POST http://127.0.0.1:18080/api/v1/proxy-rules \
 | 501 | `not_implemented` / `acme_revoke_not_implemented` | DNS-01、EAB 或证书撤销接口位尚未实现 |
 
 `GET /api/v1/agent/config` 在客户端 `version` 等于服务端最新版本时返回 `304 Not Modified`，响应体为 `{"not_modified":true,"version":N}`；落后、超前或未知版本会返回 `200` 最新期望配置。
+
+## 传输安全接口（V1-S）
+
+* `GET /api/v1/pki/ca`：公开返回 `ca_cert_pem`，永不返回私钥。
+* `POST /api/v1/pki/ca/rotate`：platform_admin 轮换内置 CA；响应只有元数据。
+* `POST /api/v1/nodes/{id}/mtls`：签发/续签 Agent 客户端证书，首次响应包含 `client_cert_pem`/`client_key_pem`，私钥加密落库且列表/详情不回显。
+* `GET /api/v1/nodes/{id}/mtls`：只返回序列号、有效期、指纹等元数据。
+* `POST /api/v1/networks/{id}/psk/rotate`：轮换 WireGuard PSK 并递增节点配置版本。
+
+`server.tls.client_auth=require` 时除探针、CA 下载和最小化注册引导外均需客户端证书；401 表示缺少/无效证书，不代表认证 token 可绕过。

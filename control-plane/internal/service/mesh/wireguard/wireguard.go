@@ -60,6 +60,9 @@ func (*Provider) RenderNodeConfig(_ context.Context, node mesh.Node) ([]byte, er
 		fmt.Fprintf(&output, "PublicKey = %s\n", peer.PublicKey)
 		fmt.Fprintf(&output, "Endpoint = %s\n", strings.TrimSpace(peer.Endpoint))
 		fmt.Fprintf(&output, "AllowedIPs = %s\n", strings.Join(peer.AllowedIPs, ", "))
+		if node.Network.PresharedKey != "" {
+			fmt.Fprintf(&output, "PresharedKey = %s\n", node.Network.PresharedKey)
+		}
 		output.WriteString("PersistentKeepalive = 25\n")
 	}
 	return []byte(output.String()), nil

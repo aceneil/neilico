@@ -102,3 +102,7 @@ cd deploy/helm && bash umpp/ci/verify.sh
 - ACME 配置默认关闭；只有 `enabled=true` 且显式 `agree_tos=true` 才允许 order。`dns-01` 与 EAB 保留接口位，当前返回 `ErrNotImplemented`。
 - Helm 默认必须接外部 PostgreSQL；`postgres/redis/nats.enabled=true` 只供开发。`secrets.existingSecret` 启用时不渲染 Secret。Chart 详细字段、TLS 二选一和生产限制见 `deploy/helm/umpp/README.md`。
 - Helm `verify.sh` 只验证离线渲染，不连接集群；预发布仍需验证 LB/Ingress、UDP、滚动升级、PVC/备份恢复与 NetworkPolicy。
+
+## V1-S 传输安全记录
+
+内置 CA、API TLS/mTLS、代理 HTTPS/HSTS/HTTPS 上游、NPS crypt/compress、WireGuard PSK 已实现；默认值保持关闭或 http。端到端加密仅 WireGuard 保证，relay 未实现，NPS crypt 不是端到端 AEAD，`internal_ip` 上游仍可能明文。

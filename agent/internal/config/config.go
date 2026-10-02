@@ -44,11 +44,20 @@ type Config struct {
 	Node              Node     `yaml:"node"`
 	Mesh              Mesh     `yaml:"mesh"`
 	Proxy             Proxy    `yaml:"proxy"`
+	TLS               TLS      `yaml:"tls"`
 	Metrics           Metrics  `yaml:"metrics"`
 	Log               Log      `yaml:"log"`
 	StatePath         string   `yaml:"state_path"`
 	PollInterval      Duration `yaml:"poll_interval"`
 	HeartbeatInterval Duration `yaml:"heartbeat_interval"`
+}
+
+type TLS struct {
+	CAFile             string `yaml:"ca_file"`
+	ClientCertFile     string `yaml:"client_cert_file"`
+	ClientKeyFile      string `yaml:"client_key_file"`
+	ServerName         string `yaml:"server_name"`
+	InsecureSkipVerify bool   `yaml:"insecure_skip_verify"`
 }
 
 type Node struct {
@@ -131,6 +140,10 @@ func applyEnv(cfg *Config) error {
 		"UMPP_AGENT_METRICS_LISTEN":          &cfg.Metrics.Listen,
 		"UMPP_AGENT_LOG_LEVEL":               &cfg.Log.Level,
 		"UMPP_AGENT_STATE":                   &cfg.StatePath,
+		"UMPP_AGENT_TLS_CA_FILE":             &cfg.TLS.CAFile,
+		"UMPP_AGENT_TLS_CLIENT_CERT_FILE":    &cfg.TLS.ClientCertFile,
+		"UMPP_AGENT_TLS_CLIENT_KEY_FILE":     &cfg.TLS.ClientKeyFile,
+		"UMPP_AGENT_TLS_SERVER_NAME":         &cfg.TLS.ServerName,
 	}
 	for name, target := range stringsMap {
 		if value, ok := os.LookupEnv(name); ok {
@@ -151,10 +164,11 @@ func applyEnv(cfg *Config) error {
 		}
 	}
 	boolsMap := map[string]*bool{
-		"UMPP_AGENT_MESH_CLEANUP_ON_EXIT":  &cfg.Mesh.CleanupOnExit,
-		"UMPP_AGENT_MESH_ALLOW_FORWARDING": &cfg.Mesh.AllowForwarding,
-		"UMPP_AGENT_PROXY_ENABLED":         &cfg.Proxy.Enabled,
-		"UMPP_AGENT_METRICS_ENABLED":       &cfg.Metrics.Enabled,
+		"UMPP_AGENT_MESH_CLEANUP_ON_EXIT":     &cfg.Mesh.CleanupOnExit,
+		"UMPP_AGENT_MESH_ALLOW_FORWARDING":    &cfg.Mesh.AllowForwarding,
+		"UMPP_AGENT_PROXY_ENABLED":            &cfg.Proxy.Enabled,
+		"UMPP_AGENT_METRICS_ENABLED":          &cfg.Metrics.Enabled,
+		"UMPP_AGENT_TLS_INSECURE_SKIP_VERIFY": &cfg.TLS.InsecureSkipVerify,
 	}
 	for name, target := range boolsMap {
 		if value, ok := os.LookupEnv(name); ok {
@@ -202,6 +216,9 @@ func (c Config) Validate() error {
 	parsed, err := url.Parse(c.Server)
 	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
 		return errors.New("server must be an absolute URL")
+	}
+	if (strings.TrimSpace(c.TLS.ClientCertFile) == "") != (strings.TrimSpace(c.TLS.ClientKeyFile) == "") {
+		return errors.New("tls.client_cert_file and tls.client_key_file must be set together")
 	}
 	if strings.TrimSpace(c.Node.Name) == "" {
 		return errors.New("node.name is required")

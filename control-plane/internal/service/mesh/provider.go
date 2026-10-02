@@ -28,9 +28,10 @@ type Peer struct {
 }
 
 type Network struct {
-	ID     string
-	Name   string
-	CIDR   string
-	Secret string
-	Peers  []Peer
+	ID           string
+	Name         string
+	CIDR         string
+	Secret       string
+	PresharedKey string
+	Peers        []Peer
 }

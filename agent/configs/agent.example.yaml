@@ -1,5 +1,11 @@
 server: https://api.umpp.example.com
 token: ""
+tls:
+  ca_file: ""
+  client_cert_file: ""
+  client_key_file: ""
+  server_name: ""
+  insecure_skip_verify: false
 node:
   name: nas-01
   tags: ["home", "nas"]

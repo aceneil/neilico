@@ -60,6 +60,7 @@ func run(args []string, stdout, stderr io.Writer) error {
 		cfg.StatePath = *statePath
 	}
 	logger := newLogger(cfg.Log.Level, stderr)
+	warnInsecureTLS(cfg.TLS.InsecureSkipVerify, logger, stderr)
 	metrics := agentmetrics.New()
 	metrics.SetDryRun(*dryRun || !hasNetAdmin())
 	if metrics.DryRun() {
@@ -68,7 +69,16 @@ func run(args []string, stdout, stderr io.Writer) error {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	apiClient := client.New(cfg.Server, cfg.Token)
+	apiClient, err := client.NewWithTLS(cfg.Server, cfg.Token, client.TLSOptions{
+		CAFile:             cfg.TLS.CAFile,
+		ClientCertFile:     cfg.TLS.ClientCertFile,
+		ClientKeyFile:      cfg.TLS.ClientKeyFile,
+		ServerName:         cfg.TLS.ServerName,
+		InsecureSkipVerify: cfg.TLS.InsecureSkipVerify,
+	})
+	if err != nil {
+		return err
+	}
 	identity, err := ensureIdentity(ctx, cfg, apiClient, *forceRegister, logger)
 	if err != nil {
 		return err
@@ -348,4 +358,12 @@ func newLogger(level string, output io.Writer) *slog.Logger {
 		parsed = slog.LevelInfo
 	}
 	return slog.New(slog.NewTextHandler(output, &slog.HandlerOptions{Level: parsed}))
+}
+
+func warnInsecureTLS(enabled bool, logger *slog.Logger, stderr io.Writer) {
+	if !enabled {
+		return
+	}
+	logger.Error("SECURITY WARNING: TLS certificate verification is disabled for the control-plane connection")
+	fmt.Fprintln(stderr, "*** SECURITY WARNING: tls.insecure_skip_verify=true disables control-plane certificate verification ***")
 }

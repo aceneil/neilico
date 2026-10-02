@@ -50,6 +50,29 @@ type Node struct {
 	Tenant *Tenant `gorm:"foreignKey:TenantID;constraint:OnDelete:RESTRICT,OnUpdate:CASCADE" json:"-"`
 }
 
+type CA struct {
+	ID              uuid.UUID `gorm:"type:uuid;primaryKey" json:"id"`
+	Name            string    `gorm:"type:varchar(255);not null;index" json:"name"`
+	CertPEM         string    `gorm:"type:text;not null" json:"cert_pem"`
+	EncryptedKeyPEM string    `gorm:"type:text;not null" json:"-"`
+	NotBefore       time.Time `gorm:"type:timestamp;not null" json:"not_before"`
+	NotAfter        time.Time `gorm:"type:timestamp;not null;index" json:"not_after"`
+	CreatedAt       time.Time `gorm:"type:timestamp;not null;index" json:"created_at"`
+}
+
+type NodeCertificate struct {
+	ID              uuid.UUID `gorm:"type:uuid;primaryKey" json:"id"`
+	NodeID          uuid.UUID `gorm:"type:uuid;not null;index" json:"node_id"`
+	CAID            uuid.UUID `gorm:"type:uuid;not null;index" json:"ca_id"`
+	SerialNumber    string    `gorm:"type:varchar(128);not null;index" json:"serial_number"`
+	Fingerprint     string    `gorm:"type:varchar(128);not null" json:"fingerprint"`
+	CertPEM         string    `gorm:"type:text;not null" json:"-"`
+	EncryptedKeyPEM string    `gorm:"type:text;not null" json:"-"`
+	NotBefore       time.Time `gorm:"type:timestamp;not null" json:"not_before"`
+	NotAfter        time.Time `gorm:"type:timestamp;not null;index" json:"not_after"`
+	CreatedAt       time.Time `gorm:"type:timestamp;not null;index" json:"created_at"`
+}
+
 type Certificate struct {
 	ID              uuid.UUID  `gorm:"type:uuid;primaryKey" json:"id"`
 	TenantID        uuid.UUID  `gorm:"type:uuid;not null;index" json:"tenant_id"`
@@ -84,15 +107,18 @@ type Domain struct {
 }
 
 type ProxyRule struct {
-	ID            uuid.UUID     `gorm:"type:uuid;primaryKey" json:"id"`
-	TenantID      uuid.UUID     `gorm:"type:uuid;not null;index" json:"tenant_id"`
-	DomainID      uuid.UUID     `gorm:"type:uuid;not null;index" json:"domain_id"`
-	Path          string        `gorm:"type:varchar(255);not null;default:/" json:"path"`
-	TargetType    string        `gorm:"type:varchar(32);not null" json:"target_type"`
-	Target        string        `gorm:"type:varchar(255);not null" json:"target"`
-	AccessControl AccessControl `gorm:"type:jsonb;not null" json:"access_control"`
-	Enabled       bool          `gorm:"not null;default:true" json:"enabled"`
-	CreatedAt     time.Time     `gorm:"type:timestamp;not null;index" json:"created_at"`
+	ID                         uuid.UUID     `gorm:"type:uuid;primaryKey" json:"id"`
+	TenantID                   uuid.UUID     `gorm:"type:uuid;not null;index" json:"tenant_id"`
+	DomainID                   uuid.UUID     `gorm:"type:uuid;not null;index" json:"domain_id"`
+	Path                       string        `gorm:"type:varchar(255);not null;default:/" json:"path"`
+	TargetType                 string        `gorm:"type:varchar(32);not null" json:"target_type"`
+	Target                     string        `gorm:"type:varchar(255);not null" json:"target"`
+	UpstreamScheme             string        `gorm:"type:varchar(16);not null;default:http" json:"upstream_scheme"`
+	UpstreamInsecureSkipVerify bool          `gorm:"not null;default:false" json:"upstream_insecure_skip_verify"`
+	UpstreamCAFile             string        `gorm:"type:varchar(512);not null;default:''" json:"upstream_ca_file,omitempty"`
+	AccessControl              AccessControl `gorm:"type:jsonb;not null" json:"access_control"`
+	Enabled                    bool          `gorm:"not null;default:true" json:"enabled"`
+	CreatedAt                  time.Time     `gorm:"type:timestamp;not null;index" json:"created_at"`
 
 	Tenant *Tenant `gorm:"foreignKey:TenantID;constraint:OnDelete:RESTRICT,OnUpdate:CASCADE" json:"-"`
 	Domain *Domain `gorm:"foreignKey:DomainID;constraint:OnDelete:RESTRICT,OnUpdate:CASCADE" json:"-"`
@@ -146,12 +172,13 @@ func (a *AccessControl) Scan(value any) error {
 }
 
 type VirtualNetwork struct {
-	ID        uuid.UUID `gorm:"type:uuid;primaryKey" json:"id"`
-	TenantID  uuid.UUID `gorm:"type:uuid;not null;index;uniqueIndex:idx_virtual_networks_tenant_name,priority:1" json:"tenant_id"`
-	Name      string    `gorm:"type:varchar(255);not null;uniqueIndex:idx_virtual_networks_tenant_name,priority:2" json:"name"`
-	CIDR      string    `gorm:"column:cidr;type:cidr;not null" json:"cidr"`
-	Secret    string    `gorm:"type:text;not null;default:''" json:"-"`
-	CreatedAt time.Time `gorm:"type:timestamp;not null;index" json:"created_at"`
+	ID           uuid.UUID `gorm:"type:uuid;primaryKey" json:"id"`
+	TenantID     uuid.UUID `gorm:"type:uuid;not null;index;uniqueIndex:idx_virtual_networks_tenant_name,priority:1" json:"tenant_id"`
+	Name         string    `gorm:"type:varchar(255);not null;uniqueIndex:idx_virtual_networks_tenant_name,priority:2" json:"name"`
+	CIDR         string    `gorm:"column:cidr;type:cidr;not null" json:"cidr"`
+	Secret       string    `gorm:"type:text;not null;default:''" json:"-"`
+	PresharedKey string    `gorm:"type:text;not null;default:''" json:"-"`
+	CreatedAt    time.Time `gorm:"type:timestamp;not null;index" json:"created_at"`
 
 	Tenant *Tenant `gorm:"foreignKey:TenantID;constraint:OnDelete:RESTRICT,OnUpdate:CASCADE" json:"-"`
 }

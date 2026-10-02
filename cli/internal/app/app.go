@@ -24,6 +24,8 @@ Commands:
   token revoke          Revoke an API token
   node list             List nodes
   node register         Register a node
+  node mtls             Issue or renew a node client certificate
+  node trust-ca         Save the control-plane CA certificate
   network create        Create a virtual network
   network join          Join a node to a virtual network
   domain add            Add a domain and proxy rule
@@ -56,7 +58,14 @@ func (a *App) Run(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	client := api.New(credentials.Server, credentials.AccessToken)
+	client, err := api.NewWithTLS(credentials.Server, credentials.AccessToken, api.TLSOptions{
+		CAFile:         credentials.CAFile,
+		ClientCertFile: credentials.ClientCertFile,
+		ClientKeyFile:  credentials.ClientKeyFile,
+	})
+	if err != nil {
+		return err
+	}
 	command := args[0]
 	rest := args[1:]
 	switch command {

@@ -21,6 +21,8 @@ import (
 )
 
 type Options struct {
+	Crypt          bool
+	Compress       bool
 	ConfigPath     string
 	BinaryPath     string
 	PIDFile        string
@@ -39,6 +41,12 @@ type Provider struct {
 func New(db *gorm.DB, options Options, logger *slog.Logger, observer umppproxy.Observer) *Provider {
 	if logger == nil {
 		logger = slog.Default()
+	}
+	if !options.Crypt && !options.Compress {
+		// Keep zero-value Options backwards compatible for focused tests while
+		// cmd/api explicitly passes the configured production defaults.
+		options.Crypt = true
+		options.Compress = true
 	}
 	if options.ConfigPath == "" {
 		options.ConfigPath = "data/nps/config.json"
@@ -62,7 +70,7 @@ func (p *Provider) Render(ctx context.Context, tenantID uuid.UUID) ([]byte, erro
 	if err != nil {
 		return nil, err
 	}
-	return renderConfig(routes, p.options.ReloadStrategy)
+	return renderConfigWithOptions(routes, p.options.ReloadStrategy, p.options.Crypt, p.options.Compress)
 }
 
 func (p *Provider) Reload(ctx context.Context) error {
@@ -162,6 +170,8 @@ type npsTunnel struct {
 	RuleID        string               `json:"rule_id"`
 	DomainID      string               `json:"domain_id"`
 	Enabled       bool                 `json:"enabled"`
+	Crypt         bool                 `json:"crypt"`
+	Compress      bool                 `json:"compress"`
 	AccessControl models.AccessControl `json:"access_control"`
 	Certificate   *npsCertificate      `json:"certificate,omitempty"`
 }
@@ -190,6 +200,10 @@ func loadRoutes(ctx context.Context, db *gorm.DB, tenantID uuid.UUID) ([]umpppro
 }
 
 func renderConfig(routes []umppproxy.Route, reloadStrategy string) ([]byte, error) {
+	return renderConfigWithOptions(routes, reloadStrategy, true, true)
+}
+
+func renderConfigWithOptions(routes []umppproxy.Route, reloadStrategy string, crypt, compress bool) ([]byte, error) {
 	config := npsConfig{
 		SchemaVersion: 1,
 		Server:        npsServer{BindPort: 8024, HTTPProxyPort: 8081, ReloadStrategy: "file"},
@@ -214,6 +228,8 @@ func renderConfig(routes []umppproxy.Route, reloadStrategy string) ([]byte, erro
 			RuleID:        route.RuleID.String(),
 			DomainID:      route.DomainID.String(),
 			Enabled:       true,
+			Crypt:         crypt,
+			Compress:      compress,
 			AccessControl: route.AccessControl,
 		}
 		if route.Certificate != nil {

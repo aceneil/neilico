@@ -1,0 +1,4 @@
+BEGIN;
+DROP TABLE IF EXISTS node_certificates;
+DROP TABLE IF EXISTS cas;
+COMMIT;

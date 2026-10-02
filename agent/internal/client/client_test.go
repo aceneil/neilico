@@ -3,10 +3,13 @@ package client
 import (
 	"bytes"
 	"context"
+	"encoding/pem"
 	"errors"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -63,5 +66,45 @@ func TestLogsDoNotLeakTokenOrPrivateKey(t *testing.T) {
 	}
 	if !strings.Contains(text, "***") {
 		t.Fatalf("log did not show redaction: %q", text)
+	}
+}
+
+func TestTLSOptionsTrustCustomCAAndClientCertificate(t *testing.T) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer server.Close()
+	dir := t.TempDir()
+	caPath := filepath.Join(dir, "ca.pem")
+	// The test server's self-signed certificate is sufficient as the trust anchor.
+	caPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: server.Certificate().Raw})
+	if err := os.WriteFile(caPath, caPEM, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	api, err := NewWithTLS(server.URL, "token", TLSOptions{CAFile: caPath})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := api.Heartbeat(context.Background(), "node", "test"); err != nil {
+		t.Fatalf("trusted TLS request failed: %v", err)
+	}
+	if _, err := NewWithTLS(server.URL, "token", TLSOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewWithTLS(server.URL, "token", TLSOptions{CAFile: filepath.Join(dir, "missing.pem")}); err == nil {
+		t.Fatal("missing CA file unexpectedly accepted")
+	}
+}
+
+func TestTLSWithoutCustomCAFailsCertificateVerification(t *testing.T) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+	api := New(server.URL, "token")
+	_, err := api.Heartbeat(context.Background(), "node", "test")
+	if err == nil || !strings.Contains(strings.ToLower(err.Error()), "certificate") {
+		t.Fatalf("expected certificate verification error, got %v", err)
 	}
 }

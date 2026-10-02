@@ -15,7 +15,7 @@ func TestRenderNodeConfigGolden(t *testing.T) {
 		Name: "node-a", PrivateKey: "LOCAL_PRIVATE_KEY", PublicKey: "LOCAL_PUBLIC_KEY",
 		VirtualIP: "100.64.0.2", ListenPort: 51820, PolicyFiltered: true,
 		Network: mesh.Network{
-			ID: "network-id", Name: "home", CIDR: "100.64.0.0/24",
+			ID: "network-id", Name: "home", CIDR: "100.64.0.0/24", PresharedKey: "NETWORK_PRESHARED_KEY",
 			Peers: []mesh.Peer{
 				{
 					NodeID: "node-b", PublicKey: "PEER_B_PUBLIC", Endpoint: "",
@@ -37,6 +37,15 @@ func TestRenderNodeConfigGolden(t *testing.T) {
 	assertGolden(t, filepath.Join("testdata", "wireguard.golden.conf"), got)
 	if again, err := New().RenderNodeConfig(context.Background(), node); err != nil || !bytes.Equal(got, again) {
 		t.Fatalf("render was not deterministic: %v\n%s", err, again)
+	}
+	if bytes.Count(got, []byte("PresharedKey = NETWORK_PRESHARED_KEY")) != len(node.Network.Peers) {
+		t.Fatalf("not every peer received the same PSK:\n%s", got)
+	}
+	other := node
+	other.Network.PresharedKey = "OTHER_NETWORK_PRESHARED_KEY"
+	otherOutput, err := New().RenderNodeConfig(context.Background(), other)
+	if err != nil || bytes.Contains(otherOutput, []byte("PresharedKey = NETWORK_PRESHARED_KEY\n")) {
+		t.Fatalf("different network reused PSK: %v\n%s", err, otherOutput)
 	}
 }
 

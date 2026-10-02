@@ -17,16 +17,19 @@ import (
 )
 
 type Route struct {
-	RuleID         uuid.UUID            `json:"rule_id"`
-	TenantID       uuid.UUID            `json:"tenant_id"`
-	DomainID       uuid.UUID            `json:"domain_id"`
-	Host           string               `json:"host"`
-	Path           string               `json:"path"`
-	TargetType     string               `json:"target_type"`
-	Target         string               `json:"target_addr"`
-	OriginalTarget string               `json:"original_target,omitempty"`
-	AccessControl  models.AccessControl `json:"access_control"`
-	Certificate    *RouteCertificate    `json:"certificate,omitempty"`
+	RuleID                     uuid.UUID            `json:"rule_id"`
+	TenantID                   uuid.UUID            `json:"tenant_id"`
+	DomainID                   uuid.UUID            `json:"domain_id"`
+	Host                       string               `json:"host"`
+	Path                       string               `json:"path"`
+	TargetType                 string               `json:"target_type"`
+	Target                     string               `json:"target_addr"`
+	UpstreamScheme             string               `json:"upstream_scheme"`
+	UpstreamInsecureSkipVerify bool                 `json:"upstream_insecure_skip_verify"`
+	UpstreamCAFile             string               `json:"upstream_ca_file,omitempty"`
+	OriginalTarget             string               `json:"original_target,omitempty"`
+	AccessControl              models.AccessControl `json:"access_control"`
+	Certificate                *RouteCertificate    `json:"certificate,omitempty"`
 }
 
 type RouteCertificate struct {
@@ -59,15 +62,18 @@ func LoadRoutes(ctx context.Context, db *gorm.DB) (*RouteSet, error) {
 		}
 		host := strings.ToLower(strings.TrimSuffix(rule.Domain.Domain, "."))
 		route := Route{
-			RuleID:         rule.ID,
-			TenantID:       rule.TenantID,
-			DomainID:       rule.DomainID,
-			Host:           host,
-			Path:           rule.Path,
-			TargetType:     rule.TargetType,
-			Target:         target,
-			OriginalTarget: rule.Target,
-			AccessControl:  rule.AccessControl,
+			RuleID:                     rule.ID,
+			TenantID:                   rule.TenantID,
+			DomainID:                   rule.DomainID,
+			Host:                       host,
+			Path:                       rule.Path,
+			TargetType:                 rule.TargetType,
+			Target:                     target,
+			UpstreamScheme:             upstreamScheme(rule.UpstreamScheme),
+			UpstreamInsecureSkipVerify: rule.UpstreamInsecureSkipVerify,
+			UpstreamCAFile:             rule.UpstreamCAFile,
+			OriginalTarget:             rule.Target,
+			AccessControl:              rule.AccessControl,
 		}
 		if rule.Domain.Certificate != nil {
 			certificate := &RouteCertificate{ID: rule.Domain.Certificate.ID.String(), CertPEM: rule.Domain.Certificate.CertPEM}
@@ -178,4 +184,11 @@ func normalizeHost(host string) string {
 		host = parsed
 	}
 	return strings.TrimSuffix(host, ".")
+}
+
+func upstreamScheme(value string) string {
+	if strings.EqualFold(strings.TrimSpace(value), "https") {
+		return "https"
+	}
+	return "http"
 }

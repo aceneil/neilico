@@ -32,6 +32,7 @@ func (s *Server) registerM2B(mux *http.ServeMux) {
 	mux.Handle("/api/v1/networks/{id}/routes", s.authed(http.HandlerFunc(s.handleNetworkRoutes)))
 	mux.Handle("/api/v1/networks/{id}/routes/{route_id}", s.authed(http.HandlerFunc(s.handleNetworkRouteItem)))
 	mux.Handle("/api/v1/networks/{id}/mesh/export", s.authed(http.HandlerFunc(s.handleMeshExport)))
+	mux.Handle("/api/v1/networks/{id}/psk/rotate", s.authed(http.HandlerFunc(s.handleNetworkPSKRotate)))
 
 	mux.Handle("/api/v1/nodes/{id}/keys/rotate", s.authed(http.HandlerFunc(s.handleNodeKeyRotate)))
 	mux.HandleFunc("/api/v1/nodes/{id}/network-report", s.handleNetworkReport)
@@ -457,6 +458,36 @@ func (s *Server) handleNodeKeyRotate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, result)
+}
+
+func (s *Server) handleNetworkPSKRotate(w http.ResponseWriter, r *http.Request) {
+	principal, ok := middleware.PrincipalFromContext(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "valid access token required")
+		return
+	}
+	if r.Method != http.MethodPost {
+		s.methodNotAllowed(w, http.MethodPost)
+		return
+	}
+	if !canManageNetworks(r.Context(), principal) {
+		writeError(w, http.StatusForbidden, "forbidden", "insufficient role")
+		return
+	}
+	id, ok := s.pathID(w, r.PathValue("id"), "network ID")
+	if !ok {
+		return
+	}
+	psk, err := s.networks.RotatePSK(r.Context(), id, s.userScope(principal))
+	if err != nil {
+		s.serviceError(w, err)
+		return
+	}
+	if err := s.bumpNetwork(r.Context(), id, "WireGuard preshared key rotated"); err != nil {
+		s.serviceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"preshared_key": psk})
 }
 
 func (s *Server) handleNetworkReport(w http.ResponseWriter, r *http.Request) {

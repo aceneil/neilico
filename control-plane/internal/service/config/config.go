@@ -60,6 +60,7 @@ type Network struct {
 	Name          string `json:"name"`
 	CIDR          string `json:"cidr"`
 	NetworkSecret string `json:"network_secret,omitempty"`
+	PresharedKey  string `json:"preshared_key,omitempty"`
 	Peers         []Peer `json:"peers"`
 }
 
@@ -317,6 +318,7 @@ func (m *Manager) buildNodeConfig(ctx context.Context, db *gorm.DB, node models.
 		}
 		networkConfig := built.Network
 		networkConfig.NetworkSecret = ""
+		networkConfig.PresharedKey = ""
 		networkConfig.Peers, config.PolicyFiltered = filterPeers(primary, networkConfig.Peers, built.ACL)
 		if m.metrics != nil && config.PolicyFiltered {
 			m.metrics.IncACLDenied()
@@ -561,6 +563,11 @@ func (m *Manager) Delivery(ctx context.Context, nodeID uuid.UUID, requestedVersi
 			if secretErr == nil {
 				delivery.Network.NetworkSecret = secret
 			}
+			if network.PresharedKey != "" {
+				if psk, pskErr := m.crypto.Decrypt(network.PresharedKey); pskErr == nil {
+					delivery.Network.PresharedKey = psk
+				}
+			}
 		}
 	}
 	privateKey := "(redacted)"
@@ -574,7 +581,7 @@ func (m *Manager) Delivery(ctx context.Context, nodeID uuid.UUID, requestedVersi
 	if delivery.Network != nil {
 		meshNetwork = mesh.Network{
 			ID: delivery.Network.ID, Name: delivery.Network.Name, CIDR: delivery.Network.CIDR,
-			Secret: delivery.Network.NetworkSecret,
+			Secret: delivery.Network.NetworkSecret, PresharedKey: delivery.Network.PresharedKey,
 		}
 		for _, peer := range delivery.Network.Peers {
 			meshNetwork.Peers = append(meshNetwork.Peers, mesh.Peer{

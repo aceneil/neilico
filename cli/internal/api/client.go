@@ -3,10 +3,14 @@ package api
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"regexp"
 	"strings"
 	"time"
@@ -26,6 +30,43 @@ type Error struct {
 
 func (e *Error) Error() string {
 	return fmt.Sprintf("control plane returned %d %s: %s", e.Status, e.Code, e.Message)
+}
+
+type TLSOptions struct {
+	CAFile         string
+	ClientCertFile string
+	ClientKeyFile  string
+}
+
+func NewWithTLS(server, token string, options TLSOptions) (*Client, error) {
+	if options.CAFile == "" && options.ClientCertFile == "" && options.ClientKeyFile == "" {
+		return New(server, token), nil
+	}
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	tlsConfig := &tls.Config{MinVersion: tls.VersionTLS12}
+	if options.CAFile != "" {
+		data, err := os.ReadFile(options.CAFile)
+		if err != nil {
+			return nil, fmt.Errorf("read TLS CA file: %w", err)
+		}
+		pool, err := x509.SystemCertPool()
+		if err != nil || pool == nil {
+			pool = x509.NewCertPool()
+		}
+		if !pool.AppendCertsFromPEM(data) {
+			return nil, errors.New("TLS CA file contains no certificates")
+		}
+		tlsConfig.RootCAs = pool
+	}
+	if options.ClientCertFile != "" || options.ClientKeyFile != "" {
+		pair, err := tls.LoadX509KeyPair(options.ClientCertFile, options.ClientKeyFile)
+		if err != nil {
+			return nil, fmt.Errorf("load TLS client certificate: %w", err)
+		}
+		tlsConfig.Certificates = []tls.Certificate{pair}
+	}
+	transport.TLSClientConfig = tlsConfig
+	return &Client{BaseURL: strings.TrimRight(server, "/"), Token: token, HTTP: &http.Client{Timeout: 15 * time.Second, Transport: transport}}, nil
 }
 
 func New(server, token string) *Client {

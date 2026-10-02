@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -19,12 +20,15 @@ type ProxyRuleService struct {
 func NewProxyRuleService(db *gorm.DB) *ProxyRuleService { return &ProxyRuleService{db: db} }
 
 type ProxyRuleInput struct {
-	DomainID      uuid.UUID            `json:"domain_id"`
-	Path          string               `json:"path,omitempty"`
-	TargetType    string               `json:"target_type"`
-	Target        string               `json:"target"`
-	AccessControl models.AccessControl `json:"access_control"`
-	Enabled       *bool                `json:"enabled,omitempty"`
+	DomainID                   uuid.UUID            `json:"domain_id"`
+	Path                       string               `json:"path,omitempty"`
+	TargetType                 string               `json:"target_type"`
+	Target                     string               `json:"target"`
+	AccessControl              models.AccessControl `json:"access_control"`
+	UpstreamScheme             string               `json:"upstream_scheme,omitempty"`
+	UpstreamInsecureSkipVerify bool                 `json:"upstream_insecure_skip_verify,omitempty"`
+	UpstreamCAFile             string               `json:"upstream_ca_file,omitempty"`
+	Enabled                    *bool                `json:"enabled,omitempty"`
 }
 
 type ProxyRuleList struct {
@@ -126,6 +130,19 @@ func (s *ProxyRuleService) apply(ctx context.Context, item *models.ProxyRule, in
 	}
 	item.TargetType = input.TargetType
 	item.Target = input.Target
+	scheme := strings.TrimSpace(input.UpstreamScheme)
+	if scheme == "" {
+		scheme = "http"
+	}
+	if scheme != "http" && scheme != "https" {
+		return fmt.Errorf("%w: upstream_scheme must be http or https", ErrInvalidInput)
+	}
+	item.UpstreamScheme = scheme
+	item.UpstreamInsecureSkipVerify = input.UpstreamInsecureSkipVerify
+	item.UpstreamCAFile = strings.TrimSpace(input.UpstreamCAFile)
+	if scheme != "https" && (item.UpstreamInsecureSkipVerify || item.UpstreamCAFile != "") {
+		return fmt.Errorf("%w: upstream TLS options require upstream_scheme=https", ErrInvalidInput)
+	}
 	access, err := validation.AccessControl(input.AccessControl)
 	if err != nil {
 		return fmt.Errorf("%w: %v", ErrInvalidInput, err)

@@ -48,6 +48,8 @@ func AutoMigrate(handle *gorm.DB) error {
 		&models.Tenant{},
 		&models.User{},
 		&models.APIToken{},
+		&models.CA{},
+		&models.NodeCertificate{},
 		&models.Certificate{},
 		&models.Domain{},
 		&models.ProxyRule{},

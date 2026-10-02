@@ -1,6 +1,22 @@
 server:
   host: "0.0.0.0"
   port: 8080
+  tls:
+    enabled: false
+    cert_file: ""
+    key_file: ""
+    client_ca_file: ""
+    min_version: "1.2"
+    redirect_http: true
+    client_auth: "none"
+    http_port: 80
+pki:
+  enabled: false
+  ca_common_name: "UMPP Internal CA"
+  server_hosts: ["localhost", "127.0.0.1"]
+  server_cert_days: 825
+  node_cert_days: 365
+  renew_before_days: 30
 database:
   driver: postgres
   dsn: "postgres://umpp:change-me@localhost:5432/umpp?sslmode=disable"
@@ -43,11 +59,15 @@ proxy:
     enabled: false
     listen: ":8443"
     min_version: "1.2"
+    redirect_http: true
+    hsts_max_age: 31536000
   nps:
     config_path: "data/nps/config.json"
     binary_path: "/usr/bin/nps"
     pid_file: "data/nps/nps.pid"
     reload_strategy: "signal"
+    crypt: true
+    compress: true
 
 alerts:
   evaluation_interval: 1m

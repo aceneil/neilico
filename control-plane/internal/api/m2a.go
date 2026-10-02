@@ -26,12 +26,22 @@ type ProxyOptions struct {
 	ChallengeHandler http.Handler         `json:"-"`
 	Alerts           alertservice.Options `json:"-"`
 	RateLimit        RateLimitOptions     `json:"-"`
+	PKI              PKIOptions           `json:"pki"`
 }
 
 type RateLimitOptions struct {
 	Enabled bool
 	RPS     float64
 	Burst   int
+}
+
+type PKIOptions struct {
+	Enabled         bool     `json:"enabled"`
+	CommonName      string   `json:"common_name"`
+	ServerHosts     []string `json:"server_hosts"`
+	ServerCertDays  int      `json:"server_cert_days"`
+	NodeCertDays    int      `json:"node_cert_days"`
+	RenewBeforeDays int      `json:"renew_before_days"`
 }
 
 type ProxyTLSOptions struct {

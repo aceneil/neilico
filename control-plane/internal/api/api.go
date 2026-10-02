@@ -22,6 +22,7 @@ import (
 	"umpp/control-plane/internal/service/cert"
 	acmeclient "umpp/control-plane/internal/service/cert/acme"
 	configservice "umpp/control-plane/internal/service/config"
+	"umpp/control-plane/internal/service/pki"
 	"umpp/control-plane/internal/service/proxy"
 )
 
@@ -42,6 +43,7 @@ type Server struct {
 	traffic       *service.TrafficService
 	networks      *service.NetworkService
 	configs       *configservice.Manager
+	pki           *pki.Service
 	apiTokens     *service.APITokenService
 	tokenUsage    *middleware.APITokenUsageTracker
 	rateLimiter   *middleware.Limiter
@@ -60,6 +62,8 @@ type Handler struct {
 	http.Handler
 	server *Server
 }
+
+func (h *Handler) PKI() *pki.Service { return h.server.pki }
 
 func (h *Handler) StartCertificateLifecycle(ctx context.Context) {
 	h.server.certs.Start(ctx)
@@ -120,6 +124,14 @@ func NewWithProxy(
 	}
 	alertEngine := alertservice.NewEngine(db, opts.Alerts, alertNotifier, promMetrics, logger)
 	configManager := configservice.New(db, certificateCrypto, promMetrics)
+	pkiService := pki.New(db, certificateCrypto, pki.Options{
+		Enabled:         opts.PKI.Enabled,
+		CommonName:      opts.PKI.CommonName,
+		ServerHosts:     opts.PKI.ServerHosts,
+		ServerCertDays:  opts.PKI.ServerCertDays,
+		NodeCertDays:    opts.PKI.NodeCertDays,
+		RenewBeforeDays: opts.PKI.RenewBeforeDays,
+	}, promMetrics)
 	certificateService := service.NewCertificateService(db, certificateCrypto)
 	var certificateInvalidator service.CertificateCacheInvalidator
 	if builtin, ok := proxyProvider.(*proxy.Builtin); ok {
@@ -142,6 +154,7 @@ func NewWithProxy(
 		traffic:       service.NewTrafficService(db),
 		networks:      service.NewNetworkService(db, certificateCrypto),
 		configs:       configManager,
+		pki:           pkiService,
 		apiTokens:     service.NewAPITokenService(db),
 		alertEngine:   alertEngine,
 		metrics:       promMetrics,
@@ -162,6 +175,9 @@ func NewWithProxy(
 
 	mux.HandleFunc("/healthz", server.handleHealth)
 	mux.Handle("/metrics", promMetrics.Handler())
+	mux.HandleFunc("/api/v1/pki/ca", server.handlePKICA)
+	mux.Handle("/api/v1/pki/ca/rotate", server.authed(http.HandlerFunc(server.handlePKICARotate)))
+	mux.Handle("/api/v1/nodes/{id}/mtls", server.authed(http.HandlerFunc(server.handleNodeMTLS)))
 	mux.HandleFunc("/api/v1/auth/login", server.handleLogin)
 	mux.HandleFunc("/api/v1/auth/refresh", server.handleRefresh)
 

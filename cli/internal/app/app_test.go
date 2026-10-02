@@ -14,7 +14,7 @@ func TestHelpListsAllCommands(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := stdout.String()
-	for _, command := range []string{"login", "token list", "token create", "token revoke", "node list", "node register", "network create", "network join", "domain add", "status", "agent config"} {
+	for _, command := range []string{"login", "token list", "token create", "token revoke", "node list", "node register", "node mtls", "node trust-ca", "network create", "network join", "domain add", "status", "agent config"} {
 		if !strings.Contains(text, command) {
 			t.Fatalf("help omitted %q:\n%s", command, text)
 		}

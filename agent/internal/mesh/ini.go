@@ -11,10 +11,11 @@ import (
 )
 
 type parsedPeer struct {
-	publicKey  string
-	endpoint   string
-	allowedIPs []string
-	keepalive  int
+	publicKey    string
+	presharedKey string
+	endpoint     string
+	allowedIPs   []string
+	keepalive    int
 }
 
 type parsedConfig struct {
@@ -82,6 +83,8 @@ func parseWireGuardConfig(value string) (parsedConfig, error) {
 						peer.allowedIPs = append(peer.allowedIPs, item)
 					}
 				}
+			case "presharedkey":
+				peer.presharedKey = value
 			case "persistentkeepalive":
 				seconds, err := strconv.Atoi(value)
 				if err != nil {
@@ -118,6 +121,13 @@ func wgConfig(parsed parsedConfig, replacePeers bool) (wgtypes.Config, error) {
 		peer := wgtypes.PeerConfig{
 			PublicKey:         publicKey,
 			ReplaceAllowedIPs: true,
+		}
+		if raw.presharedKey != "" {
+			psk, err := wgtypes.ParseKey(raw.presharedKey)
+			if err != nil {
+				return wgtypes.Config{}, err
+			}
+			peer.PresharedKey = &psk
 		}
 		if raw.endpoint != "" {
 			address, err := net.ResolveUDPAddr("udp", raw.endpoint)
