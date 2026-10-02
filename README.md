@@ -28,7 +28,7 @@
 | NPS 配置集成 | ✅ MVP | 生成配置；NPS 数据面由外部服务提供 |
 | Mesh 配置生成 | ✅ MVP | WireGuard 配置生成、ACL/子网路由、版本化下发 |
 | relay 数据面 | ⚠️ 占位 | 代码只有 relay 元数据 CRUD；Compose 使用 wg-easy 占位，3478/udp 预留，留给 V1 |
-| Docker Compose | ✅ M5 | PostgreSQL/Redis/NATS/control-api/dashboard/relay，非 root 镜像、healthcheck、日志限制 |
+| all-in-one Docker | ✅ V2-A1 | 单容器 PostgreSQL + control-api + Dashboard；Redis/NATS/nginx/wg-easy 不再部署 |
 | ACME/TLS overlay | ✅ V1-R1 | Pebble RFC 8555 真实 HTTP-01、CA 信任、SNI TLS，`scripts/smoke-acme.sh` |
 | 告警体系 | ✅ V1-R2 | 五条 §15.2 规则、状态机/事件、log/webhook、告警 API 与 Dashboard |
 | 端到端冒烟 | ✅ M5 | `scripts/smoke.sh`，真实 Agent dry-run + builtin 反代 + metrics/audit 断言 |
@@ -36,17 +36,18 @@
 
 ## 一键启动
 
-本机开发机的 `8080/3000/5432/6379/4222` 已被既有容器占用，因此默认宿主端口采用偏移值。修改 `deploy/docker-compose/.env` 后可改回标准端口。
+本机开发机的 `8080/3000/5432/6379/4222` 已被既有容器占用。V2-A1 单容器使用 `13000`（Dashboard + API）和 `18081`（内置反代）。
 
 ```bash
-cd deploy/docker-compose
-cp .env.example .env
+cd deploy/allinone
+./sync-source.sh
+cp .env.example /home/neil/Documents/Docker/data/neilico/neilico.env
 # 用密码管理器/openssl rand -hex 32 替换所有 replace-* 占位符
 docker compose up -d --build
-curl -fsS http://127.0.0.1:18080/healthz
+curl -fsS http://127.0.0.1:13000/healthz
 ```
 
-Dashboard: `http://127.0.0.1:13000` · Control API: `http://127.0.0.1:18080` · Builtin proxy: `http://127.0.0.1:18081` · ACME/TLS overlay: TLS `18443`, HTTP-01 `18082`, Pebble `14000/8055`
+Dashboard + Control API: `http://127.0.0.1:13000` · Builtin proxy: `http://127.0.0.1:18081`
 
 ```bash
 # 端到端冒烟（退出码即判据）

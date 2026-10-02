@@ -232,6 +232,30 @@ func TestCompleteControlPlaneFlow(t *testing.T) {
 
 func newTestApp(t *testing.T) testApp {
 	t.Helper()
+	return newTestAppWithOptions(t, api.ProxyOptions{
+		Enabled: true,
+		Kind:    "builtin",
+		Listen:  "127.0.0.1:0",
+	})
+}
+
+func newTestAppWithDashboard(t *testing.T, dashboardDir string, spa bool) testApp {
+	t.Helper()
+	return newTestAppWithOptions(t, api.ProxyOptions{
+		Enabled: true,
+		Kind:    "builtin",
+		Listen:  "127.0.0.1:0",
+		ChallengeHandler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+			w.WriteHeader(http.StatusOK)
+			_, _ = io.WriteString(w, "challenge-handler")
+		}),
+		Dashboard: api.DashboardOptions{Dir: dashboardDir, SPA: spa},
+	})
+}
+
+func newTestAppWithOptions(t *testing.T, options api.ProxyOptions) testApp {
+	t.Helper()
 	dsn := fmt.Sprintf("file:%s?mode=memory&cache=shared", uuid.NewString())
 	handle, err := db.Open(config.Database{Driver: "sqlite", DSN: dsn}, "error")
 	if err != nil {
@@ -257,11 +281,7 @@ func newTestApp(t *testing.T) testApp {
 	sweeper := service.NewNodeSweeper(handle, time.Minute, logger)
 	promMetrics := metrics.New(handle)
 	builtinProxy := proxy.NewBuiltin(handle, manager, logger, promMetrics)
-	handler := api.NewWithProxy(handle, manager, nodeService, promMetrics, logger, "test", builtinProxy, api.ProxyOptions{
-		Enabled: true,
-		Kind:    "builtin",
-		Listen:  "127.0.0.1:0",
-	})
+	handler := api.NewWithProxy(handle, manager, nodeService, promMetrics, logger, "test", builtinProxy, options)
 	server := httptest.NewServer(handler)
 	t.Cleanup(func() {
 		server.Close()

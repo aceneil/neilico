@@ -1,0 +1,5 @@
+dashboard/node_modules
+dashboard/dist
+control-plane/bin
+**/.git
+**/*.log

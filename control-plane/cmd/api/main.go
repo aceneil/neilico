@@ -136,6 +136,10 @@ func run() error {
 			ChallengeSolver: challengeStore,
 		},
 		ChallengeHandler: challengeStore.Handler(),
+		Dashboard: api.DashboardOptions{
+			Dir: cfg.Server.DashboardDir,
+			SPA: cfg.Server.DashboardSPA,
+		},
 		RateLimit: api.RateLimitOptions{
 			Enabled: cfg.RateLimit.Enabled,
 			RPS:     cfg.RateLimit.RPS,

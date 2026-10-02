@@ -1,0 +1,39 @@
+name: neilico
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  app:
+    build:
+      # 上下文 = 仓库根：多阶段构建直接 COPY control-plane/ 与 dashboard/，
+      # 不依赖任何源码打包快照（包会过期 → 构建到旧代码）
+      context: ../..
+      dockerfile: deploy/allinone/Dockerfile
+      args:
+        VERSION: v1
+    image: neilico-allinone:local
+    container_name: neilico
+    restart: unless-stopped
+    env_file:
+      - /home/neil/Documents/Docker/data/neilico/neilico.env
+    environment:
+      PGDATA: /var/lib/postgresql/data
+      NEILICO_DATABASE_DRIVER: postgres
+      NEILICO_SERVER_DASHBOARD_DIR: /opt/neilico/dashboard
+      NEILICO_SERVER_DASHBOARD_SPA: "true"
+    ports:
+      - "13000:8080"
+      - "18081:8081"
+    volumes:
+      - /home/neil/Documents/Docker/data/neilico/pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:$${NEILICO_SERVER_PORT:-8080}/healthz >/dev/null"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 30s
+    logging: *default-logging

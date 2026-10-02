@@ -12,9 +12,11 @@ import (
 )
 
 type Server struct {
-	Host string    `yaml:"host"`
-	Port int       `yaml:"port"`
-	TLS  ServerTLS `yaml:"tls"`
+	Host         string    `yaml:"host"`
+	Port         int       `yaml:"port"`
+	DashboardDir string    `yaml:"dashboard_dir"`
+	DashboardSPA bool      `yaml:"dashboard_spa"`
+	TLS          ServerTLS `yaml:"tls"`
 }
 
 type ServerTLS struct {
@@ -114,8 +116,10 @@ type Config struct {
 func Default() Config {
 	return Config{
 		Server: Server{
-			Host: "0.0.0.0",
-			Port: 8080,
+			Host:         "0.0.0.0",
+			Port:         8080,
+			DashboardDir: "",
+			DashboardSPA: true,
 			TLS: ServerTLS{
 				Enabled:      false,
 				MinVersion:   "1.2",
@@ -215,6 +219,7 @@ func applyEnvironment(cfg *Config) error {
 		dst *string
 	}{
 		{"NEILICO_SERVER_HOST", &cfg.Server.Host},
+		{"NEILICO_SERVER_DASHBOARD_DIR", &cfg.Server.DashboardDir},
 		{"NEILICO_SERVER_TLS_CERT_FILE", &cfg.Server.TLS.CertFile},
 		{"NEILICO_SERVER_TLS_KEY_FILE", &cfg.Server.TLS.KeyFile},
 		{"NEILICO_SERVER_TLS_CLIENT_CA_FILE", &cfg.Server.TLS.ClientCAFile},
@@ -274,6 +279,7 @@ func applyEnvironment(cfg *Config) error {
 		{"NEILICO_ACME_AUTO_RENEW", &cfg.ACME.AutoRenew},
 		{"NEILICO_SERVER_TLS_ENABLED", &cfg.Server.TLS.Enabled},
 		{"NEILICO_SERVER_TLS_REDIRECT_HTTP", &cfg.Server.TLS.RedirectHTTP},
+		{"NEILICO_SERVER_DASHBOARD_SPA", &cfg.Server.DashboardSPA},
 		{"NEILICO_PKI_ENABLED", &cfg.PKI.Enabled},
 		{"NEILICO_PROXY_TLS_ENABLED", &cfg.Proxy.TLS.Enabled},
 		{"NEILICO_PROXY_TLS_REDIRECT_HTTP", &cfg.Proxy.TLS.RedirectHTTP},

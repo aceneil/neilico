@@ -1,6 +1,8 @@
 server:
   host: "0.0.0.0"
   port: 8080
+  dashboard_dir: ""          # empty disables static dashboard serving
+  dashboard_spa: true        # fallback to index.html for extensionless SPA routes
   tls:
     enabled: false
     cert_file: ""

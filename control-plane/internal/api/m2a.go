@@ -27,6 +27,12 @@ type ProxyOptions struct {
 	Alerts           alertservice.Options `json:"-"`
 	RateLimit        RateLimitOptions     `json:"-"`
 	PKI              PKIOptions           `json:"pki"`
+	Dashboard        DashboardOptions     `json:"-"`
+}
+
+type DashboardOptions struct {
+	Dir string
+	SPA bool
 }
 
 type RateLimitOptions struct {

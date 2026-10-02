@@ -3,7 +3,9 @@ package metrics
 import (
 	"context"
 	"net/http"
+	"path"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -242,7 +244,17 @@ func (m *Metrics) refreshDatabaseMetrics(ctx context.Context) {
 }
 
 func (m *Metrics) ObserveHTTP(method, path string, status int) {
-	m.httpRequests.WithLabelValues(method, path, strconv.Itoa(status)).Inc()
+	m.httpRequests.WithLabelValues(method, NormalizeHTTPPath(path), strconv.Itoa(status)).Inc()
+}
+
+// NormalizeHTTPPath bounds dashboard asset cardinality without changing the
+// existing labels for API and operational routes.
+func NormalizeHTTPPath(requestPath string) string {
+	cleaned := path.Clean("/" + requestPath)
+	if cleaned == "/assets" || strings.HasPrefix(cleaned, "/assets/") {
+		return "/assets/*"
+	}
+	return requestPath
 }
 
 func (m *Metrics) ObserveProxyRequest(domain, status string) {

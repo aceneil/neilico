@@ -14,6 +14,8 @@ func TestLoadAndEnvironmentOverrides(t *testing.T) {
 server:
   host: 127.0.0.1
   port: 9090
+  dashboard_dir: /srv/dashboard
+  dashboard_spa: false
 database:
   driver: postgres
   dsn: postgres://localhost/neilico
@@ -50,6 +52,9 @@ log:
 	if cfg.Server.Host != "127.0.0.1" || cfg.Server.Port != 9090 {
 		t.Fatalf("unexpected server config: %#v", cfg.Server)
 	}
+	if cfg.Server.DashboardDir != "/srv/dashboard" || cfg.Server.DashboardSPA {
+		t.Fatalf("unexpected dashboard config: %#v", cfg.Server)
+	}
 	if cfg.Auth.AccessTTL != 10*time.Minute || cfg.Auth.RefreshTTL != 2*time.Hour {
 		t.Fatalf("unexpected TTLs: %#v", cfg.Auth)
 	}
@@ -59,6 +64,8 @@ log:
 
 	t.Setenv("NEILICO_SERVER_HOST", "0.0.0.0")
 	t.Setenv("NEILICO_SERVER_PORT", "8081")
+	t.Setenv("NEILICO_SERVER_DASHBOARD_DIR", "/opt/dashboard")
+	t.Setenv("NEILICO_SERVER_DASHBOARD_SPA", "true")
 	t.Setenv("NEILICO_DATABASE_DRIVER", "sqlite")
 	t.Setenv("NEILICO_DATABASE_DSN", "file:test?mode=memory")
 	t.Setenv("NEILICO_AUTH_JWT_SECRET", "environment-secret-value")
@@ -73,6 +80,9 @@ log:
 	}
 	if cfg.Server.Host != "0.0.0.0" || cfg.Server.Port != 8081 {
 		t.Fatalf("environment server override failed: %#v", cfg.Server)
+	}
+	if cfg.Server.DashboardDir != "/opt/dashboard" || !cfg.Server.DashboardSPA {
+		t.Fatalf("environment dashboard override failed: %#v", cfg.Server)
 	}
 	if cfg.Database.Driver != "sqlite" || cfg.Database.DSN != "file:test?mode=memory" {
 		t.Fatalf("environment database override failed: %#v", cfg.Database)
@@ -100,6 +110,7 @@ func clearEnvironment(t *testing.T) {
 	t.Helper()
 	keys := []string{
 		"NEILICO_SERVER_HOST", "NEILICO_SERVER_PORT",
+		"NEILICO_SERVER_DASHBOARD_DIR", "NEILICO_SERVER_DASHBOARD_SPA",
 		"NEILICO_DATABASE_DRIVER", "NEILICO_DATABASE_DSN",
 		"NEILICO_AUTH_JWT_SECRET", "NEILICO_AUTH_ACCESS_TTL", "NEILICO_AUTH_REFRESH_TTL",
 		"NEILICO_BOOTSTRAP_ADMIN_EMAIL", "NEILICO_BOOTSTRAP_ADMIN_PASSWORD", "NEILICO_BOOTSTRAP_DEFAULT_TENANT",

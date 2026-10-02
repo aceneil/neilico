@@ -1,9 +1,9 @@
-import { http } from '@/api/http'
+import { apiOrigin, http } from '@/api/http'
 import type { AgentConfig, ConfigVersion, HealthStatus, Paged, RelayServer } from '@/types/api'
 
 export const systemApi = {
   health() {
-    return http.get<HealthStatus>('/healthz', { baseURL: import.meta.env.DEV ? '/' : (import.meta.env.VITE_API_BASE || '/') }).then((response) => response.data)
+    return http.get<HealthStatus>('/healthz', { baseURL: `${apiOrigin}/` }).then((response) => response.data)
   },
   configVersions(targetType: 'node' | 'network' | 'proxy', targetId: string) {
     return http

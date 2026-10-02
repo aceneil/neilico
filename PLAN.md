@@ -102,5 +102,7 @@ neilico/
 | E5 | 代理面新增 `POST /api/v1/proxy/render` 只读渲染端点 | 让「配置生成」可被验收而不依赖外部 NPS 二进制 | 仅管理接口，无副作用 |
 | E6 | 规格 §4.4.2 前端 React 与 §6 vue3 冲突 → 取 **Vue 3**（裁决 D1） | 见 §2 | Dashboard 用 Ant Design Vue |
 | E7 | **配置下发语义修正**：`GET /api/v1/agent/config` 的 `version` 视为**客户端状态提示**而非资源 ID —— 与最新版本不同（落后/超前/未知）一律返回**最新期望配置** + 最新版本号，仅「等于最新」时返回 304；不再返回调用方自己的历史快照，也不再对未知版本返回 404 | M2b 原实现返回历史快照 + 未知版本 404，会导致**落后超过一个版本的节点永不收敛**（应用旧快照 → 存旧版本号 → 永远请求同一版本）；版本超前（如从备份恢复）会被 404 卡死 | 已修 `internal/service/config/config.go::Delivery`；新增回归测试 `TestDeliveryServesLatestForLaggingClient`；历史快照仍可经 `GET /api/v1/configs` 与 `POST /configs/.../rollback` 取用 |
+| E8 | **部署形态改为单体容器**（`deploy/allinone/`，1 个容器 = PostgreSQL + 控制面 API + 内置反代 + Dashboard 静态资源）。移除 4 个容器：**redis / nats（代码零引用，纯装饰）**、relay（wg-easy 占位，无真中继数据面）、dashboard 的 nginx（改为 Go 二进制直接服务前端，同源无需反代） | 用户要求「打包到 1 个 docker、去掉不必要的独立容器」；实测 6 容器里有 3 个代码根本不用 | 新增配置 `server.dashboard_dir/dashboard_spa`（**默认空=行为完全不变**）；前端默认同源 API base；构建上下文=仓库根（**禁止源码打包快照喂 Docker**，包会过期导致构建旧代码）；relay 回归 V2 |
+| E9 | **遗留**：单容器 = 单点，无水平扩展；TLS/mTLS 仍默认关闭（配置开启后才生效） | 单体形态的固有取舍 | 若要横向扩展需回到多容器 + 外部 PostgreSQL |
 
-**尚未实现（转 V1）**：ACME 自动签发（仅有 `Issuer` 接口位 + `ErrNotImplemented`）、中继节点调度、Windows/macOS Agent、Helm Chart、WebSocket 实时推送（Dashboard 用轮询降级）、商业化计费。
+**尚未实现（转 V2）**：真中继数据面（relay 容器已从部署中移除）、中继节点调度、Windows/macOS Agent、WebSocket 实时推送（Dashboard 用轮询降级）、商业化计费、P2P 成功率/中继吞吐采集（指标目前恒为 0）。

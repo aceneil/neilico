@@ -14,6 +14,7 @@ import (
 	"gorm.io/gorm"
 
 	"neilico/control-plane/internal/auth"
+	"neilico/control-plane/internal/dashboard"
 	"neilico/control-plane/internal/metrics"
 	"neilico/control-plane/internal/middleware"
 	"neilico/control-plane/internal/models"
@@ -194,7 +195,20 @@ func NewWithProxy(
 	mux.Handle("/api/v1/nodes/{id}", server.authed(http.HandlerFunc(server.handleNodeItem)))
 	mux.HandleFunc("/api/v1/", server.handleAPIFallback)
 
+	if opts.Dashboard.Dir != "" {
+		challengeHandler := opts.ChallengeHandler
+		if challengeHandler == nil {
+			challengeHandler = http.NotFoundHandler()
+		}
+		mux.Handle("/api/", http.NotFoundHandler())
+		mux.Handle("/.well-known/acme-challenge/", challengeHandler)
+		mux.Handle("/", dashboard.New(dashboard.Options{Dir: opts.Dashboard.Dir, SPA: opts.Dashboard.SPA}))
+	}
+
 	var handler http.Handler = mux
+	if opts.Dashboard.Dir != "" {
+		handler = dashboard.Guard(handler)
+	}
 	handler = middleware.Audit(db, logger, handler)
 	handler = middleware.Metrics(promMetrics, handler)
 	return &Handler{Handler: handler, server: server}

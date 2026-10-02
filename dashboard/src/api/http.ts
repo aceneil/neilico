@@ -3,8 +3,10 @@ import { message } from 'ant-design-vue'
 import { authStorage } from '@/api/auth-storage'
 import type { AuthResponse } from '@/types/api'
 
-const apiOrigin = (import.meta.env.VITE_API_BASE || '').replace(/\/$/, '')
-const baseURL = import.meta.env.DEV ? '/api/v1' : `${apiOrigin}/api/v1`
+// Empty VITE_API_BASE keeps all production traffic on the API port's origin.
+// Set it only when the dashboard and API intentionally use different origins.
+export const apiOrigin = (import.meta.env.VITE_API_BASE || '').trim().replace(/\/$/, '')
+export const baseURL = `${apiOrigin}/api/v1`
 
 export const http = axios.create({
   baseURL,
