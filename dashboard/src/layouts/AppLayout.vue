@@ -8,26 +8,34 @@ import {
   DashboardOutlined,
   FileSearchOutlined,
   GlobalOutlined,
+  KeyOutlined,
+  LockOutlined,
   LogoutOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
+  SafetyCertificateOutlined,
   SettingOutlined,
   TeamOutlined,
   UserOutlined
 } from '@ant-design/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import { usePreferencesStore } from '@/stores/preferences'
+import { useThemeStore } from '@/stores/theme'
 import ThemeToggle from '@/components/ThemeToggle.vue'
 
 const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
 const preferences = usePreferencesStore()
+const theme = useThemeStore()
 
 const iconMap: Record<string, unknown> = {
   dashboard: DashboardOutlined,
   cluster: ClusterOutlined,
   global: GlobalOutlined,
+  'safety-certificate': SafetyCertificateOutlined,
+  lock: LockOutlined,
+  key: KeyOutlined,
   apartment: ApartmentOutlined,
   team: TeamOutlined,
   bell: BellOutlined,
@@ -88,7 +96,7 @@ function onUserMenuClick({ key }: { key: string | number }) {
         </div>
       </div>
       <a-menu
-        theme="dark"
+        :theme="theme.resolved === 'dark' ? 'dark' : 'light'"
         mode="inline"
         :selected-keys="selectedKeys"
         :items="menuItems"
@@ -96,7 +104,7 @@ function onUserMenuClick({ key }: { key: string | number }) {
         @click="onMenuClick"
       />
       <div v-if="!preferences.sidebarCollapsed" class="sider-footnote">
-        <BellOutlined /> 后端 M3 接口
+        <SafetyCertificateOutlined /> V1 安全能力
       </div>
     </a-layout-sider>
     <a-layout>

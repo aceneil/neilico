@@ -6,6 +6,9 @@ export interface ProxyRuleInput {
   path: string
   target_type: string
   target: string
+  upstream_scheme: 'http' | 'https'
+  upstream_ca_file?: string
+  upstream_insecure_skip_verify: boolean
   access_control: AccessControl
   enabled: boolean
 }

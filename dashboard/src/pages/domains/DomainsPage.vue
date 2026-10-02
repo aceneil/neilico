@@ -52,6 +52,9 @@ const ruleForm = reactive({
   path: '/',
   target_type: 'internal_ip' as TargetType,
   target: '',
+  upstreamScheme: 'http' as 'http' | 'https',
+  upstreamCAFile: '',
+  upstreamInsecureSkipVerify: false,
   enabled: true,
   ipWhitelist: '',
   basicEnabled: false,
@@ -188,6 +191,9 @@ function openRule(rule?: ProxyRule) {
     path: rule?.path || '/',
     target_type: (rule?.target_type || 'internal_ip') as TargetType,
     target: rule?.target || '',
+    upstreamScheme: (rule?.upstream_scheme || 'http') as 'http' | 'https',
+    upstreamCAFile: rule?.upstream_ca_file || '',
+    upstreamInsecureSkipVerify: Boolean(rule?.upstream_insecure_skip_verify),
     enabled: rule?.enabled ?? true,
     ipWhitelist: (access?.ip_whitelist || []).join('\n'),
     basicEnabled: Boolean(access?.basic_auth?.enabled),
@@ -208,6 +214,10 @@ async function saveRule() {
     path: ruleForm.path.trim() || '/',
     target_type: ruleForm.target_type,
     target: ruleForm.target.trim(),
+    upstream_scheme: ruleForm.upstreamScheme,
+    upstream_ca_file: ruleForm.upstreamScheme === 'https' ? ruleForm.upstreamCAFile.trim() : '',
+    upstream_insecure_skip_verify:
+      ruleForm.upstreamScheme === 'https' && ruleForm.upstreamInsecureSkipVerify,
     enabled: ruleForm.enabled,
     access_control: {
       ip_whitelist: ruleForm.ipWhitelist.split('\n').map((item) => item.trim()).filter(Boolean),
@@ -375,6 +385,18 @@ void load()
               </template>
             </a-table-column>
             <a-table-column title="目标" data-index="target" :width="250" />
+            <a-table-column title="上游协议 / TLS" :width="180">
+              <template #default="{ record }">
+                <a-space direction="vertical" :size="0">
+                  <a-tag :color="record.upstream_scheme === 'https' ? 'green' : 'blue'">
+                    {{ record.upstream_scheme || 'http' }}
+                  </a-tag>
+                  <small v-if="record.upstream_scheme === 'https'">
+                    {{ record.upstream_insecure_skip_verify ? '跳过校验（高风险）' : record.upstream_ca_file ? '私有 CA' : '严格校验' }}
+                  </small>
+                </a-space>
+              </template>
+            </a-table-column>
             <a-table-column title="访问控制" :width="230">
               <template #default="{ record }">
                 <a-space wrap size="small">
@@ -438,7 +460,13 @@ void load()
           <a-textarea v-model:value="certificateForm.cert_pem" :rows="8" placeholder="-----BEGIN CERTIFICATE-----" />
         </a-form-item>
         <a-form-item label="私钥 PEM" required>
-          <a-textarea v-model:value="certificateForm.key_pem" :rows="8" placeholder="-----BEGIN PRIVATE KEY-----" />
+          <a-textarea
+            v-model:value="certificateForm.key_pem"
+            :rows="8"
+            class="private-key-input"
+            aria-label="私钥 PEM（输入时始终打码）"
+            placeholder="粘贴 PEM，输入内容始终打码"
+          />
         </a-form-item>
       </a-form>
     </a-modal>
@@ -477,6 +505,46 @@ void load()
             />
           </a-form-item>
         </div>
+        <a-divider orientation="left">上游传输</a-divider>
+        <a-form-item label="Upstream Scheme">
+          <a-radio-group
+            v-model:value="ruleForm.upstreamScheme"
+            :options="[
+              { value: 'http', label: 'HTTP（默认）' },
+              { value: 'https', label: 'HTTPS' }
+            ]"
+          />
+        </a-form-item>
+        <template v-if="ruleForm.upstreamScheme === 'https'">
+          <a-form-item label="上游 CA 文件（服务端路径）">
+            <a-input
+              v-model:value="ruleForm.upstreamCAFile"
+              placeholder="/etc/umpp/upstream-ca.pem"
+              :disabled="ruleForm.upstreamInsecureSkipVerify"
+            />
+          </a-form-item>
+          <a-form-item>
+            <a-checkbox v-model:checked="ruleForm.upstreamInsecureSkipVerify">
+              跳过上游证书校验（upstream_insecure_skip_verify）
+            </a-checkbox>
+          </a-form-item>
+          <a-alert
+            v-if="ruleForm.upstreamInsecureSkipVerify"
+            type="error"
+            show-icon
+            message="高风险：将接受任何上游证书"
+            description="可能遭受中间人攻击。仅限隔离测试环境；生产环境应使用受信任 CA 或 upstream_ca_file。"
+            class="form-alert"
+          />
+          <a-alert
+            v-else
+            type="info"
+            show-icon
+            message="HTTPS 上游默认严格验证证书链与主机名"
+            description="私有服务请填写控制面可读取的 CA 文件路径。"
+            class="form-alert"
+          />
+        </template>
         <a-divider orientation="left">访问控制</a-divider>
         <a-form-item label="IP 白名单">
           <a-textarea

@@ -51,6 +51,7 @@ export interface Node {
   name: string
   public_key: string
   virtual_ip?: string | null
+  wireguard_public_key?: string | null
   public_endpoint?: string | null
   os: string
   arch: string
@@ -130,6 +131,42 @@ export interface Certificate {
   auto_renew?: boolean
   next_attempt_at?: string | null
   created_at?: string
+}
+
+export interface CertificateIssueInput {
+  issuer: 'acme'
+  domain: string
+}
+
+export interface CertificateActionResult {
+  id: string
+  status: 'pending' | 'active' | 'failed' | 'revoked' | string
+}
+
+export interface PKICA {
+  ca_cert_pem: string
+  id?: string
+  name?: string
+  not_before?: string
+  not_after?: string
+  created_at?: string
+}
+
+export interface NodeCertificate {
+  id: string
+  node_id: string
+  serial_number: string
+  fingerprint: string
+  not_before: string
+  not_after: string
+  issued_at: string
+  ca_cert_pem?: string
+}
+
+export interface NodeCertificateIssueResult {
+  client_cert_pem: string
+  client_key_pem: string
+  certificate: NodeCertificate
 }
 
 export type AlertState = 'firing' | 'resolved'
@@ -219,6 +256,9 @@ export interface ProxyRule {
   path: string
   target_type: 'internal_ip' | 'virtual_ip' | 'node' | string
   target: string
+  upstream_scheme: 'http' | 'https' | string
+  upstream_ca_file?: string
+  upstream_insecure_skip_verify: boolean
   access_control: AccessControl
   enabled: boolean
   created_at: string

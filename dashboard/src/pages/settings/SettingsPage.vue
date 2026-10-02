@@ -9,6 +9,7 @@ import {
   InfoCircleOutlined,
   PlusOutlined,
   ReloadOutlined,
+  SafetyCertificateOutlined,
   SkinOutlined
 } from '@ant-design/icons-vue'
 import { message, Modal } from 'ant-design-vue'
@@ -160,6 +161,39 @@ void load()
     </PageHeader>
 
     <section class="settings-grid">
+      <article class="panel settings-panel security-summary-panel">
+        <div class="panel-heading">
+          <div>
+            <h2><SafetyCertificateOutlined /> 安全摘要</h2>
+            <p>只读运行态；接口没有上报的字段明确标记为“未上报”</p>
+          </div>
+          <a-tag color="warning">部分未上报</a-tag>
+        </div>
+        <a-descriptions :column="3" bordered size="small">
+          <a-descriptions-item label="API TLS">
+            <a-badge status="default" text="未上报" />
+          </a-descriptions-item>
+          <a-descriptions-item label="mTLS 模式">
+            <a-badge status="default" text="未上报" />
+          </a-descriptions-item>
+          <a-descriptions-item label="HSTS">
+            <a-badge status="default" text="未上报" />
+          </a-descriptions-item>
+          <a-descriptions-item label="HTTPS 上游支持">
+            <a-badge status="default" text="未上报（后端支持配置）" />
+          </a-descriptions-item>
+          <a-descriptions-item label="ACME 开关">
+            <a-badge status="default" text="未上报" />
+          </a-descriptions-item>
+          <a-descriptions-item label="ACME 目录">
+            <a-badge status="default" text="未上报" />
+          </a-descriptions-item>
+        </a-descriptions>
+        <p class="settings-note">
+          当前可调用的 <code>GET /healthz</code> 仅返回 status/db/version/uptime，控制面尚未提供安全配置摘要接口；此处不从部署文件猜测。
+        </p>
+      </article>
+
       <article class="panel settings-panel">
         <div class="panel-heading">
           <div><h2><CloudServerOutlined /> 服务健康</h2><p>GET /healthz 的实时响应</p></div>

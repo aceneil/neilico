@@ -23,3 +23,15 @@ export function prettyJson(value: unknown): string {
     return String(value)
   }
 }
+
+export function daysUntil(value?: string | null): number | null {
+  if (!value) return null
+  return dayjs(value).startOf('day').diff(dayjs().startOf('day'), 'day')
+}
+
+export function remainingDaysLabel(value?: string | null): string {
+  const days = daysUntil(value)
+  if (days == null) return '—'
+  if (days < 0) return `已过期 ${Math.abs(days)} 天`
+  return `${days} 天`
+}

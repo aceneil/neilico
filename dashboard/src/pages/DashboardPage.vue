@@ -231,6 +231,7 @@ const alertSummaryCards = computed(() => [
       </template>
     </PageHeader>
 
+    <div class="dashboard-scroll">
     <DataState
       :loading="loading && !data"
       :error="error"
@@ -273,20 +274,20 @@ const alertSummaryCards = computed(() => [
             <div><h2>节点在线趋势</h2><p>基于最后心跳时间按 3 小时聚合</p></div>
             <a-tag color="blue">最近 24 小时</a-tag>
           </div>
-          <EChart :option="heartbeatTrend" :dark="theme.resolved === 'dark'" height="300px" />
+          <EChart :option="heartbeatTrend" :dark="theme.resolved === 'dark'" height="clamp(180px, 20vh, 300px)" />
         </article>
         <article class="panel chart-panel">
           <div class="panel-heading">
             <div><h2>流量 in / out</h2><p>最近流量记录按 4 小时聚合</p></div>
             <a-tag>单位 MB</a-tag>
           </div>
-          <EChart :option="trafficChart" :dark="theme.resolved === 'dark'" height="300px" />
+          <EChart :option="trafficChart" :dark="theme.resolved === 'dark'" height="clamp(180px, 20vh, 300px)" />
         </article>
         <article class="panel chart-panel chart-panel--small">
           <div class="panel-heading">
             <div><h2>协议分布</h2><p>按流量字节数统计</p></div>
           </div>
-          <EChart :option="protocolChart" :dark="theme.resolved === 'dark'" height="300px" />
+          <EChart :option="protocolChart" :dark="theme.resolved === 'dark'" height="clamp(180px, 20vh, 300px)" />
         </article>
       </section>
 
@@ -322,5 +323,6 @@ const alertSummaryCards = computed(() => [
         </DataState>
       </section>
     </DataState>
+    </div>
   </div>
 </template>

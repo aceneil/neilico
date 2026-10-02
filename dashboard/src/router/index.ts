@@ -39,6 +39,18 @@ const router = createRouter({
           meta: { title: '域名与代理', icon: 'global', roles: ['platform_admin', 'tenant_admin', 'ops', 'readonly'] }
         },
         {
+          path: 'certificates',
+          name: 'certificates',
+          component: () => import('@/pages/certificates/CertificatesPage.vue'),
+          meta: { title: 'TLS 证书', icon: 'safety-certificate', roles: ['platform_admin', 'tenant_admin', 'ops', 'readonly'] }
+        },
+        {
+          path: 'pki',
+          name: 'pki',
+          component: () => import('@/pages/settings/PkiPage.vue'),
+          meta: { title: 'PKI / CA', icon: 'lock', roles: ['platform_admin', 'tenant_admin', 'ops', 'readonly'] }
+        },
+        {
           path: 'networks',
           name: 'networks',
           component: () => import('@/pages/networks/NetworksPage.vue'),
@@ -61,6 +73,12 @@ const router = createRouter({
           name: 'logs',
           component: () => import('@/pages/logs/LogsPage.vue'),
           meta: { title: '日志与审计', icon: 'file-search', roles: ['platform_admin', 'tenant_admin', 'ops', 'readonly'] }
+        },
+        {
+          path: 'tokens',
+          name: 'api-tokens',
+          component: () => import('@/pages/tokens/APITokensPage.vue'),
+          meta: { title: 'API Token', icon: 'key', roles: ['platform_admin', 'tenant_admin', 'ops', 'readonly'] }
         },
         {
           path: 'settings',

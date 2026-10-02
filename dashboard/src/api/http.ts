@@ -72,3 +72,7 @@ http.interceptors.response.use(
 export function apiErrorMessage(error: unknown): string {
   return errorMessage(error)
 }
+
+export function apiErrorStatus(error: unknown): number | undefined {
+  return axios.isAxiosError(error) ? error.response?.status : undefined
+}

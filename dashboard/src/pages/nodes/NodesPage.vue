@@ -5,6 +5,7 @@ import {
   DeleteOutlined,
   DesktopOutlined,
   EyeOutlined,
+  FilterOutlined,
   PlusOutlined,
   ReloadOutlined,
   SafetyCertificateOutlined,
@@ -15,14 +16,15 @@ import type { EChartsOption } from 'echarts'
 import DataState from '@/components/DataState.vue'
 import EChart from '@/components/EChart.vue'
 import PageHeader from '@/components/PageHeader.vue'
-import { apiErrorMessage } from '@/api/http'
+import { apiErrorMessage, apiErrorStatus } from '@/api/http'
 import { nodesApi, type NodeListQuery } from '@/api/nodes'
 import { useAuthStore } from '@/stores/auth'
 import { useThemeStore } from '@/stores/theme'
 import { canManageNodes } from '@/utils/permissions'
 import { formatBytes, formatTime } from '@/utils/format'
 import { maskSecret } from '@/utils/sensitive'
-import type { Node, NodeMetrics, NodeRegisterResult } from '@/types/api'
+import type { Node, NodeCertificate, NodeMetrics, NodeRegisterResult } from '@/types/api'
+import { daysUntil, remainingDaysLabel } from '@/utils/format'
 
 const auth = useAuthStore()
 const theme = useThemeStore()
@@ -34,6 +36,7 @@ const total = ref(0)
 const page = ref(1)
 const pageSize = ref(20)
 const filters = reactive({ status: undefined as string | undefined, tag: '', keyword: '' })
+const filtersCollapsed = ref(false)
 const selectedNode = ref<Node | null>(null)
 const detailOpen = ref(false)
 const registerOpen = ref(false)
@@ -41,6 +44,9 @@ const registering = ref(false)
 const registerFormRef = ref()
 const registration = ref<NodeRegisterResult | null>(null)
 const nodeMetrics = ref<NodeMetrics | null>(null)
+const mtlsCertificate = ref<NodeCertificate | null>(null)
+const mtlsLoading = ref(false)
+const mtlsError = ref('')
 const metricsLoading = ref(false)
 const metricsError = ref('')
 
@@ -108,20 +114,52 @@ async function loadNodeMetrics() {
   }
 }
 
+async function loadNodeMTLS() {
+  if (!selectedNode.value) return
+  const nodeID = selectedNode.value.id
+  mtlsLoading.value = true
+  mtlsError.value = ''
+  try {
+    const result = await nodesApi.mtls(nodeID)
+    if (selectedNode.value?.id === nodeID) mtlsCertificate.value = result
+  } catch (cause) {
+    if (selectedNode.value?.id === nodeID) {
+      mtlsCertificate.value = null
+      if (apiErrorStatus(cause) !== 404) mtlsError.value = apiErrorMessage(cause)
+    }
+  } finally {
+    if (selectedNode.value?.id === nodeID) mtlsLoading.value = false
+  }
+}
+
 function openDetail(node: Node) {
   selectedNode.value = node
   nodeMetrics.value = null
+  mtlsCertificate.value = null
   metricsError.value = ''
+  mtlsError.value = ''
   detailOpen.value = true
   void loadNodeMetrics()
+  void loadNodeMTLS()
 }
 
 watch(detailOpen, (open) => {
   if (!open) {
     nodeMetrics.value = null
+    mtlsCertificate.value = null
     metricsError.value = ''
+    mtlsError.value = ''
   }
 })
+
+function mtlsState(): { label: string; color: string; className: string } {
+  if (!mtlsCertificate.value) return { label: '未签发', color: 'default', className: '' }
+  const days = daysUntil(mtlsCertificate.value.not_after)
+  if (days != null && days <= 30) {
+    return { label: '即将过期', color: 'warning', className: 'remaining-days--warning' }
+  }
+  return { label: '已签发', color: 'success', className: '' }
+}
 
 const metricsChart = computed<EChartsOption>(() => {
   const dark = theme.resolved === 'dark'
@@ -231,7 +269,11 @@ void load()
       </template>
     </PageHeader>
 
-    <section class="filter-bar">
+    <section class="filter-bar" :class="{ 'filter-bar--collapsed': filtersCollapsed }">
+      <a-button class="filter-collapse" :aria-label="filtersCollapsed ? '展开筛选' : '收起筛选'" @click="filtersCollapsed = !filtersCollapsed">
+        <FilterOutlined />
+      </a-button>
+      <span v-if="filtersCollapsed" class="filter-summary">状态 / 标签 / 关键字筛选已收起</span>
       <a-select v-model:value="filters.status" :options="statusOptions" class="filter-status" @change="applyFilters" />
       <a-input
         v-model:value="filters.tag"
@@ -332,11 +374,24 @@ void load()
           <a-descriptions-item label="状态">
             <a-badge :status="selectedNode.status === 'online' ? 'success' : 'default'" :text="selectedNode.status" />
           </a-descriptions-item>
-          <a-descriptions-item label="虚拟 IP">{{ selectedNode.virtual_ip || '—' }}</a-descriptions-item>
+          <a-descriptions-item label="WireGuard 虚拟 IP">{{ selectedNode.virtual_ip || '—' }}</a-descriptions-item>
           <a-descriptions-item label="公网端点">{{ selectedNode.public_endpoint || '—' }}</a-descriptions-item>
           <a-descriptions-item label="系统">{{ selectedNode.os }} / {{ selectedNode.arch }}</a-descriptions-item>
           <a-descriptions-item label="Agent 版本">{{ selectedNode.version }}</a-descriptions-item>
-          <a-descriptions-item label="公钥"><code class="code-ellipsis">{{ selectedNode.public_key }}</code></a-descriptions-item>
+          <a-descriptions-item label="WireGuard 公钥">
+            <code class="code-ellipsis">{{ selectedNode.wireguard_public_key || selectedNode.public_key || '—' }}</code>
+          </a-descriptions-item>
+          <a-descriptions-item label="mTLS 状态">
+            <a-badge :status="mtlsState().color as any" :text="mtlsState().label" />
+          </a-descriptions-item>
+          <a-descriptions-item v-if="mtlsCertificate" label="mTLS 有效期">
+            <strong :class="mtlsState().className">
+              {{ formatTime(mtlsCertificate.not_after) }}（{{ remainingDaysLabel(mtlsCertificate.not_after) }}）
+            </strong>
+          </a-descriptions-item>
+          <a-descriptions-item v-if="mtlsCertificate" label="客户端证书指纹">
+            <code class="code-ellipsis">{{ mtlsCertificate.fingerprint }}</code>
+          </a-descriptions-item>
           <a-descriptions-item label="标签">
             <a-space v-if="selectedNode.tags?.length" wrap>
               <a-tag v-for="tag in selectedNode.tags" :key="tag">{{ tag }}</a-tag>
@@ -344,6 +399,20 @@ void load()
             <span v-else>—</span>
           </a-descriptions-item>
         </a-descriptions>
+        <a-alert
+          v-if="mtlsError"
+          type="error"
+          show-icon
+          :message="`mTLS 状态加载失败：${mtlsError}`"
+          class="drawer-alert"
+        />
+        <a-alert
+          v-else-if="!mtlsLoading && !mtlsCertificate"
+          type="info"
+          show-icon
+          message="该节点尚未签发 mTLS 客户端证书"
+          class="drawer-alert"
+        />
         <h3 class="drawer-section-title">指标（最近 24 小时）</h3>
         <DataState
           :loading="metricsLoading"

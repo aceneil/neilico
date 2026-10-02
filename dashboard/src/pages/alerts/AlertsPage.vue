@@ -8,6 +8,7 @@ import {
   CheckCircleOutlined,
   ClockCircleOutlined,
   EyeOutlined,
+  FilterOutlined,
   ReloadOutlined,
   SafetyCertificateOutlined,
   SearchOutlined,
@@ -43,6 +44,7 @@ const filters = reactive({
   target_type: '',
   target_id: ''
 })
+const filtersCollapsed = ref(false)
 
 const ruleLabels: Record<string, string> = {
   node_offline: '节点离线',
@@ -206,7 +208,11 @@ void load()
       </template>
     </PageHeader>
 
-    <section class="filter-bar alert-filter">
+    <section class="filter-bar alert-filter" :class="{ 'filter-bar--collapsed': filtersCollapsed }">
+      <a-button class="filter-collapse" :aria-label="filtersCollapsed ? '展开筛选' : '收起筛选'" @click="filtersCollapsed = !filtersCollapsed">
+        <FilterOutlined />
+      </a-button>
+      <span v-if="filtersCollapsed" class="filter-summary">告警筛选已收起</span>
       <a-select v-model:value="filters.severity" :options="severityOptions" allow-clear placeholder="严重级" class="filter-severity" />
       <a-select v-model:value="filters.rule" :options="ruleOptions" allow-clear placeholder="规则" class="filter-rule" />
       <a-select v-model:value="filters.target_type" :options="targetTypeOptions" class="filter-target-type" />
