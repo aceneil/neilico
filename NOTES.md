@@ -17,7 +17,8 @@ NEILICO（Unified Mesh & Proxy Platform）：统一「内网穿透 + Mesh 组网
 | `agent/` | Go Agent（注册/心跳/拉配置/应用 WireGuard/子网路由） |
 | `cli/` | `neilicoctl` 命令行 |
 | `dashboard/` | Vue3 + Vite + Ant Design Vue 管理后台 |
-| `deploy/docker-compose/` | 单机一键部署栈 |
+| `deploy/allinone/` | **现行形态**：单容器（PostgreSQL + 控制面 API + 内置反代 + Dashboard 同容器），构建上下文=仓库根 |
+| `deploy/docker-compose/` | 历史测试栈（6 容器 postgres/redis/nats/control-api/dashboard/relay），**非现行形态** |
 | `deploy/helm/neilico/` | Kubernetes Helm Chart（默认外部 PostgreSQL，含开发依赖/relay 占位） |
 | `scripts/` | `smoke.sh`、`smoke-down.sh`，退出码即判据 |
 
@@ -43,22 +44,37 @@ NEILICO（Unified Mesh & Proxy Platform）：统一「内网穿透 + Mesh 组网
 | **V1-R3 Helm Chart** | ✅ | （未提交） | `deploy/helm/neilico`：control-api/dashboard Deployment、外部 PG 默认、开发 PG/Redis/NATS StatefulSet、relay 占位、Secret/Ingress/HPA/PDB/NetworkPolicy/ServiceMonitor；`ci/verify.sh` 离线断言 |
 | **V1-R4 API Token/Scope/限流** | ✅ | （未提交） | migration `000008`、API Token 哈希/轮换/撤销、角色→scope 兼容表、`RequireScope`、按 Token/user 令牌桶、CLI token 命令、Dashboard 真实 Token 页面 |
 
-### 常驻部署（生产用 Docker 目录那份；2026-10-02 落地）
-> **仓库内 `deploy/docker-compose/docker-compose.yml` 仅供开发/冒烟测试栈**（项目名 `neilico-m5`、命名卷、固定端口）。
-> 开机常驻的是 `/home/neil/Documents/Docker/docker-compose.neilico.yaml`（顶层 `name: neilico`），由 devops 按本机目录约定维护。
+### 常驻部署（生产用 Docker 目录那份；2026-10-03 改为**单容器**）
+> **仓库内 `deploy/docker-compose/`（6 容器：postgres/redis/nats/control-api/dashboard/relay）仅供历史上的测试栈**（项目名 `neilico-m5`、命名卷、固定端口），**不是现行形态**。
+> **现行形态 = `deploy/allinone/`（单容器）**，由 `/home/neil/Documents/Docker/docker-compose.neilico.yaml`（顶层 `name: neilico`）常驻，按本机目录约定维护。
 
-- 部署文件：`/home/neil/Documents/Docker/docker-compose.neilico.yaml`（build.context 指向本仓库 `control-plane/`、`dashboard/` 绝对路径）
-- 持久数据：`/home/neil/Documents/Docker/data/neilico/{pg,redis,nats}`（宿主目录绑定，替代命名卷）
+- 形态：**1 个容器 `neilico`** = PostgreSQL 16 + 控制面 API + 内置反代 + Dashboard 静态资源（Go 二进制直接服务前端，**同源、无 nginx**）
+- 部署文件：`/home/neil/Documents/Docker/docker-compose.neilico.yaml`
+  （`build.context` = 仓库根 `/home/neil/Documents/Projects/neilico` 绝对路径，`dockerfile: deploy/allinone/Dockerfile`，`image: neilico-allinone:local`）
+- 持久数据：`/home/neil/Documents/Docker/data/neilico/pg`（宿主目录绑定到容器 `/var/lib/postgresql/data`）
 - 秘密：`/home/neil/Documents/Docker/data/neilico/neilico.env`（mode 600，非仓库；管理员邮箱 `admin@neilico.local`）
   查看管理员密码（值不入文档）：`/home/neil/Documents/Docker/data/neilico/show-admin-password.sh`
-- 端口：Dashboard `0.0.0.0:13000`（LAN）、控制面 `18080`、内置反代 `18081`（均 LAN）；PG/Redis/NATS 只绑 `127.0.0.1`（15432/16379/14222）；relay 占位 UDP 51820/3478
-- 全部服务 `restart: unless-stopped`；TLS(18443/8443) 与 ACME 本轮关闭；relay 仍是 wg-easy 占位
-- 启停：`cd /home/neil/Documents/Docker && docker compose -f docker-compose.neilico.yaml up -d|stop`（源码更新后 `up -d --build`；**禁止 `down -v`**）
+- 端口：`13000 -> 8080`（Dashboard + API **同端口/同源**，LAN）、`18081 -> 8081`（内置反代，LAN）；PostgreSQL **只在容器内**（不映射宿主）
+- `restart: unless-stopped`；TLS/mTLS 与 ACME 本轮关闭
+- 启停：`cd /home/neil/Documents/Docker && docker compose -f docker-compose.neilico.yaml up -d|stop|restart`
+  （源码更新后 `up -d --build` 重建镜像；**禁止 `down -v`**）
+- **已移除的 3 个无用容器及理由**：
+  - `redis` —— 代码里**零引用**（纯装饰容器，REDIS 相关配置项无任何调用点）
+  - `nats` —— 代码里**零引用**（纯装饰容器）
+  - `relay` —— wg-easy **占位**，无 NEILICO relay 数据面（TURN 3478 从未实现）；V2 实现真实中继后再加独立进程
+  （`nginx` 也一并去掉：其唯一作用是静态托管 + 反代，现由 Go 二进制同源直接提供）
 - Homepage 导航卡片：`/home/neil/Documents/Docker/data/homepage/config/services.yaml` 的 `- 业务:` 组
-  `neilico`（排 quantdinger 后），href `http://192.168.123.90:13000`，container `neilico-dashboard-1`
-- 2026-10-02 实测：6/6 容器 healthy；`/healthz` = `{"db":"up","status":"ok","version":"v1-resident"}`；
-  LAN `13000` → 200；经 nginx `POST /api/v1/auth/login` → **200 + token**，错密码 → **401**；`/metrics` 44 条 `neilico_*`；
-  `restart control-api dashboard` 后仍可登入。
+  `neilico`（原 umpp 卡片原地改名），href `http://192.168.123.90:13000`，container `neilico`
+- **2026-10-03 实测（单容器）**：`docker ps` 恰好 1 行 `neilico (healthy)`；
+  容器内同时有 `postgres` 与 `neilico-control` 两个进程；LAN `13000` → **200** 且 body 含 `<div id="app"`；
+  `/healthz` = `{"db":"up","status":"ok","version":"v1-single-20261003"}`；`/metrics` **45 条 `neilico_*`**；
+  `POST /api/v1/auth/login` → **200 + token（长度 443）**，错密码 → **401**；带 token `GET /api/v1/nodes` → 200；
+  深链 `/nodes` `/certificates` `/pki` `/alerts` → 200、`/nope.js` → 404；
+  `docker restart` 后仍 healthy 且可登入（日志走「已有数据目录」分支、无 `already exists`）；
+  `docker stop -t 30` → 退出码 **0**、日志含 `shutdown complete`、无 recovery 痕迹。
+
+> 旧的常驻 6 容器 UMPP 栈（项目名 `umpp`）已于同日下线，数据改名保留在
+> `/home/neil/Documents/Docker/data/umpp-legacy-20261003/`（取证：业务表全空，仅 bootstrap 管理员+租户+6 条登录审计）。
 
 ### 历史运行状态（2026-10-02 01:5x 测试栈实测，现已被上节替代）
 - 测试栈曾整体运行（`Up 3 hours (healthy)`）：API `:18080`、内置反代 `:18081`、Dashboard `:13000`、PG `:15432`、Redis `:16379`、NATS `:14222`、relay 占位 UDP `:51820/:3478`

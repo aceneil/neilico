@@ -60,13 +60,16 @@ async function submit() {
         <h2>登录控制台</h2>
         <p class="login-subtitle">使用平台账户继续访问 NEILICO</p>
         <a-alert v-if="error" type="error" show-icon :message="error" class="login-error" />
-        <a-form layout="vertical" size="large" @finish="submit">
-          <a-form-item label="邮箱">
+        <!-- ⚠️ 必须有 :model="form"：AntDV 的 Form 只有拿到 model 才会执行校验并 emit('finish')
+             （见 ant-design-vue/es/form/Form.js 的 handleSubmit：`if (props.model) { … emit('finish') }`）。
+             缺了它 → 只 preventDefault、不发 finish → 登录按钮点了毫无反应、且不报错。 -->
+        <a-form :model="form" layout="vertical" size="large" @finish="submit">
+          <a-form-item label="邮箱" name="email">
             <a-input v-model:value="form.email" type="email" autocomplete="username" placeholder="admin@example.com">
               <template #prefix><MailOutlined /></template>
             </a-input>
           </a-form-item>
-          <a-form-item label="密码">
+          <a-form-item label="密码" name="password">
             <a-input-password
               v-model:value="form.password"
               autocomplete="current-password"
