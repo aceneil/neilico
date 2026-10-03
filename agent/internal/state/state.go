@@ -14,7 +14,10 @@ type State struct {
 	NodeID             string    `json:"node_id"`
 	AgentToken         string    `json:"agent_token"`
 	PrivateKey         string    `json:"private_key"`
-	PublicKey          string    `json:"public_key"`
+	PublicKey          string    `json:"public_key,omitempty"`
+	VirtualIP          string    `json:"virtual_ip,omitempty"`
+	NetworkID          string    `json:"network_id,omitempty"`
+	Server             string    `json:"server,omitempty"`
 	AppliedVersion     int       `json:"applied_version"`
 	AppliedConfigHash  string    `json:"applied_config_hash,omitempty"`
 	NetworkSecret      string    `json:"network_secret,omitempty"`

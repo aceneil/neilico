@@ -82,44 +82,22 @@ curl -sS -X POST http://127.0.0.1:18080/api/v1/certificates \
 
 ## 3. 安装 Agent
 
-Agent 需要在 Linux 上运行。真实 WireGuard 应用需要 root、`ip`、`wg` 和 `CAP_NET_ADMIN`；没有权限时使用 `--dry-run` 验证配置不会触碰宿主网络。
+推荐使用一次性接入令牌，体验与 Cloudflare Tunnel 类似。完整说明（Linux 一行、Docker 一行、手动二进制、令牌生命周期、401/410/404 和 dry-run）见 [`AGENT_ENROLL.md`](AGENT_ENROLL.md)。
+
+在控制面创建接入令牌后，直接执行响应中的命令：
 
 ```bash
-cd agent
-CGO_ENABLED=0 go build -o /usr/local/bin/neilico-agent ./cmd/agent
-sudo install -d -m 0750 /etc/neilico-agent /var/lib/neilico-agent
-sudo install -m 0640 configs/agent.example.yaml /etc/neilico-agent/agent.yaml
-sudoedit /etc/neilico-agent/agent.yaml
+# Linux：安装 systemd 服务，令牌和 server 都由命令/令牌带入
+curl -fsSL <SERVER>/install.sh | sudo bash -s -- --token <TOKEN>
+
+# Docker：首次启动自动 enroll，凭据写入持久卷
+docker run -d --name neilico-agent --restart unless-stopped \
+  --network host --cap-add NET_ADMIN --device /dev/net/tun \
+  -v neilico-agent-state:/var/lib/neilico-agent \
+  -e NEILICO_TOKEN=<TOKEN> neilico-agent:local
 ```
 
-`agent.yaml` 至少设置：
-
-```yaml
-server: "https://neilico.example.com"
-token: "<tenant-admin-access-token 仅用于首次注册>"
-node:
-  name: "nas-01"
-  tags: ["home"]
-mesh:
-  interface: "wg0"
-  listen_port: 51820
-  allow_forwarding: true
-  external_interface: "eth0"
-metrics:
-  enabled: true
-  listen: "127.0.0.1:9100"
-state_path: "/var/lib/neilico-agent/state.json"
-```
-
-首次运行：
-
-```bash
-sudo /usr/local/bin/neilico-agent --config /etc/neilico-agent/agent.yaml
-# 无 root 验证：
-neilico-agent --config /etc/neilico-agent/agent.yaml --dry-run
-```
-
-注册成功后 `state.json` 保存 node_id、agent_token、WireGuard 私钥，权限应为 0600。后续心跳使用 agent token，不应把 admin token 留在生产配置中。
+无 root、无 TUN 时可先执行 `--dry-run`。成功后 state 会保存 node id、agent token、WireGuard 私钥和 VIP；后续心跳只使用 state，不需要再次提供接入令牌。真实 WireGuard 应用需要 root、`ip`、`wg`、`CAP_NET_ADMIN` 与 `/dev/net/tun`。
 
 ## 4. 建立虚拟网络并加入节点
 

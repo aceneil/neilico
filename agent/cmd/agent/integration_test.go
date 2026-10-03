@@ -318,3 +318,74 @@ func (e *meshRecordingExecutor) Run(_ context.Context, command route.Command) er
 func (e *meshRecordingExecutor) Output(context.Context, route.Command) (string, error) {
 	return "", nil
 }
+
+type enrollTokenResponse struct {
+	Token string `json:"token"`
+}
+
+func createEnrollToken(t *testing.T, app *integrationApp, networkID string) string {
+	t.Helper()
+	input := map[string]any{"expires_in_seconds": 3600, "max_uses": 1}
+	if networkID != "" {
+		input["network_id"] = networkID
+	}
+	var response enrollTokenResponse
+	request(t, app.control.Server.URL, "POST", "/api/v1/enroll-tokens", app.token, input, &response)
+	if response.Token == "" {
+		t.Fatal("create enroll token returned no token")
+	}
+	return response.Token
+}
+
+func TestEnrollCommandPersistsIdentity(t *testing.T) {
+	app := newIntegrationApp(t)
+	stateDir := t.TempDir()
+	token := createEnrollToken(t, app, "")
+	var stdout, stderr bytes.Buffer
+	if err := runEnroll([]string{"--token", token, "--state-dir", stateDir}, &stdout, &stderr); err != nil {
+		t.Fatalf("runEnroll() error = %v, stderr = %s", err, stderr.String())
+	}
+	if strings.Contains(stdout.String(), token) || strings.Contains(stderr.String(), token) {
+		t.Fatal("enroll command output leaked the enrollment token")
+	}
+	stored, exists, err := state.Load(filepath.Join(stateDir, "state.json"))
+	if err != nil || !exists {
+		t.Fatalf("state.Load() = %#v, %v, %v", stored, exists, err)
+	}
+	if stored.NodeID == "" || stored.AgentToken == "" || stored.PrivateKey == "" || stored.Server != app.control.Server.URL {
+		t.Fatalf("unexpected enrolled state: %#v", stored)
+	}
+}
+
+func TestRunIdentityAutoEnrollsFromToken(t *testing.T) {
+	app := newIntegrationApp(t)
+	stateDir := t.TempDir()
+	token := createEnrollToken(t, app, "")
+	cfg := config.Default()
+	cfg.Server = app.control.Server.URL
+	cfg.EnrollToken = token
+	cfg.StatePath = filepath.Join(stateDir, "state.json")
+	cfg.Metrics.Enabled = false
+	identity, err := ensureIdentity(context.Background(), cfg, client.New(cfg.Server, ""), false, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatalf("ensureIdentity() error = %v", err)
+	}
+	if identity.NodeID == "" || identity.AgentToken == "" {
+		t.Fatalf("auto-enroll omitted identity: %#v", identity)
+	}
+	stored, exists, err := state.Load(cfg.StatePath)
+	if err != nil || !exists || stored.NodeID != identity.NodeID {
+		t.Fatalf("auto-enroll state = %#v, %v, %v", stored, exists, err)
+	}
+}
+
+func TestRunWithoutCredentialsExplainsEnrollCommand(t *testing.T) {
+	cfg := config.Default()
+	cfg.Token = ""
+	cfg.EnrollToken = ""
+	cfg.StatePath = filepath.Join(t.TempDir(), "missing-state.json")
+	_, err := ensureIdentity(context.Background(), cfg, client.New(cfg.Server, ""), false, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err == nil || !strings.Contains(err.Error(), "neilico-agent enroll --token") {
+		t.Fatalf("missing credentials error = %v", err)
+	}
+}

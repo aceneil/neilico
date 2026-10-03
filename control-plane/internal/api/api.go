@@ -46,6 +46,8 @@ type Server struct {
 	configs       *configservice.Manager
 	pki           *pki.Service
 	apiTokens     *service.APITokenService
+	enrollTokens  *service.NodeEnrollTokenService
+	enrollNodes   *service.NodeEnrollService
 	tokenUsage    *middleware.APITokenUsageTracker
 	rateLimiter   *middleware.Limiter
 	alertEngine   *alertservice.Engine
@@ -54,6 +56,8 @@ type Server struct {
 	version       string
 	proxy         proxy.Provider
 	proxyOpts     ProxyOptions
+	downloadsDir  string
+	enrollURL     string
 	startedAt     time.Time
 }
 
@@ -157,6 +161,10 @@ func NewWithProxy(
 		configs:       configManager,
 		pki:           pkiService,
 		apiTokens:     service.NewAPITokenService(db),
+		enrollTokens:  service.NewNodeEnrollTokenService(db, enrollSigningKey(authManager, opts.Enroll.SigningKey)),
+		enrollNodes:   service.NewNodeEnrollService(db, nodeService, enrollSigningKey(authManager, opts.Enroll.SigningKey)),
+		downloadsDir:  opts.Downloads.Dir,
+		enrollURL:     strings.TrimRight(strings.TrimSpace(opts.Enroll.PublicURL), "/"),
 		alertEngine:   alertEngine,
 		metrics:       promMetrics,
 		logger:        logger,
@@ -173,6 +181,8 @@ func NewWithProxy(
 	server.registerM2A(mux)
 	server.registerM2B(mux)
 	server.registerM4B(mux)
+	server.registerEnroll(mux)
+	server.registerPublicDownloads(mux)
 
 	mux.HandleFunc("/healthz", server.handleHealth)
 	mux.Handle("/metrics", promMetrics.Handler())

@@ -29,6 +29,7 @@ var scopePolicies = []scopePolicy{
 	{prefix: "/api/v1/proxy/render", exact: true, read: auth.ScopeProxyRead, write: auth.ScopeProxyRead},
 	{prefix: "/api/v1/networks", read: auth.ScopeNetworksRead, write: auth.ScopeNetworksWrite},
 	{prefix: "/api/v1/configs", read: auth.ScopeNetworksRead, write: auth.ScopeNetworksWrite},
+	{prefix: "/api/v1/enroll-tokens", read: auth.ScopeNodesRead, write: auth.ScopeNodesWrite},
 	{prefix: "/api/v1/nodes", read: auth.ScopeNodesRead, write: auth.ScopeNodesWrite},
 	{prefix: "/api/v1/traffic", exact: true, read: auth.ScopeNodesRead, write: auth.ScopeNodesWrite},
 }

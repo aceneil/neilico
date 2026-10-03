@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
@@ -23,6 +24,7 @@ import (
 	agentmetrics "neilico/agent/internal/metrics"
 	"neilico/agent/internal/route"
 	"neilico/agent/internal/state"
+	"neilico/control-plane/pkg/enrolltoken"
 )
 
 var version = "dev"
@@ -35,12 +37,23 @@ func main() {
 }
 
 func run(args []string, stdout, stderr io.Writer) error {
+	if len(args) > 0 && args[0] == "enroll" {
+		return runEnroll(args[1:], stdout, stderr)
+	}
+	if len(args) > 0 && args[0] == "run" {
+		args = args[1:]
+	}
 	flags := flag.NewFlagSet("neilico-agent", flag.ContinueOnError)
 	flags.SetOutput(stderr)
-	configPath := flags.String("config", "configs/agent.example.yaml", "path to YAML configuration")
+	configPath := flags.String("config", "", "path to YAML configuration")
 	dryRun := flags.Bool("dry-run", false, "print network configuration and commands without writing")
 	forceRegister := flags.Bool("force-register", false, "register a new node identity even if state exists")
 	statePath := flags.String("state", "", "override state.json path")
+	stateDir := flags.String("state-dir", "", "override state directory")
+	token := flags.String("token", "", "one-time enrollment token")
+	tokenFile := flags.String("token-file", "", "file containing a one-time enrollment token")
+	server := flags.String("server", "", "control-plane server URL override")
+	nodeName := flags.String("name", "", "node name override")
 	showVersion := flags.Bool("version", false, "print version and exit")
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -56,8 +69,8 @@ func run(args []string, stdout, stderr io.Writer) error {
 	if err != nil {
 		return err
 	}
-	if *statePath != "" {
-		cfg.StatePath = *statePath
+	if err := applyEnrollFlags(&cfg, *token, *tokenFile, *server, *nodeName, *statePath, *stateDir); err != nil {
+		return err
 	}
 	logger := newLogger(cfg.Log.Level, stderr)
 	warnInsecureTLS(cfg.TLS.InsecureSkipVerify, logger, stderr)
@@ -69,19 +82,13 @@ func run(args []string, stdout, stderr io.Writer) error {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	apiClient, err := client.NewWithTLS(cfg.Server, cfg.Token, client.TLSOptions{
-		CAFile:             cfg.TLS.CAFile,
-		ClientCertFile:     cfg.TLS.ClientCertFile,
-		ClientKeyFile:      cfg.TLS.ClientKeyFile,
-		ServerName:         cfg.TLS.ServerName,
-		InsecureSkipVerify: cfg.TLS.InsecureSkipVerify,
-	})
+	apiClient, err := newAPIClient(cfg)
 	if err != nil {
 		return err
 	}
 	identity, err := ensureIdentity(ctx, cfg, apiClient, *forceRegister, logger)
 	if err != nil {
-		return err
+		return client.SafeError(err, cfg.EnrollToken, cfg.Token)
 	}
 	apiClient.SetToken(identity.AgentToken)
 	logger.Info("agent identity ready", "node_id", identity.NodeID)
@@ -165,6 +172,96 @@ func run(args []string, stdout, stderr io.Writer) error {
 	return nil
 }
 
+func runEnroll(args []string, stdout, stderr io.Writer) error {
+	flags := flag.NewFlagSet("neilico-agent enroll", flag.ContinueOnError)
+	flags.SetOutput(stderr)
+	token := flags.String("token", "", "one-time enrollment token (required)")
+	tokenFile := flags.String("token-file", "", "file containing a one-time enrollment token")
+	name := flags.String("name", "", "node name (defaults to hostname)")
+	server := flags.String("server", "", "control-plane URL (defaults to token payload)")
+	statePath := flags.String("state", "", "override state.json path")
+	stateDir := flags.String("state-dir", "", "override state directory")
+	showVersion := flags.Bool("version", false, "print version and exit")
+	if err := flags.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return nil
+		}
+		return err
+	}
+	if *showVersion {
+		fmt.Fprintln(stdout, version)
+		return nil
+	}
+	cfg := config.Default()
+	cfg.Token = ""
+	cfg.Node.Name = ""
+	if err := applyEnrollFlags(&cfg, *token, *tokenFile, *server, *name, *statePath, *stateDir); err != nil {
+		return err
+	}
+	if strings.TrimSpace(cfg.EnrollToken) == "" {
+		return errors.New("enrollment token is required; pass --token or --token-file")
+	}
+	_, err := enrollAndSave(context.Background(), cfg, stdout)
+	return err
+}
+
+func applyEnrollFlags(cfg *config.Config, token, tokenFile, server, nodeName, statePath, stateDir string) error {
+	token = strings.TrimSpace(token)
+	tokenFile = strings.TrimSpace(tokenFile)
+	if token != "" && tokenFile != "" {
+		return errors.New("--token and --token-file cannot be used together")
+	}
+	if token == "" && tokenFile != "" {
+		data, err := os.ReadFile(tokenFile)
+		if err != nil {
+			return fmt.Errorf("read enrollment token file: %w", err)
+		}
+		token = strings.TrimSpace(string(data))
+		if token == "" {
+			return errors.New("enrollment token file is empty")
+		}
+	}
+	if token != "" {
+		cfg.EnrollToken = token
+	}
+	if server = strings.TrimSpace(server); server != "" {
+		cfg.Server = server
+	}
+	if nodeName = strings.TrimSpace(nodeName); nodeName != "" {
+		cfg.Node.Name = nodeName
+	}
+	if statePath = strings.TrimSpace(statePath); statePath != "" {
+		cfg.StatePath = statePath
+	}
+	if stateDir = strings.TrimSpace(stateDir); stateDir != "" {
+		cfg.StatePath = filepath.Join(stateDir, "state.json")
+	}
+	if strings.TrimSpace(server) == "" && strings.TrimSpace(cfg.EnrollToken) != "" {
+		payload, err := enrolltoken.Inspect(cfg.EnrollToken)
+		if err != nil {
+			return errors.New("cannot read server from enrollment token; pass --server")
+		}
+		cfg.Server = payload.Server
+	}
+	if strings.TrimSpace(cfg.Node.Name) == "" {
+		cfg.Node.Name, _ = os.Hostname()
+	}
+	if strings.TrimSpace(cfg.Node.Name) == "" {
+		cfg.Node.Name = "neilico-node"
+	}
+	return cfg.Validate()
+}
+
+func newAPIClient(cfg config.Config) (*client.Client, error) {
+	return client.NewWithTLS(cfg.Server, cfg.Token, client.TLSOptions{
+		CAFile:             cfg.TLS.CAFile,
+		ClientCertFile:     cfg.TLS.ClientCertFile,
+		ClientKeyFile:      cfg.TLS.ClientKeyFile,
+		ServerName:         cfg.TLS.ServerName,
+		InsecureSkipVerify: cfg.TLS.InsecureSkipVerify,
+	})
+}
+
 func ensureIdentity(ctx context.Context, cfg config.Config, apiClient *client.Client, force bool, logger *slog.Logger) (state.State, error) {
 	stored, exists, err := state.Load(cfg.StatePath)
 	if err != nil {
@@ -173,8 +270,11 @@ func ensureIdentity(ctx context.Context, cfg config.Config, apiClient *client.Cl
 	if exists && !force {
 		return stored, nil
 	}
+	if strings.TrimSpace(cfg.EnrollToken) != "" {
+		return enrollAndSave(ctx, cfg, io.Discard)
+	}
 	if strings.TrimSpace(cfg.Token) == "" {
-		return state.State{}, errors.New("registration requires token configuration")
+		return state.State{}, errors.New("node credentials are missing; run `neilico-agent enroll --token <TOKEN>`, or provide --token/--token-file/NEILICO_TOKEN")
 	}
 	var registered state.State
 	err = heartbeat.RetryUntil(ctx, func(ctx context.Context) error {
@@ -193,6 +293,7 @@ func ensureIdentity(ctx context.Context, cfg config.Config, apiClient *client.Cl
 			AgentToken: response.AgentToken,
 			PrivateKey: response.PrivateKey,
 			PublicKey:  response.PublicKey,
+			Server:     cfg.Server,
 		}
 		return state.Save(cfg.StatePath, registered)
 	}, nil, logger)
@@ -201,6 +302,57 @@ func ensureIdentity(ctx context.Context, cfg config.Config, apiClient *client.Cl
 	}
 	logger.Info("node registered", "node_id", registered.NodeID)
 	return registered, nil
+}
+
+func enrollAndSave(ctx context.Context, cfg config.Config, stdout io.Writer) (state.State, error) {
+	stored, exists, err := state.Load(cfg.StatePath)
+	if err != nil {
+		return state.State{}, err
+	}
+	if exists {
+		fmt.Fprintf(stdout, "node already enrolled: %s\n", stored.NodeID)
+		return stored, nil
+	}
+	rawToken := strings.TrimSpace(cfg.EnrollToken)
+	if rawToken == "" {
+		return state.State{}, errors.New("enrollment token is required")
+	}
+	hostname, _ := os.Hostname()
+	requestName := strings.TrimSpace(cfg.Node.Name)
+	if requestName == "neilico-node" {
+		requestName = ""
+	}
+	apiClient := client.New(cfg.Server, "")
+	response, err := apiClient.Enroll(ctx, client.EnrollRequest{
+		Token: rawToken, Name: requestName, Hostname: hostname,
+		OS: runtime.GOOS, Arch: runtime.GOARCH, Version: version, Tags: cfg.Node.Tags,
+	})
+	if err != nil {
+		return state.State{}, client.SafeError(err, rawToken)
+	}
+	if response.Replayed && (response.AgentToken == "" || response.PrivateKey == "") {
+		return state.State{}, fmt.Errorf("enrollment token was already used for node %s and its one-time credentials are unavailable; install the original state.json or issue a new token", response.NodeID)
+	}
+	identity := state.State{
+		NodeID:     response.NodeID,
+		AgentToken: response.AgentToken,
+		PrivateKey: response.PrivateKey,
+		PublicKey:  response.PublicKey,
+		VirtualIP:  response.VirtualIP,
+		NetworkID:  response.NetworkID,
+		Server:     response.Server,
+	}
+	if identity.Server == "" {
+		identity.Server = cfg.Server
+	}
+	if err := state.Save(cfg.StatePath, identity); err != nil {
+		return state.State{}, err
+	}
+	fmt.Fprintf(stdout, "node enrolled: %s\n", identity.NodeID)
+	if identity.VirtualIP != "" {
+		fmt.Fprintf(stdout, "virtual ip: %s\n", identity.VirtualIP)
+	}
+	return identity, nil
 }
 
 func runConfigLoop(ctx context.Context, cfg config.Config, identity state.State, apiClient *client.Client, reconciler *mesh.Reconciler, observer *agentmetrics.Metrics, logger *slog.Logger) {

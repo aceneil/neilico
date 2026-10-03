@@ -216,22 +216,41 @@ func (c *Client) request(ctx context.Context, method, path string, body []byte) 
 var (
 	privateKeyPattern    = regexp.MustCompile(`(?i)("private_key"\s*:\s*")([^"]+)(")`)
 	agentTokenPattern    = regexp.MustCompile(`(?i)("agent_token"\s*:\s*")([^"]+)(")`)
+	enrollTokenPattern   = regexp.MustCompile(`(neilico-enroll\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)`)
 	iniSecretPattern     = regexp.MustCompile(`(?i)(PrivateKey\s*=\s*)(\S+)`)
 	labeledSecretPattern = regexp.MustCompile(`(?i)((?:private(?:_key)?|agent_token|secret)\s*[:=]\s*)("[^"]*"|\S+)`)
 )
 
 func decodeAPIError(status int, body []byte, secret string) error {
-	var payload struct {
-		Error   string `json:"error"`
-		Message string `json:"message"`
+	var envelope struct {
+		Error   json.RawMessage `json:"error"`
+		Message string          `json:"message"`
 	}
-	_ = json.Unmarshal(body, &payload)
-	message := payload.Message
+	_ = json.Unmarshal(body, &envelope)
+	code := ""
+	message := envelope.Message
+	if len(envelope.Error) > 0 {
+		var detail struct {
+			Code    string `json:"code"`
+			Message string `json:"message"`
+		}
+		if err := json.Unmarshal(envelope.Error, &detail); err == nil {
+			code = detail.Code
+			if message == "" {
+				message = detail.Message
+			}
+		} else {
+			var plain string
+			if err := json.Unmarshal(envelope.Error, &plain); err == nil {
+				code = plain
+			}
+		}
+	}
 	if message == "" {
 		message = string(body)
 	}
 	message = state.Sanitize(message, secret)
-	for _, pattern := range []*regexp.Regexp{privateKeyPattern, agentTokenPattern, iniSecretPattern} {
+	for _, pattern := range []*regexp.Regexp{privateKeyPattern, agentTokenPattern, iniSecretPattern, enrollTokenPattern} {
 		for _, match := range pattern.FindAllStringSubmatch(message, -1) {
 			for _, captured := range match[2:] {
 				if captured != "" && captured != "***" {
@@ -243,8 +262,8 @@ func decodeAPIError(status int, body []byte, secret string) error {
 	message = privateKeyPattern.ReplaceAllString(message, `${1}***${3}`)
 	message = agentTokenPattern.ReplaceAllString(message, `${1}***${3}`)
 	message = iniSecretPattern.ReplaceAllString(message, `${1}***`)
+	message = enrollTokenPattern.ReplaceAllString(message, `neilico-enroll.***`)
 	message = labeledSecretPattern.ReplaceAllString(message, `${1}***`)
-	code := payload.Error
 	if code == "" {
 		code = http.StatusText(status)
 	}

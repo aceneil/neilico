@@ -26,6 +26,8 @@ type ProxyOptions struct {
 	ChallengeHandler http.Handler         `json:"-"`
 	Alerts           alertservice.Options `json:"-"`
 	RateLimit        RateLimitOptions     `json:"-"`
+	Enroll           EnrollOptions        `json:"-"`
+	Downloads        DownloadsOptions     `json:"-"`
 	PKI              PKIOptions           `json:"pki"`
 	Dashboard        DashboardOptions     `json:"-"`
 }
@@ -33,6 +35,15 @@ type ProxyOptions struct {
 type DashboardOptions struct {
 	Dir string
 	SPA bool
+}
+
+type EnrollOptions struct {
+	SigningKey string
+	PublicURL  string
+}
+
+type DownloadsOptions struct {
+	Dir string
 }
 
 type RateLimitOptions struct {

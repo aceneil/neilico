@@ -79,6 +79,15 @@ type Alerts struct {
 	WebhookRetries        int           `yaml:"webhook_retries"`
 }
 
+type Enroll struct {
+	SigningKey string `yaml:"signing_key"`
+	PublicURL  string `yaml:"public_url"`
+}
+
+type Downloads struct {
+	Dir string `yaml:"dir"`
+}
+
 type RateLimit struct {
 	Enabled bool    `yaml:"enabled"`
 	RPS     float64 `yaml:"rps"`
@@ -109,6 +118,8 @@ type Config struct {
 	ACME      ACME      `yaml:"acme"`
 	Proxy     Proxy     `yaml:"proxy"`
 	Alerts    Alerts    `yaml:"alerts"`
+	Enroll    Enroll    `yaml:"enroll"`
+	Downloads Downloads `yaml:"downloads"`
 	RateLimit RateLimit `yaml:"ratelimit"`
 	Log       Log       `yaml:"log"`
 }
@@ -186,6 +197,8 @@ func Default() Config {
 			WebhookTimeout:        5 * time.Second,
 			WebhookRetries:        3,
 		},
+		Enroll:    Enroll{},
+		Downloads: Downloads{Dir: "/usr/local/share/neilico/downloads"},
 		RateLimit: RateLimit{Enabled: true, RPS: 20, Burst: 40},
 		Log:       Log{Level: "info", Format: "json"},
 	}
@@ -229,6 +242,9 @@ func applyEnvironment(cfg *Config) error {
 		{"NEILICO_DATABASE_DRIVER", &cfg.Database.Driver},
 		{"NEILICO_DATABASE_DSN", &cfg.Database.DSN},
 		{"NEILICO_AUTH_JWT_SECRET", &cfg.Auth.JWTSecret},
+		{"NEILICO_ENROLL_SIGNING_KEY", &cfg.Enroll.SigningKey},
+		{"NEILICO_ENROLL_PUBLIC_URL", &cfg.Enroll.PublicURL},
+		{"NEILICO_DOWNLOADS_DIR", &cfg.Downloads.Dir},
 		{"NEILICO_BOOTSTRAP_ADMIN_EMAIL", &cfg.Bootstrap.AdminEmail},
 		{"NEILICO_BOOTSTRAP_ADMIN_PASSWORD", &cfg.Bootstrap.AdminPassword},
 		{"NEILICO_BOOTSTRAP_DEFAULT_TENANT", &cfg.Bootstrap.DefaultTenant},

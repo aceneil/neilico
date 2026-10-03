@@ -84,7 +84,8 @@ func RateLimit(limiter *Limiter, next http.Handler) http.Handler {
 }
 
 func RateLimitExempt(path string) bool {
-	return path == "/healthz" || path == "/metrics" ||
+	return path == "/healthz" || path == "/metrics" || path == "/install.sh" ||
+		strings.HasPrefix(path, "/downloads/") ||
 		strings.HasPrefix(path, "/.well-known/acme-challenge/")
 }
 

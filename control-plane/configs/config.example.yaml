@@ -32,6 +32,11 @@ bootstrap:
   default_tenant: "default"
 node:
   heartbeat_timeout: 60s
+enroll:
+  signing_key: ""       # empty derives a stable HMAC key from auth.jwt_secret
+  public_url: ""        # empty uses the request Host/scheme; set behind reverse proxies
+downloads:
+  dir: "/usr/local/share/neilico/downloads"
 ratelimit:
   enabled: true
   rps: 20

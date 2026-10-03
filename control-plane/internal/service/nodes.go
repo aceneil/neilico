@@ -81,6 +81,10 @@ type HeartbeatInput struct {
 }
 
 func (s *NodeService) Register(ctx context.Context, tenantID uuid.UUID, input NodeRegisterInput) (NodeRegisterOutput, error) {
+	return s.RegisterTx(ctx, s.db, tenantID, input)
+}
+
+func (s *NodeService) RegisterTx(ctx context.Context, tx *gorm.DB, tenantID uuid.UUID, input NodeRegisterInput) (NodeRegisterOutput, error) {
 	input.Name = strings.TrimSpace(input.Name)
 	input.OS = strings.TrimSpace(input.OS)
 	input.Arch = strings.TrimSpace(input.Arch)
@@ -126,7 +130,7 @@ func (s *NodeService) Register(ctx context.Context, tenantID uuid.UUID, input No
 		Tags:           datatypes.JSONSlice[string](tags),
 		AgentTokenHash: tokenHash,
 	}
-	if err := s.db.WithContext(ctx).Create(&node).Error; err != nil {
+	if err := tx.WithContext(ctx).Create(&node).Error; err != nil {
 		return NodeRegisterOutput{}, fmt.Errorf("register node: %w", err)
 	}
 	return NodeRegisterOutput{

@@ -112,6 +112,11 @@ func (m *Manager) Parse(tokenString, expectedType string) (Claims, error) {
 	return claims, nil
 }
 
+func (m *Manager) EnrollSigningKey() []byte {
+	digest := sha256.Sum256([]byte("neilico-enroll-signing-key-v1\x00" + string(m.secret)))
+	return digest[:]
+}
+
 func (m *Manager) CertificateEncryptionKey() []byte {
 	digest := sha256.Sum256([]byte("neilico-auth-jwt-secret-v1\x00" + string(m.secret)))
 	return digest[:]

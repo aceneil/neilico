@@ -17,6 +17,7 @@ NEILICO（Unified Mesh & Proxy Platform）：统一「内网穿透 + Mesh 组网
 | `agent/` | Go Agent（注册/心跳/拉配置/应用 WireGuard/子网路由） |
 | `cli/` | `neilicoctl` 命令行 |
 | `dashboard/` | Vue3 + Vite + Ant Design Vue 管理后台 |
+| `deploy/agent/` | Agent 最小 Docker 镜像与 README（入口 `neilico-agent run`，读 `NEILICO_TOKEN`） |
 | `deploy/allinone/` | **现行形态**：单容器（PostgreSQL + 控制面 API + 内置反代 + Dashboard 同容器），构建上下文=仓库根 |
 | `deploy/docker-compose/` | 历史测试栈（6 容器 postgres/redis/nats/control-api/dashboard/relay），**非现行形态** |
 | `deploy/helm/neilico/` | Kubernetes Helm Chart（默认外部 PostgreSQL，含开发依赖/relay 占位） |
@@ -45,6 +46,7 @@ NEILICO（Unified Mesh & Proxy Platform）：统一「内网穿透 + Mesh 组网
 | **V1-R4 API Token/Scope/限流** | ✅ | （未提交） | migration `000008`、API Token 哈希/轮换/撤销、角色→scope 兼容表、`RequireScope`、按 Token/user 令牌桶、CLI token 命令、Dashboard 真实 Token 页面 |
 | **改名 UMPP→NEILICO** | ✅ | `1e42e4f` | Go 模块、容器名、compose 项目名、`UMPP_→NEILICO_` 环境变量前缀、文档全量改名 |
 | **V2A1 单容器打包** | ✅ | `21c8450` | 6 容器 → 1（`deploy/allinone/`）；Go 二进制同源直接服务前端，去掉 nginx |
+| **E1 节点一键接入** | ✅ | （未提交） | 自包含 enroll token、自注册/幂等/VIP/审计、公开二进制与 `install.sh`、Agent 零配置 run、`docs/AGENT_ENROLL.md` |
 | **上线后缺陷修复** | ✅ | `d12230a` `ece5629` `2c3cefb` | ①登录表单点击无反应（AntDV `<a-form>` 缺 `:model`）②侧栏/header 深底深字（对比度 1.13:1） |
 
 ### 常驻部署（生产用 Docker 目录那份；2026-10-03 改为**单容器**）
@@ -105,6 +107,9 @@ NEILICO（Unified Mesh & Proxy Platform）：统一「内网穿透 + Mesh 组网
 - 告警：`GET /api/v1/alerts`（firing/resolved 筛选）、`/alerts/rules`、`/alerts/summary`、`GET /alerts/{id}` 时间线；`POST /api/v1/alerts/evaluate` 仅 platform_admin/tenant_admin/ops。platform_admin 列表可传 `tenant_id`。
 - `Alert.state` 只有 `firing|resolved`；P2P/中继采集缺失用 `data_status=insufficient_data` 且不落库/不通知。`since` 是最近观测时间，`started_at` 是首次触发时间（Dashboard 持续时长使用后者）。
 - `/metrics` 的 `neilico_p2p_success_rate`、`neilico_relay_bytes`、`neilico_agent_heartbeat_latency` 当前无真实采集，恒为 0，V2 接入；其余 V1-R2 必需指标有数据库或请求真实来源。
+- 接入令牌格式 `neilico-enroll.<base64url payload>.<base64url HMAC>`，payload 自带 server/tenant/network/jti/exp；DB 只存完整串 SHA-256。创建响应的 `commands.{linux,docker}` 与 token 都只出现一次；同 jti+同请求重放不重发凭据。
+- 公开引导：`GET /install.sh`（shell script）与 `GET /downloads/neilico-agent-{os}-{arch}`（`X-Neilico-Sha256`）；enroll 走来源 IP 令牌桶，install/download 明确限流豁免。
+- Agent 可用 `neilico-agent enroll --token` 或 `run --token/--token-file/NEILICO_TOKEN`；state 目录取 `NEILICO_STATE_DIR`/`--state-dir`。
 - API Token 明文 `neilico_<32-byte base64url>` 只在 create/rotate 响应出现一次；数据库只存 SHA-256，展示/审计最多 `token_prefix + "…"`。撤销幂等，rotate 旧值立即失效。
 - API Token scope：`nodes/networks/proxy/certs/tokens/alerts` 的 read/write + `admin`；API Token 严格按自身 scopes 且不能创建更大 scopes 的子 Token。JWT 维持 RBAC，映射表见 `internal/auth/scopes.go` 与 `docs/API.md`。
 - 限流 `ratelimit.enabled/rps/burst`（默认 true/20/40）按 API Token ID 或 JWT user 使用并发安全内存令牌桶；healthz/metrics/ACME challenge 豁免。

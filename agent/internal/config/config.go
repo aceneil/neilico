@@ -41,6 +41,7 @@ func (d Duration) MarshalYAML() (any, error) {
 type Config struct {
 	Server            string   `yaml:"server"`
 	Token             string   `yaml:"token,omitempty"`
+	EnrollToken       string   `yaml:"enroll_token,omitempty"`
 	Node              Node     `yaml:"node"`
 	Mesh              Mesh     `yaml:"mesh"`
 	Proxy             Proxy    `yaml:"proxy"`
@@ -132,6 +133,7 @@ func applyEnv(cfg *Config) error {
 	stringsMap := map[string]*string{
 		"NEILICO_AGENT_SERVER":                  &cfg.Server,
 		"NEILICO_AGENT_TOKEN":                   &cfg.Token,
+		"NEILICO_TOKEN":                         &cfg.EnrollToken,
 		"NEILICO_AGENT_NODE_NAME":               &cfg.Node.Name,
 		"NEILICO_AGENT_MESH_INTERFACE":          &cfg.Mesh.Interface,
 		"NEILICO_AGENT_MESH_PUBLIC_ENDPOINT":    &cfg.Mesh.PublicEndpoint,
@@ -194,6 +196,13 @@ func applyEnv(cfg *Config) error {
 	}
 	if value, ok := os.LookupEnv("NEILICO_AGENT_NODE_TAGS"); ok {
 		cfg.Node.Tags = splitTags(value)
+	}
+	if dir, ok := os.LookupEnv("NEILICO_STATE_DIR"); ok {
+		if dir = strings.TrimSpace(dir); dir != "" {
+			if _, explicit := os.LookupEnv("NEILICO_AGENT_STATE"); !explicit {
+				cfg.StatePath = filepath.Join(dir, "state.json")
+			}
+		}
 	}
 	return nil
 }
