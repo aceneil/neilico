@@ -120,6 +120,8 @@ export interface EnrollTokenCreateResult {
   commands: EnrollTokenCommands
   /** Docker 命令使用的 agent 镜像地址（控制面返回，用于在界面上标明镜像来源） */
   agent_image?: string
+  /** 令牌（及其内嵌命令）的生成时间：命令按这一刻的配置固化，升级后需重新生成 */
+  created_at?: string
 }
 
 export interface Paged<T> {
