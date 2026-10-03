@@ -48,6 +48,7 @@ NEILICO（Unified Mesh & Proxy Platform）：统一「内网穿透 + Mesh 组网
 | **V2A1 单容器打包** | ✅ | `21c8450` | 6 容器 → 1（`deploy/allinone/`）；Go 二进制同源直接服务前端，去掉 nginx |
 | **E1 节点一键接入（CF Tunnel 式）** | ✅ | `9abbb7f` + `25dfc15` | 自包含签名令牌、无鉴权自注册、`/install.sh`、`/downloads/agent-*`、Agent `enroll`/`NEILICO_TOKEN`、`deploy/agent/Dockerfile`；**manager 实测 26/26 通过**（含原样执行接口给的 docker 命令 → 节点 online + VIP + wg0 + 心跳） |
 | **E2 跨平台连接器 + 能力上报** | ✅ | `4a75dc4` | `install.ps1`（New-Service/sha256/管理员检查/-DryRun）、`install.sh` 增 Darwin/launchd 分支、6 个平台二进制分发、`nodes.capabilities` 如实上报、补上节点详情 VIP；**过程中修掉一个升级崩溃 bug** |
+| **E3 四平台接入界面** | ✅ | `ef57a82` | 设备页「接入设备」两步弹窗（Docker/Linux/macOS/Windows 四页签 + 一键复制 + 倒计时 + 重新生成）、令牌管理（状态/撤销）、列表与详情显示 VIP + 能力徽标 + 原因；命令严格取自接口 `commands.*`。manager 真浏览器 3840×2160 复验通过 |
 | **上线后缺陷修复** | ✅ | `d12230a` `ece5629` `2c3cefb` `ddf34c1` | ①登录表单点击无反应（AntDV `<a-form>` 缺 `:model`）②侧栏/header 深底深字（1.13:1）③页头标题被裁（AntDV `Layout.Header` 的 64px 高/行高盖掉我们的 76px） |
 
 ### 常驻部署（生产用 Docker 目录那份；2026-10-03 改为**单容器**）
@@ -156,6 +157,8 @@ cd deploy/helm && bash neilico/ci/verify.sh
   - **注意：`migrations/*.sql` 在启动时根本不会被执行**（`cmd/api`、`db.go`、entrypoint 都没引用），**AutoMigrate 是生产唯一的 schema 路径**，所以**模型 tag 才是唯一真相**，SQL 文件只是文档/外部工具用。
   - **这类 bug 单测抓不到**：单测迁移的是**空库**，没有行就永远不会报 `contains null values`。已补回归测试 `internal/db/migrate_upgrade_test.go`（建表 → 删新列 → 用原始 SQL 插历史行 → 再 AutoMigrate），并做过**变异验证**（去掉 default 会红，报 `Cannot add a NOT NULL column with default value NULL`）。**今后凡新增 NOT NULL 列，必须先跑这条测试。**
 - **删除处于 online 的节点返回 500**（实测；容器已删但 sweeper 尚未把它标 offline 时删就 500）。属健壮性小问题，建议改成 409（提示先下线）或直接允许删除。
+- **浅色主题下 AntDV 预设 tag 文字对比度不足**（实测 12px 小字：绿 3.37 / 橙 3.34 / 蓝 ≈3.7，均 < 4.5）。已用 `[data-theme='light'] .ant-tag-{green,orange,red,blue}` 压到同色系更深一档（现 5.09–7.04）。**新加任何 tag 色都要量对比度**。
+- **验前端不必先部署**：`VITE_API_BASE` 同时被当作 dev 代理目标**和**客户端 API base（Vite 会把 `VITE_*` 注入前端），所以给 dev server 设它会让浏览器跨域直连后端 → **CORS 失败（Network Error）**。可靠做法：`npm run build` 后用 `/tmp/serve-dist.py`（静态服务 dist + 同源 `/api` 反代到真后端）——验的就是待部署的那个 bundle，且同源无 CORS。
 - **Agent 跨平台现状（E2）**：六目标 `windows/amd64`、`darwin/{amd64,arm64}`、`linux/{amd64,arm64,armv7}` 均已本地 `go build` 通过；能力探测按工具/TUN/系统组件/管理员权限真实上报。Windows/macOS 真机安装、WireGuardNT/系统扩展和 launchd/Windows Service 生命周期尚未在真机执行，不能据脚本语法通过推断真机已组网。
 
 ## 验收方法论教训（本项目实测踩到）
