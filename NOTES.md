@@ -46,8 +46,8 @@ NEILICO（Unified Mesh & Proxy Platform）：统一「内网穿透 + Mesh 组网
 | **V1-R4 API Token/Scope/限流** | ✅ | （未提交） | migration `000008`、API Token 哈希/轮换/撤销、角色→scope 兼容表、`RequireScope`、按 Token/user 令牌桶、CLI token 命令、Dashboard 真实 Token 页面 |
 | **改名 UMPP→NEILICO** | ✅ | `1e42e4f` | Go 模块、容器名、compose 项目名、`UMPP_→NEILICO_` 环境变量前缀、文档全量改名 |
 | **V2A1 单容器打包** | ✅ | `21c8450` | 6 容器 → 1（`deploy/allinone/`）；Go 二进制同源直接服务前端，去掉 nginx |
-| **E1 节点一键接入** | ✅ | （未提交） | 自包含 enroll token、自注册/幂等/VIP/审计、公开二进制与 `install.sh`、Agent 零配置 run、`docs/AGENT_ENROLL.md` |
-| **上线后缺陷修复** | ✅ | `d12230a` `ece5629` `2c3cefb` | ①登录表单点击无反应（AntDV `<a-form>` 缺 `:model`）②侧栏/header 深底深字（对比度 1.13:1） |
+| **E1 节点一键接入（CF Tunnel 式）** | ✅ | `9abbb7f` + `25dfc15` | 自包含签名令牌、无鉴权自注册、`/install.sh`、`/downloads/agent-*`、Agent `enroll`/`NEILICO_TOKEN`、`deploy/agent/Dockerfile`；**manager 实测 26/26 通过**（含原样执行接口给的 docker 命令 → 节点 online + VIP + wg0 + 心跳） |
+| **上线后缺陷修复** | ✅ | `d12230a` `ece5629` `2c3cefb` `ddf34c1` | ①登录表单点击无反应（AntDV `<a-form>` 缺 `:model`）②侧栏/header 深底深字（1.13:1）③页头标题被裁（AntDV `Layout.Header` 的 64px 高/行高盖掉我们的 76px） |
 
 ### 常驻部署（生产用 Docker 目录那份；2026-10-03 改为**单容器**）
 > **仓库内 `deploy/docker-compose/`（6 容器：postgres/redis/nats/control-api/dashboard/relay）仅供历史上的测试栈**（项目名 `neilico-m5`、命名卷、固定端口），**不是现行形态**。
@@ -147,6 +147,11 @@ cd deploy/helm && bash neilico/ci/verify.sh
 - **AntDV 的 `Layout.Sider` / `Layout.Header` 默认背景是硬编码深色 `#001529`，必须显式覆盖且要 `!important`**（AntDV 的运行时注入样式排在 main.css 之后，同权重时它赢）。我们踩的坑：侧栏和 header 都露着深色底，而文字用 `var(--text)`（浅色主题下是深墨色）→ **对比度 1.13:1，肉眼看不见**。
   - 约定：**侧栏 = 深色面**（`--sider-bg`，日/夜一致，菜单恒 `theme="dark"`，文字一律 `rgba(255,255,255,.88)`/白）；**header 属于内容区**，跟随主题（`background: var(--surface) !important`）。`.ant-layout` 的默认灰底 `#f5f5f5` 也要归位成 `--page-bg`。
   - 验证方式：逐元素读 `getComputedStyle(el).color/backgroundColor` 算对比度，**两套主题都要量**（header 那条只在浅色模式暴露，深色模式看不出来）。当前实测：侧栏文字 13–18:1、header 标题 14–16:1；选中项 4.1:1（AntDV 蓝底白字）。
+- **装配漏传 option 会让公开端点静默 404（单测抓不到）**：`cmd/api/main.go` 构造 `api.ProxyOptions` 时漏了 `Downloads`/`Enroll` → `downloadsDir` 为空 → `/downloads/*` 全 404（尽管镜像里二进制齐全）。**单测自己构造 options 传了临时目录，所以全绿**。已在 main.go 补齐并加启动告警（`agent downloads ready` / `warns when unusable`）——凡"只在真机部署才暴露"的装配项，都要留一条启动日志或部署级断言。
+- **节点详情接口不返回 `virtual_ip`/`network_id`**（VIP 只存在于网络成员表与 agent state.json）。功能正常，但 Dashboard 设备列表看不到节点 IP —— 属待补的展示缺口（E3 可一并做）。
+- **E1 一键接入的实测口径**（`/tmp/neilico-e2e-docker.sh`，26 PASS）：公开端点 200+sha256/404、负向对照（受限 API Token 建接入令牌 → 403）、原样执行接口给的 docker 命令 → 容器自注册 online、成员表分到 VIP、心跳 30s 推进、容器内 `wg0` 公钥与 state.json 一致、用尽 410/撤销 401/篡改 401、同请求重放返回同一节点且 `replayed=true`。
+  - 踩过的测试坑：**时间窗必须 > 心跳间隔 30s**（我一开始只等 12s，误判"心跳不动"）；**Mesh 接口要等 20s+ 再断言**（刚 enroll 完 wg0 还没建）；测试要**可重入**（API Token 名与网络 CIDR 都要唯一，否则 409）。
+- **Agent 跨平台现状（实测）**：`windows/amd64`、`darwin/{amd64,arm64}`、`linux/{amd64,arm64}` **均可编译**，全 agent 仅 `cmd/agent/main.go` 一处 Linux 相关引用。所以 Windows/macOS 连接器的剩余工作是**服务安装脚本（New-Service/launchd）+ 分发命名 + Mesh 能力如实上报**，不是重写。当前只做了 **Docker + Linux**（用户指定 Docker 优先）。
 
 ## 验收方法论教训（本项目实测踩到）
 
