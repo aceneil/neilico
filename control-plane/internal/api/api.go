@@ -14,6 +14,7 @@ import (
 	"gorm.io/gorm"
 
 	"neilico/control-plane/internal/auth"
+	"neilico/control-plane/internal/config"
 	"neilico/control-plane/internal/dashboard"
 	"neilico/control-plane/internal/metrics"
 	"neilico/control-plane/internal/middleware"
@@ -58,6 +59,7 @@ type Server struct {
 	proxyOpts     ProxyOptions
 	downloadsDir  string
 	enrollURL     string
+	agentImage    string
 	startedAt     time.Time
 }
 
@@ -165,6 +167,7 @@ func NewWithProxy(
 		enrollNodes:   service.NewNodeEnrollService(db, nodeService, enrollSigningKey(authManager, opts.Enroll.SigningKey)),
 		downloadsDir:  opts.Downloads.Dir,
 		enrollURL:     strings.TrimRight(strings.TrimSpace(opts.Enroll.PublicURL), "/"),
+		agentImage:    agentImageOrDefault(opts.Enroll.AgentImage),
 		alertEngine:   alertEngine,
 		metrics:       promMetrics,
 		logger:        logger,
@@ -768,4 +771,14 @@ func writeErrorDetail(w http.ResponseWriter, status int, code, message string, d
 		payload["detail"] = detail
 	}
 	writeJSON(w, status, map[string]any{"error": payload})
+}
+
+// agentImageOrDefault：接入命令用的 agent 镜像地址，空则回落到默认值，
+// 避免出现 `docker run ... <空> ` 这种废命令。
+func agentImageOrDefault(value string) string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return config.DefaultAgentImage
+	}
+	return trimmed
 }

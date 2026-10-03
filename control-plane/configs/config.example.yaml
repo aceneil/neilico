@@ -35,6 +35,9 @@ node:
 enroll:
   signing_key: ""       # empty derives a stable HMAC key from auth.jwt_secret
   public_url: ""        # empty uses the request Host/scheme; set behind reverse proxies
+  agent_image: "ghcr.io/aceneil/neilico-agent:latest"
+                        # 接入命令里 docker run 用的镜像；必须是**目标机能拉到**的地址
+                        # （早先用本机 tag neilico-agent:local，别的机器必然 pull 失败）
 downloads:
   dir: "/usr/local/share/neilico/downloads"
 ratelimit:

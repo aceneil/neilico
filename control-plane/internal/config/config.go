@@ -82,7 +82,14 @@ type Alerts struct {
 type Enroll struct {
 	SigningKey string `yaml:"signing_key"`
 	PublicURL  string `yaml:"public_url"`
+	// AgentImage 是接入命令里 `docker run` 使用的 agent 镜像地址。
+	// 必须是**目标机能拉到**的地址：早先用的是本机 tag `neilico-agent:local`，
+	// 那在别的机器上必然 `pull access denied`，现默认指向 ghcr.io。
+	AgentImage string `yaml:"agent_image"`
 }
+
+// DefaultAgentImage：接入命令默认使用的 agent 镜像（可用 NEILICO_ENROLL_AGENT_IMAGE 覆盖）。
+const DefaultAgentImage = "ghcr.io/aceneil/neilico-agent:latest"
 
 type Downloads struct {
 	Dir string `yaml:"dir"`
@@ -197,7 +204,7 @@ func Default() Config {
 			WebhookTimeout:        5 * time.Second,
 			WebhookRetries:        3,
 		},
-		Enroll:    Enroll{},
+		Enroll:    Enroll{AgentImage: DefaultAgentImage},
 		Downloads: Downloads{Dir: "/usr/local/share/neilico/downloads"},
 		RateLimit: RateLimit{Enabled: true, RPS: 20, Burst: 40},
 		Log:       Log{Level: "info", Format: "json"},
@@ -244,6 +251,7 @@ func applyEnvironment(cfg *Config) error {
 		{"NEILICO_AUTH_JWT_SECRET", &cfg.Auth.JWTSecret},
 		{"NEILICO_ENROLL_SIGNING_KEY", &cfg.Enroll.SigningKey},
 		{"NEILICO_ENROLL_PUBLIC_URL", &cfg.Enroll.PublicURL},
+		{"NEILICO_ENROLL_AGENT_IMAGE", &cfg.Enroll.AgentImage},
 		{"NEILICO_DOWNLOADS_DIR", &cfg.Downloads.Dir},
 		{"NEILICO_BOOTSTRAP_ADMIN_EMAIL", &cfg.Bootstrap.AdminEmail},
 		{"NEILICO_BOOTSTRAP_ADMIN_PASSWORD", &cfg.Bootstrap.AdminPassword},

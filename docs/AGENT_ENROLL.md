@@ -103,14 +103,18 @@ Windows/macOS 没有可用 WireGuard 组件时，Agent **只继续注册/心跳/
 
 **权限**：容器需要 `NET_ADMIN` 与 `/dev/net/tun` 才能真正创建 WireGuard 接口；没有这些能力时只做控制面和其他可用面。
 
+**镜像来源**：`ghcr.io/aceneil/neilico-agent:latest`（公开，目标机直接 pull，无需登录）。
+地址可在配置里覆盖（`enroll.agent_image` / `NEILICO_ENROLL_AGENT_IMAGE`）；离线或自建
+registry 环境请改成自己的地址，或在本机用 `deploy/agent/Dockerfile` 自行构建。
+
 ```bash
 docker run -d --name neilico-agent --restart unless-stopped \
   --network host --cap-add NET_ADMIN --device /dev/net/tun \
   -v neilico-agent-state:/var/lib/neilico-agent \
-  -e NEILICO_TOKEN=<TOKEN> neilico-agent:local
+  -e NEILICO_TOKEN=<TOKEN> ghcr.io/aceneil/neilico-agent:latest
 ```
 
-镜像入口是 `neilico-agent run`，首次启动读取 `NEILICO_TOKEN` 自动 enroll，之后只使用 state 卷。没有 TUN/`NET_ADMIN` 时可运行 `neilico-agent:local run --dry-run` 检查配置，但不会建立 WireGuard 隧道。
+镜像入口是 `neilico-agent run`，首次启动读取 `NEILICO_TOKEN` 自动 enroll，之后只使用 state 卷。没有 TUN/`NET_ADMIN` 时可运行 `neilico-agent run --dry-run` 检查配置，但不会建立 WireGuard 隧道。
 
 ## 能力模型
 

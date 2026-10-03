@@ -18,11 +18,15 @@
 ## 1. Docker（已实测通过，作为基线）
 
 **执行**（就是界面上复制到的那条）：
+
+**前提**：目标机能访问 `ghcr.io`（或已提前 `docker pull` 过）。镜像由控制面生成，
+地址可在 `enroll.agent_image` 覆盖；离线环境请自行 `docker build -f deploy/agent/Dockerfile`。
+
 ```bash
 docker run -d --name neilico-agent --restart unless-stopped \
   --network host --cap-add NET_ADMIN --device /dev/net/tun \
   -v neilico-agent-state:/var/lib/neilico-agent \
-  -e NEILICO_TOKEN=<TOKEN> neilico-agent:local
+  -e NEILICO_TOKEN=<TOKEN> ghcr.io/aceneil/neilico-agent:latest
 ```
 
 **判定通过（逐条核对）**：

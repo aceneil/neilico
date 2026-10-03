@@ -40,6 +40,9 @@ type DashboardOptions struct {
 type EnrollOptions struct {
 	SigningKey string
 	PublicURL  string
+	// AgentImage 是接入命令里 `docker run` 用的 agent 镜像地址（必须是目标机能拉到的，
+	// 具体原因见 config.Enroll.AgentImage 的注释）。
+	AgentImage string
 }
 
 type DownloadsOptions struct {

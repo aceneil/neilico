@@ -95,7 +95,7 @@ func (s *Server) handleEnrollTokens(w http.ResponseWriter, r *http.Request) {
 			"network_id": created.Item.NetworkID,
 			"name_hint":  created.Item.NameHint,
 			"server":     server,
-			"commands":   enrollCommandSet(server, created.Token),
+			"commands":   enrollCommandSet(server, created.Token, s.agentImage),
 		})
 	default:
 		s.methodNotAllowed(w, http.MethodGet, http.MethodPost)
@@ -216,14 +216,29 @@ func validateEnrollServer(value string) error {
 	return nil
 }
 
-func enrollCommandSet(server, token string) enrollCommands {
+func enrollCommandSet(server, token, image string) enrollCommands {
 	base := strings.TrimRight(server, "/")
 	shellCommand := "curl -fsSL " + base + "/install.sh | sudo bash -s -- --token " + token
+
+	// Docker：直接从镜像仓库拉官方 agent 镜像。
+	//   早先这里写的是本机 tag `neilico-agent:local` —— 那玩意儿只在本机构建过，
+	//   别的机器 `docker pull neilico-agent:local` 会得到
+	//     pull access denied for neilico-agent, repository does not exist
+	//   （实测）。现改为可配置的镜像地址（默认 ghcr.io，见 config.DefaultAgentImage）。
+	// 行尾用「空格 + 反斜杠 + 换行」续行，整段可直接粘进 shell。
+	dockerLines := []string{
+		"docker run -d --name neilico-agent --restart unless-stopped",
+		"  --network host --cap-add NET_ADMIN --device /dev/net/tun",
+		"  -v neilico-agent-state:/var/lib/neilico-agent",
+		"  -e NEILICO_TOKEN=" + token + " " + image,
+	}
+	dockerCommand := strings.Join(dockerLines, " \\\n")
+
 	return enrollCommands{
 		Linux:   shellCommand,
 		MacOS:   shellCommand,
 		Windows: `powershell -ExecutionPolicy Bypass -Command "& ([scriptblock]::Create((irm ` + base + `/install.ps1))) -Token ` + token + `"`,
-		Docker:  "docker run -d --name neilico-agent --restart unless-stopped \\\n  --network host --cap-add NET_ADMIN --device /dev/net/tun \\\n  -v neilico-agent-state:/var/lib/neilico-agent \\\n  -e NEILICO_TOKEN=" + token + " neilico-agent:local",
+		Docker:  dockerCommand,
 	}
 }
 

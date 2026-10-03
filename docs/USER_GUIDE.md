@@ -91,11 +91,16 @@ curl -sS -X POST http://127.0.0.1:18080/api/v1/certificates \
 curl -fsSL <SERVER>/install.sh | sudo bash -s -- --token <TOKEN>
 
 # Docker：首次启动自动 enroll，凭据写入持久卷
+# 镜像在 ghcr.io（公开，目标机直接 pull 即可，无需登录）
 docker run -d --name neilico-agent --restart unless-stopped \
   --network host --cap-add NET_ADMIN --device /dev/net/tun \
   -v neilico-agent-state:/var/lib/neilico-agent \
-  -e NEILICO_TOKEN=<TOKEN> neilico-agent:local
+  -e NEILICO_TOKEN=<TOKEN> ghcr.io/aceneil/neilico-agent:latest
 ```
+
+> 镜像地址可在配置里改（`enroll.agent_image` / 环境变量 `NEILICO_ENROLL_AGENT_IMAGE`），
+> 自建 registry 或离线环境请改成自己的地址；离线机器也可以自行构建：
+> `docker build -f deploy/agent/Dockerfile -t <你想要的tag> .`
 
 无 root、无 TUN 时可先执行 `--dry-run`。成功后 state 会保存 node id、agent token、WireGuard 私钥和 VIP；后续心跳只使用 state，不需要再次提供接入令牌。真实 WireGuard 应用需要 root、`ip`、`wg`、`CAP_NET_ADMIN` 与 `/dev/net/tun`。
 

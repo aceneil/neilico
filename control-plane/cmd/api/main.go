@@ -149,6 +149,7 @@ func run() error {
 		Enroll: api.EnrollOptions{
 			SigningKey: cfg.Enroll.SigningKey,
 			PublicURL:  cfg.Enroll.PublicURL,
+			AgentImage: cfg.Enroll.AgentImage,
 		},
 		RateLimit: api.RateLimitOptions{
 			Enabled: cfg.RateLimit.Enabled,
