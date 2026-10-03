@@ -117,6 +117,41 @@ docker run -d --name neilico-agent --restart unless-stopped \
 
 镜像入口是 `neilico-agent run`，首次启动读取 `NEILICO_TOKEN` 自动 enroll，之后只使用 state 卷。没有 TUN/`NET_ADMIN` 时可运行 `neilico-agent run --dry-run` 检查配置，但不会建立 WireGuard 隧道。
 
+### 4.1 用 docker compose（推荐，尤其本机约定只用 compose 时）
+
+`docker run -v 名字:/路径` 会自动创建命名卷，但 **compose 必须先写顶层 `volumes:` 声明**，否则报
+`service "..." refers to undefined volume ...: invalid compose project`。最省事的写法是**绑定挂载**：
+
+```yaml
+name: neilico-agent
+services:
+  agent:
+    image: ghcr.io/aceneil/neilico-agent:latest
+    container_name: neilico-agent
+    restart: unless-stopped
+    network_mode: host            # WireGuard 建接口需要宿主网络
+    cap_add: [NET_ADMIN]
+    devices: ["/dev/net/tun:/dev/net/tun"]
+    environment:
+      NEILICO_TOKEN: "<把控制面弹窗里的令牌贴这里>"
+    volumes:
+      - ./data/neilico-agent:/var/lib/neilico-agent   # 绑定挂载，无需顶层 volumes
+```
+
+```bash
+docker compose -f docker-compose.neilico-agent.yaml up -d
+```
+
+两点提示：
+
+- **令牌只在首次需要**。enroll 成功后凭据写入 `./data/neilico-agent/state.json`，之后即使令牌栏留着占位符、或干脆留空，重启也能正常上线（服务器地址同样取自 state）。
+- 若确实要用命名卷，必须补顶层声明，否则 compose 不会替你隐式创建：
+
+  ```yaml
+  volumes:
+    neilico-agent-state:
+  ```
+
 ## 能力模型
 
 注册和每次心跳都可上报：

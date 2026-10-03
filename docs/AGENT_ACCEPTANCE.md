@@ -22,6 +22,12 @@
 **前提**：目标机能访问 `ghcr.io`（或已提前 `docker pull` 过）。镜像由控制面生成，
 地址可在 `enroll.agent_image` 覆盖；离线环境请自行 `docker build -f deploy/agent/Dockerfile`。
 
+> **若用 docker compose 部署 agent**：注意 compose 与 `docker run` 的一处差异——
+> `docker run -v 名字:/路径` 会自动建命名卷；compose 里**必须在顶层声明 `volumes:`**，
+> 否则报 `refers to undefined volume ...: invalid compose project`。用绑定挂载（如
+> `./data/neilico-agent:/var/lib/neilico-agent`）可以完全绕开这个坑。本机现成的
+> compose 文件见 `/home/neil/Documents/Docker/docker-compose.neilico-agent.yaml`。
+
 ```bash
 docker pull ghcr.io/aceneil/neilico-agent:latest && \
 docker run -d --name neilico-agent --restart unless-stopped \
