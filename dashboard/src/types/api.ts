@@ -51,6 +51,7 @@ export interface Node {
   name: string
   public_key: string
   virtual_ip?: string | null
+  network_id?: string | null
   wireguard_public_key?: string | null
   public_endpoint?: string | null
   os: string
@@ -60,6 +61,14 @@ export interface Node {
   last_seen?: string | null
   tags: string[]
   created_at: string
+  capabilities?: NodeCapabilities
+}
+
+export interface NodeCapabilities {
+  mesh?: 'ready' | 'degraded' | 'unavailable' | string
+  subnet_routes?: 'ready' | 'degraded' | 'unavailable' | string
+  tunnel?: 'ready' | 'degraded' | 'unavailable' | string
+  reason?: string
 }
 
 export interface NodeRegisterResult {
@@ -69,6 +78,46 @@ export interface NodeRegisterResult {
   status: string
   public_key: string
   private_key?: string
+}
+
+export interface EnrollTokenCommands {
+  linux?: string
+  macos?: string
+  windows?: string
+  docker?: string
+}
+
+export interface EnrollToken {
+  id: string
+  tenant_id: string
+  network_id?: string | null
+  name_hint: string
+  expires_at: string
+  max_uses: number
+  used_count: number
+  status: 'active' | 'used' | 'expired' | 'revoked' | string
+  revoked_at?: string | null
+  created_by?: string | null
+  created_at: string
+}
+
+export interface EnrollTokenCreateInput {
+  name_hint?: string
+  network_id?: string | null
+  expires_in_seconds: number
+  max_uses: number
+}
+
+export interface EnrollTokenCreateResult {
+  id: string
+  token: string
+  expires_at: string
+  max_uses: number
+  used_count: number
+  network_id?: string | null
+  name_hint: string
+  server: string
+  commands: EnrollTokenCommands
 }
 
 export interface Paged<T> {

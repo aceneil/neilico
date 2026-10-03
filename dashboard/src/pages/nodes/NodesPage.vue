@@ -6,6 +6,7 @@ import {
   DesktopOutlined,
   EyeOutlined,
   FilterOutlined,
+  LinkOutlined,
   PlusOutlined,
   ReloadOutlined,
   SafetyCertificateOutlined,
@@ -17,13 +18,23 @@ import DataState from '@/components/DataState.vue'
 import EChart from '@/components/EChart.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import { apiErrorMessage, apiErrorStatus } from '@/api/http'
+import { enrollTokensApi } from '@/api/enroll-tokens'
 import { nodesApi, type NodeListQuery } from '@/api/nodes'
+import EnrollDeviceModal from '@/pages/nodes/EnrollDeviceModal.vue'
+import EnrollTokenPanel from '@/pages/nodes/EnrollTokenPanel.vue'
 import { useAuthStore } from '@/stores/auth'
 import { useThemeStore } from '@/stores/theme'
 import { canManageNodes } from '@/utils/permissions'
 import { formatBytes, formatTime } from '@/utils/format'
 import { maskSecret } from '@/utils/sensitive'
-import type { Node, NodeCertificate, NodeMetrics, NodeRegisterResult } from '@/types/api'
+import type {
+  EnrollToken,
+  Node,
+  NodeCapabilities,
+  NodeCertificate,
+  NodeMetrics,
+  NodeRegisterResult
+} from '@/types/api'
 import { daysUntil, remainingDaysLabel } from '@/utils/format'
 
 const auth = useAuthStore()
@@ -39,10 +50,14 @@ const filters = reactive({ status: undefined as string | undefined, tag: '', key
 const filtersCollapsed = ref(false)
 const selectedNode = ref<Node | null>(null)
 const detailOpen = ref(false)
+const enrollOpen = ref(false)
 const registerOpen = ref(false)
 const registering = ref(false)
 const registerFormRef = ref()
 const registration = ref<NodeRegisterResult | null>(null)
+const enrollTokens = ref<EnrollToken[]>([])
+const enrollTokensLoading = ref(false)
+const enrollTokensError = ref('')
 const nodeMetrics = ref<NodeMetrics | null>(null)
 const mtlsCertificate = ref<NodeCertificate | null>(null)
 const mtlsLoading = ref(false)
@@ -77,6 +92,39 @@ const filteredNodes = computed(() => {
   )
 })
 
+type CapabilityKey = Exclude<keyof NodeCapabilities, 'reason'>
+
+const capabilityLabels: Record<CapabilityKey, string> = {
+  mesh: 'Mesh',
+  subnet_routes: '子网路由',
+  tunnel: '隧道'
+}
+const capabilityKeys: CapabilityKey[] = ['mesh', 'subnet_routes', 'tunnel']
+
+function capabilitiesFor(node: Node): NodeCapabilities {
+  return node.capabilities || {}
+}
+
+function capabilityValue(node: Node, key: CapabilityKey): string {
+  return capabilitiesFor(node)[key] || 'unavailable'
+}
+
+function capabilityColor(value: string): string {
+  if (value === 'ready') return 'green'
+  if (value === 'degraded') return 'orange'
+  return 'default'
+}
+
+function capabilityLabel(value: string): string {
+  if (value === 'ready') return 'ready'
+  if (value === 'degraded') return 'degraded'
+  return 'unavailable'
+}
+
+function capabilityReason(node: Node): string {
+  return capabilitiesFor(node).reason?.trim() || '未提供原因'
+}
+
 async function load() {
   loading.value = true
   error.value = ''
@@ -92,6 +140,34 @@ async function load() {
   } finally {
     loading.value = false
   }
+}
+
+async function loadEnrollTokens() {
+  enrollTokensLoading.value = true
+  enrollTokensError.value = ''
+  try {
+    const result = await enrollTokensApi.list()
+    enrollTokens.value = result.items
+  } catch (cause) {
+    enrollTokensError.value = apiErrorMessage(cause)
+  } finally {
+    enrollTokensLoading.value = false
+  }
+}
+
+function revokeEnrollToken(token: EnrollToken) {
+  Modal.confirm({
+    title: '撤销接入令牌？',
+    content: '撤销后该令牌立即失效，不能再用于设备接入。',
+    okText: '确认撤销',
+    okType: 'danger',
+    cancelText: '取消',
+    async onOk() {
+      await enrollTokensApi.revoke(token.id)
+      message.success('接入令牌已撤销')
+      await loadEnrollTokens()
+    }
+  })
 }
 
 function applyFilters() {
@@ -256,6 +332,7 @@ function resetRegister() {
 }
 
 void load()
+void loadEnrollTokens()
 </script>
 
 <template>
@@ -263,8 +340,11 @@ void load()
     <PageHeader title="设备管理" subtitle="注册、查看和维护接入 NEILICO 的节点设备">
       <template #actions>
         <a-button @click="load"><ReloadOutlined /> 刷新</a-button>
-        <a-button v-if="canWrite" type="primary" @click="registerOpen = true; resetRegister()">
-          <PlusOutlined /> 注册节点
+        <a-button v-if="canWrite" type="primary" @click="enrollOpen = true">
+          <LinkOutlined /> 接入设备
+        </a-button>
+        <a-button v-if="canWrite" @click="registerOpen = true; resetRegister()">
+          <PlusOutlined /> 手动注册
         </a-button>
       </template>
     </PageHeader>
@@ -294,15 +374,16 @@ void load()
       <a-button @click="applyFilters">查询</a-button>
     </section>
 
-    <section class="panel table-panel">
-      <DataState
-        :loading="loading"
-        :error="error"
-        :empty="filteredNodes.length === 0"
-        empty-title="没有匹配的设备"
-        empty-description="调整筛选条件，或注册一个新节点"
-        @retry="load"
-      >
+    <div class="nodes-workspace">
+      <section class="panel table-panel nodes-table-panel">
+        <DataState
+          :loading="loading"
+          :error="error"
+          :empty="filteredNodes.length === 0"
+          empty-title="没有匹配的设备"
+          empty-description="调整筛选条件，或注册一个新节点"
+          @retry="load"
+        >
         <a-table
           :data-source="filteredNodes"
           :row-key="(record: Node) => record.id"
@@ -322,6 +403,23 @@ void load()
           </a-table-column>
           <a-table-column title="虚拟 IP" data-index="virtual_ip" :width="145">
             <template #default="{ record }">{{ record.virtual_ip || '—' }}</template>
+          </a-table-column>
+          <a-table-column title="接入能力" :width="330">
+            <template #default="{ record }">
+              <div class="capability-list">
+                <a-space wrap size="small">
+                  <a-tag
+                    v-for="key in capabilityKeys"
+                    :key="key"
+                    :color="capabilityColor(capabilityValue(record, key))"
+                    class="capability-badge"
+                  >
+                    {{ capabilityLabels[key] }} {{ capabilityLabel(capabilityValue(record, key)) }}
+                  </a-tag>
+                </a-space>
+                <div class="capability-reason">原因：{{ capabilityReason(record) }}</div>
+              </div>
+            </template>
           </a-table-column>
           <a-table-column title="OS / 架构" :width="170">
             <template #default="{ record }">{{ record.os }} / {{ record.arch }}</template>
@@ -346,21 +444,31 @@ void load()
               </a-space>
             </template>
           </a-table-column>
-        </a-table>
-        <div class="table-pagination">
-          <span>共 {{ total }} 台设备</span>
-          <a-pagination
-            v-model:current="page"
-            v-model:page-size="pageSize"
-            :total="total"
-            show-size-changer
-            :show-total="(count: number) => `${count} 条`"
-            @change="load"
-            @show-size-change="applyFilters"
-          />
-        </div>
-      </DataState>
-    </section>
+          </a-table>
+          <div class="table-pagination">
+            <span>共 {{ total }} 台设备</span>
+            <a-pagination
+              v-model:current="page"
+              v-model:page-size="pageSize"
+              :total="total"
+              show-size-changer
+              :show-total="(count: number) => `${count} 条`"
+              @change="load"
+              @show-size-change="applyFilters"
+            />
+          </div>
+        </DataState>
+      </section>
+
+      <EnrollTokenPanel
+        :tokens="enrollTokens"
+        :loading="enrollTokensLoading"
+        :error="enrollTokensError"
+        :can-write="canWrite"
+        @refresh="loadEnrollTokens"
+        @revoke="revokeEnrollToken"
+      />
+    </div>
 
     <a-drawer
       v-model:open="detailOpen"
@@ -375,6 +483,24 @@ void load()
             <a-badge :status="selectedNode.status === 'online' ? 'success' : 'default'" :text="selectedNode.status" />
           </a-descriptions-item>
           <a-descriptions-item label="WireGuard 虚拟 IP">{{ selectedNode.virtual_ip || '—' }}</a-descriptions-item>
+          <a-descriptions-item v-if="selectedNode.network_id" label="所属网络 ID">
+            <code class="code-ellipsis">{{ selectedNode.network_id }}</code>
+          </a-descriptions-item>
+          <a-descriptions-item label="接入能力">
+            <div class="capability-list">
+              <a-space wrap size="small">
+                <a-tag
+                  v-for="key in capabilityKeys"
+                  :key="key"
+                  :color="capabilityColor(capabilityValue(selectedNode, key))"
+                  class="capability-badge"
+                >
+                  {{ capabilityLabels[key] }} {{ capabilityLabel(capabilityValue(selectedNode, key)) }}
+                </a-tag>
+              </a-space>
+              <div class="capability-reason">原因：{{ capabilityReason(selectedNode) }}</div>
+            </div>
+          </a-descriptions-item>
           <a-descriptions-item label="公网端点">{{ selectedNode.public_endpoint || '—' }}</a-descriptions-item>
           <a-descriptions-item label="系统">{{ selectedNode.os }} / {{ selectedNode.arch }}</a-descriptions-item>
           <a-descriptions-item label="Agent 版本">{{ selectedNode.version }}</a-descriptions-item>
@@ -458,6 +584,11 @@ void load()
         />
       </template>
     </a-drawer>
+
+    <EnrollDeviceModal
+      v-model:open="enrollOpen"
+      @created="loadEnrollTokens"
+    />
 
     <a-modal
       v-model:open="registerOpen"

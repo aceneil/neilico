@@ -1655,8 +1655,56 @@ pre {
   color: var(--text);
 }
 
+/* 浅色主题下 AntDV 预设 tag 的文字对比度不足（实测 12px 小字：
+   绿 3.37 / 橙 3.34 / 蓝 ≈3.7，均 < 4.5），统一压到同色系更深一档。
+   背景仍是浅色底，观感不变，只是字更深、可读。 */
+[data-theme='light'] .ant-tag-green {
+  color: #237804;
+}
+
+[data-theme='light'] .ant-tag-orange {
+  color: #ad4e00;
+}
+
+[data-theme='light'] .ant-tag-red {
+  color: #a8071a;
+}
+
+[data-theme='light'] .ant-tag-blue {
+  color: #0958d9;
+}
+
 [data-theme='dark'] .ant-table {
   scrollbar-color: var(--scrollbar) var(--surface-subtle);
+}
+
+.nodes-workspace {
+  display: grid;
+  min-height: 0;
+  flex: 1;
+  grid-template-columns: minmax(0, 1.55fr) minmax(390px, 0.75fr);
+  gap: 14px;
+  overflow: hidden;
+}
+
+.nodes-table-panel {
+  min-width: 0;
+}
+
+.capability-list {
+  min-width: 0;
+}
+
+.capability-badge {
+  font-weight: 600;
+}
+
+.capability-reason {
+  margin-top: 7px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
 }
 
 @media (max-width: 1439px) {
@@ -1671,6 +1719,10 @@ pre {
 
   .pki-layout {
     grid-template-columns: minmax(330px, 0.8fr) minmax(520px, 1.2fr);
+  }
+
+  .nodes-workspace {
+    grid-template-columns: minmax(0, 1.35fr) minmax(340px, 0.8fr);
   }
 }
 
@@ -1702,5 +1754,18 @@ pre {
     min-height: 0;
     flex: 1;
     overflow: auto;
+  }
+
+  .nodes-workspace {
+    grid-template-columns: 1fr;
+    overflow: auto;
+  }
+
+  .nodes-table-panel {
+    min-height: 620px;
+  }
+
+  .enroll-token-panel {
+    min-height: 520px;
   }
 }
