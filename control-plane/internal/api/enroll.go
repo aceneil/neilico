@@ -236,10 +236,10 @@ func enrollCommandSet(server, token, image string) enrollCommands {
 		"  -v neilico-agent-state:/var/lib/neilico-agent",
 		"  -e NEILICO_TOKEN=" + token + " " + image,
 	}
-	// 先显式 `docker pull` 再 run。
-	//   为什么要写出来：`docker run` 是**隐式**拉取，命令末尾那串镜像地址用户根本看不出
-	//   "这是从 GitHub 拉的"。写成两步后，来源一目了然；也便于单独排查拉取失败。
-	dockerCommand := "docker pull " + image + " && \\\n" + strings.Join(dockerLines, " \\\n")
+	// 只用 `docker run`（**隐式**拉取）——命令保持一行到位。
+	//   镜像来源由界面另行标注（响应里的 agent_image 字段），不再把 `docker pull` 塞进命令，
+	//   避免命令变长、也避免与 compose 用法（compose 自己 pull）不一致。
+	dockerCommand := strings.Join(dockerLines, " \\\n")
 
 	return enrollCommands{
 		Linux:   shellCommand,

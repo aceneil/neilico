@@ -30,9 +30,7 @@ func TestEnrollCommandSetDockerUsesPullableImage(t *testing.T) {
 		"  -v neilico-agent-state:/var/lib/neilico-agent",
 		"  -e NEILICO_TOKEN=" + token + " " + image,
 	}
-	// 命令开头必须先显式 `docker pull <镜像>`：`docker run` 是隐式拉取，
-	// 用户看不出镜像来自哪里（实测反馈："还是没看出是往 github 拉取"）。
-	want := "docker pull " + image + " &&" + cont + strings.Join(lines, cont)
+	want := strings.Join(lines, cont)
 
 	if cmds.Docker != want {
 		t.Fatalf("Docker 命令不符\n--- 实际 ---\n%s\n--- 期望 ---\n%s", cmds.Docker, want)
@@ -50,25 +48,20 @@ func TestEnrollCommandSetDockerUsesPullableImage(t *testing.T) {
 		t.Fatalf("命令结尾应当是镜像地址 %q", image)
 	}
 
-	// ── 必须显式写出 pull，且 pull 在 run 之前（来源要一眼可见）──────────
-	pullAt := strings.Index(cmds.Docker, "docker pull "+image)
-	runAt := strings.Index(cmds.Docker, "docker run")
-	if pullAt != 0 {
-		t.Fatalf("命令应以 `docker pull %s` 开头，实际开头: %.40q", image, cmds.Docker)
+	// ── 命令保持单条 `docker run`（隐式拉取）；镜像来源由界面单独标注 ──────
+	if strings.Contains(cmds.Docker, "docker pull") {
+		t.Fatal("命令里不应再出现 `docker pull` 行（按需求已去掉；来源由界面标注）")
 	}
-	if runAt < 0 || pullAt > runAt {
-		t.Fatalf("docker pull 必须在 docker run 之前（pull=%d run=%d）", pullAt, runAt)
-	}
-	if !strings.Contains(cmds.Docker, "docker pull "+image+" &&") {
-		t.Fatal("pull 与 run 之间应当用 `&&` 连接：拉取失败就不要启动容器")
+	if !strings.HasPrefix(cmds.Docker, "docker run -d --name neilico-agent") {
+		t.Fatalf("命令应以 docker run 开头，实际: %.40q", cmds.Docker)
 	}
 
 	// ── 独立于期望值的逐字节检查（转义写错会被这里抓到，非同义反复）──────
 	if strings.Contains(cmds.Docker, `\\`) {
 		t.Fatal("命令里出现了双反斜杠：Go 源码转义写错了")
 	}
-	if got := strings.Count(cmds.Docker, "\\\n"); got != len(lines) {
-		t.Fatalf("续行（反斜杠+换行）应为 %d 处，实际 %d 处", len(lines), got)
+	if got := strings.Count(cmds.Docker, "\\\n"); got != len(lines)-1 {
+		t.Fatalf("续行（反斜杠+换行）应为 %d 处，实际 %d 处", len(lines)-1, got)
 	}
 	if strings.Contains(cmds.Docker, "\t") || strings.Contains(cmds.Docker, "\r") {
 		t.Fatal("命令里不应有制表符或回车（粘贴进 shell 会出问题）")

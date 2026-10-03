@@ -92,7 +92,6 @@ curl -fsSL <SERVER>/install.sh | sudo bash -s -- --token <TOKEN>
 
 # Docker：首次启动自动 enroll，凭据写入持久卷
 # 镜像在 ghcr.io（公开，目标机直接 pull 即可，无需登录）
-docker pull ghcr.io/aceneil/neilico-agent:latest && \
 docker run -d --name neilico-agent --restart unless-stopped \
   --network host --cap-add NET_ADMIN --device /dev/net/tun \
   -v neilico-agent-state:/var/lib/neilico-agent \

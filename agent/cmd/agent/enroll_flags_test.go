@@ -23,7 +23,7 @@ import (
 // state 里的 Server 从不被采纳，于是 cfg.Server 会停在 config.Default() 的占位地址
 // （https://api.neilico.example.com），重启后 agent 打到错误服务器。
 func TestApplyEnrollFlagsPrefersStateOverUnusableToken(t *testing.T) {
-	const storedServer = "http://192.168.123.90:13000"
+	const storedServer = "http://cp.example.com:13000"
 
 	writeState := func(t *testing.T) string {
 		t.Helper()

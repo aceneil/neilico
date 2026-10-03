@@ -29,7 +29,6 @@
 > compose 文件见 `/home/neil/Documents/Docker/docker-compose.neilico-agent.yaml`。
 
 ```bash
-docker pull ghcr.io/aceneil/neilico-agent:latest && \
 docker run -d --name neilico-agent --restart unless-stopped \
   --network host --cap-add NET_ADMIN --device /dev/net/tun \
   -v neilico-agent-state:/var/lib/neilico-agent \

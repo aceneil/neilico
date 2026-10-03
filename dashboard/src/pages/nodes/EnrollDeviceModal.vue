@@ -280,7 +280,7 @@ onBeforeUnmount(() => {
       <div class="enroll-command-heading">
         <div>
           <strong>选择平台并复制命令</strong>
-          <p>命令文本直接来自控制面响应，令牌已内嵌其中。Docker 命令会先从镜像仓库拉取 agent 镜像。</p>
+          <p>命令文本直接来自控制面响应，令牌已内嵌其中。Docker 命令首次运行会从镜像仓库自动拉取 agent 镜像。</p>
           <p v-if="result" class="enroll-generated-at">
             本命令按 {{ formatTime(result.created_at) }} 的控制面配置生成；若刚升级或改过镜像地址，请点「重新生成」。
           </p>
@@ -297,7 +297,7 @@ onBeforeUnmount(() => {
               <span>镜像来源：</span>
               <code>{{ result.agent_image }}</code>
               <span class="enroll-image-source-note">
-                命令会先从该仓库拉取 agent 镜像（GitHub Container Registry）
+                首次运行自动从该仓库拉取 agent 镜像（GitHub Container Registry）
               </span>
             </div>
             <pre class="enroll-command"><code>{{ commandFor(tab.key) }}</code></pre>
