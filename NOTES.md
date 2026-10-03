@@ -43,6 +43,9 @@ NEILICO（Unified Mesh & Proxy Platform）：统一「内网穿透 + Mesh 组网
 | **V1-R2 告警体系+指标补全** | ✅ | （未提交） | 五条规则、状态机/事件、000007、log/webhook notifier、告警 API、Dashboard `/alerts`、指标数据源说明 |
 | **V1-R3 Helm Chart** | ✅ | （未提交） | `deploy/helm/neilico`：control-api/dashboard Deployment、外部 PG 默认、开发 PG/Redis/NATS StatefulSet、relay 占位、Secret/Ingress/HPA/PDB/NetworkPolicy/ServiceMonitor；`ci/verify.sh` 离线断言 |
 | **V1-R4 API Token/Scope/限流** | ✅ | （未提交） | migration `000008`、API Token 哈希/轮换/撤销、角色→scope 兼容表、`RequireScope`、按 Token/user 令牌桶、CLI token 命令、Dashboard 真实 Token 页面 |
+| **改名 UMPP→NEILICO** | ✅ | `1e42e4f` | Go 模块、容器名、compose 项目名、`UMPP_→NEILICO_` 环境变量前缀、文档全量改名 |
+| **V2A1 单容器打包** | ✅ | `21c8450` | 6 容器 → 1（`deploy/allinone/`）；Go 二进制同源直接服务前端，去掉 nginx |
+| **上线后缺陷修复** | ✅ | `d12230a` `ece5629` `2c3cefb` | ①登录表单点击无反应（AntDV `<a-form>` 缺 `:model`）②侧栏/header 深底深字（对比度 1.13:1） |
 
 ### 常驻部署（生产用 Docker 目录那份；2026-10-03 改为**单容器**）
 > **仓库内 `deploy/docker-compose/`（6 容器：postgres/redis/nats/control-api/dashboard/relay）仅供历史上的测试栈**（项目名 `neilico-m5`、命名卷、固定端口），**不是现行形态**。
@@ -67,7 +70,7 @@ NEILICO（Unified Mesh & Proxy Platform）：统一「内网穿透 + Mesh 组网
   `neilico`（原 umpp 卡片原地改名），href `http://192.168.123.90:13000`，container `neilico`
 - **2026-10-03 实测（单容器）**：`docker ps` 恰好 1 行 `neilico (healthy)`；
   容器内同时有 `postgres` 与 `neilico-control` 两个进程；LAN `13000` → **200** 且 body 含 `<div id="app"`；
-  `/healthz` = `{"db":"up","status":"ok","version":"v1-single-20261003"}`；`/metrics` **45 条 `neilico_*`**；
+  `/healthz` = `{"db":"up","status":"ok","version":"v1-single-20261003"}`；`/metrics` **67 条 `neilico_*`**（2026-10-03 19:1x 实测，随 V1-R2/R4 增长）；
   `POST /api/v1/auth/login` → **200 + token（长度 443）**，错密码 → **401**；带 token `GET /api/v1/nodes` → 200；
   深链 `/nodes` `/certificates` `/pki` `/alerts` → 200、`/nope.js` → 404；
   `docker restart` 后仍 healthy 且可登入（日志走「已有数据目录」分支、无 `already exists`）；
