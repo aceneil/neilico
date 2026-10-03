@@ -2,3 +2,8 @@ node_modules
 dist
 .env
 .env.local
+
+# Playwright（e2e 冒烟）产物
+test-results/
+playwright-report/
+playwright/.cache/

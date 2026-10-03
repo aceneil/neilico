@@ -10,3 +10,8 @@ node_modules/
 coverage.out
 *.test
 dashboard/screenshots/
+
+# Playwright（e2e 冒烟）产物
+test-results/
+playwright-report/
+playwright/.cache/
