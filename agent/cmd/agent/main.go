@@ -240,12 +240,34 @@ func applyEnrollFlags(cfg *config.Config, token, tokenFile, server, nodeName, st
 	if stateDir = strings.TrimSpace(stateDir); stateDir != "" {
 		cfg.StatePath = filepath.Join(stateDir, "state.json")
 	}
-	if strings.TrimSpace(server) == "" && strings.TrimSpace(cfg.EnrollToken) != "" {
-		payload, err := enrolltoken.Inspect(cfg.EnrollToken)
-		if err != nil {
-			return errors.New("cannot read server from enrollment token; pass --server")
+	if strings.TrimSpace(server) == "" {
+		// 服务器地址的优先级：显式 --server > 配置文件里写明的非默认值 > 令牌载荷 > state.json > 默认值。
+		//
+		// 这里必须考虑 state：节点**首次 enroll 之后就不再需要令牌**了，凭据（含服务器地址）
+		// 都在 state.json 里。早先的实现只看令牌，于是——
+		//   · compose 文件里留着一个占位/过期的令牌 → 令牌无法解析 → **直接退出 → 容器无限重启**；
+		//   · 就算绕过上一条，cfg.Server 仍是 config.Default() 里的占位地址，
+		//     重启后的 agent 会打到错误的服务器。
+		// 二者都会让一个"本来好好的" agent 因为文件里的一段废令牌而瘫痪。
+		storedServer, hasStored := stateServer(cfg.StatePath)
+		switch {
+		case cfg.Server != "" && cfg.Server != config.Default().Server:
+			// 配置文件显式指定了 server：尊重它（运维改服务器时就走这条）
+		case strings.TrimSpace(cfg.EnrollToken) != "":
+			payload, err := enrolltoken.Inspect(cfg.EnrollToken)
+			if err == nil {
+				cfg.Server = payload.Server
+			} else if hasStored {
+				fmt.Fprintf(os.Stderr,
+					"neilico-agent: 警告：NEILICO_TOKEN 无法解析（%v）；已存在 %s，沿用其中保存的服务器 %s\n",
+					err, cfg.StatePath, storedServer)
+				cfg.Server = storedServer
+			} else {
+				return errors.New("cannot read server from enrollment token; pass --server")
+			}
+		case hasStored:
+			cfg.Server = storedServer
 		}
-		cfg.Server = payload.Server
 	}
 	if strings.TrimSpace(cfg.Node.Name) == "" {
 		cfg.Node.Name, _ = os.Hostname()
@@ -254,6 +276,20 @@ func applyEnrollFlags(cfg *config.Config, token, tokenFile, server, nodeName, st
 		cfg.Node.Name = "neilico-node"
 	}
 	return cfg.Validate()
+}
+
+// stateServer 读取 state.json 里保存的控制面地址。
+//
+//	已 enroll 过的节点，state 才是权威来源：有了它，令牌（一次性、会过期）就只是可选的。
+func stateServer(path string) (string, bool) {
+	if strings.TrimSpace(path) == "" {
+		return "", false
+	}
+	stored, exists, err := state.Load(path)
+	if err != nil || !exists || strings.TrimSpace(stored.Server) == "" {
+		return "", false
+	}
+	return stored.Server, true
 }
 
 func newAPIClient(cfg config.Config) (*client.Client, error) {
