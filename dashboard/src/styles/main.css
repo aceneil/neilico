@@ -161,17 +161,35 @@ pre {
 
 .app-header {
   display: flex;
-  height: 76px;
-  padding: 0 24px;
   align-items: center;
   gap: 16px;
-  /* AntDV 的 .ant-layout-header 默认 background:#001529（深色），我们不覆盖就会在浅色
-     主题下露出一条深色 header，而其文字是 var(--text) 深墨色 → 对比度 1.13:1 看不见。
+  /* ⚠️ AntDV 的 `.ant-layout-header` 默认 `height:64px; line-height:64px; padding:0 50px`，
+     与本选择器同权重、且其运行时样式在 main.css 之后注入 → 不加 !important 会被静默覆盖。
+     实测后果：header 实际高 64px，子元素继承 line-height:64px（17px 的字占 64px 行高），
+     .header-title 两行合计 131px 被垂直挤出 header → 标题上半截、面包屑下半截被裁掉看不见。 */
+  height: 76px !important;
+  line-height: normal !important;
+  padding: 0 24px !important;
+  /* AntDV 的 .ant-layout-header 默认 background:#001529（深色），不覆盖会在浅色主题下
+     露出一条深色 header，而其文字是 var(--text) 深墨色 → 对比度 1.13:1 看不见。
      Header 属于「内容区」，应跟随主题（浅色=白 / 深色=--surface）。 */
   background: var(--surface) !important;
   border-bottom: 1px solid var(--border);
   box-shadow: 0 1px 0 rgba(18, 31, 51, 0.02);
   line-height: normal;
+}
+
+/* 语义化的行高：父级曾继承 64px 行高把两行标题撑到 131px */
+.header-title {
+  line-height: normal;
+}
+
+.header-title strong {
+  line-height: 1.35;
+}
+
+.header-title span {
+  line-height: 1.3;
 }
 
 /* AntDV Layout 自带的灰底(#f5f5f5)不是我们的 --page-bg；归位以免主题不一致 */
