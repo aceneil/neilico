@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import {
   CheckOutlined,
   CopyOutlined,
+  GithubOutlined,
   KeyOutlined,
   LinkOutlined,
   ReloadOutlined
@@ -279,7 +280,7 @@ onBeforeUnmount(() => {
       <div class="enroll-command-heading">
         <div>
           <strong>选择平台并复制命令</strong>
-          <p>命令文本直接来自控制面响应，令牌已内嵌其中。</p>
+          <p>命令文本直接来自控制面响应，令牌已内嵌其中。Docker 命令会先从镜像仓库拉取 agent 镜像。</p>
         </div>
         <a-button :loading="generating" @click="generate">
           <ReloadOutlined /> 重新生成
@@ -288,6 +289,14 @@ onBeforeUnmount(() => {
       <a-tabs v-if="result" class="enroll-command-tabs" default-active-key="docker">
         <a-tab-pane v-for="tab in commandTabs" :key="tab.key" :tab="tab.label">
           <div v-if="commandFor(tab.key)" class="enroll-command-card">
+            <div v-if="tab.key === 'docker' && result.agent_image" class="enroll-image-source">
+              <GithubOutlined />
+              <span>镜像来源：</span>
+              <code>{{ result.agent_image }}</code>
+              <span class="enroll-image-source-note">
+                命令会先从该仓库拉取 agent 镜像（GitHub Container Registry）
+              </span>
+            </div>
             <pre class="enroll-command"><code>{{ commandFor(tab.key) }}</code></pre>
             <div class="enroll-command-actions">
               <span class="enroll-prerequisite">{{ tab.prerequisite }}</span>
@@ -404,6 +413,34 @@ onBeforeUnmount(() => {
   color: var(--text-secondary);
   font-size: 12px;
   line-height: 1.55;
+}
+
+/* Docker 页签的「镜像来源」标注：让用户一眼看出镜像是从哪个仓库拉的 */
+.enroll-image-source {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+  padding: 8px 12px;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--surface-subtle);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.enroll-image-source code {
+  padding: 2px 6px;
+  font-size: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.enroll-image-source-note {
+  color: var(--text-secondary);
+  font-size: 12px;
 }
 
 @media (max-width: 700px) {

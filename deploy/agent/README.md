@@ -13,6 +13,7 @@ docker pull ghcr.io/aceneil/neilico-agent:latest
 一键接入：
 
 ```bash
+docker pull ghcr.io/aceneil/neilico-agent:latest && \
 docker run -d --name neilico-agent --restart unless-stopped \
   --network host --cap-add NET_ADMIN --device /dev/net/tun \
   -v neilico-agent-state:/var/lib/neilico-agent \

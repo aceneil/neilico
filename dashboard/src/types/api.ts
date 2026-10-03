@@ -118,6 +118,8 @@ export interface EnrollTokenCreateResult {
   name_hint: string
   server: string
   commands: EnrollTokenCommands
+  /** Docker 命令使用的 agent 镜像地址（控制面返回，用于在界面上标明镜像来源） */
+  agent_image?: string
 }
 
 export interface Paged<T> {

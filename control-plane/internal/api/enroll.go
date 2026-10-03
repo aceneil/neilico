@@ -96,6 +96,8 @@ func (s *Server) handleEnrollTokens(w http.ResponseWriter, r *http.Request) {
 			"name_hint":  created.Item.NameHint,
 			"server":     server,
 			"commands":   enrollCommandSet(server, created.Token, s.agentImage),
+			// 让界面能明确标出 Docker 命令的镜像来源（用户看不出隐式拉取）
+			"agent_image": s.agentImage,
 		})
 	default:
 		s.methodNotAllowed(w, http.MethodGet, http.MethodPost)
@@ -232,7 +234,10 @@ func enrollCommandSet(server, token, image string) enrollCommands {
 		"  -v neilico-agent-state:/var/lib/neilico-agent",
 		"  -e NEILICO_TOKEN=" + token + " " + image,
 	}
-	dockerCommand := strings.Join(dockerLines, " \\\n")
+	// 先显式 `docker pull` 再 run。
+	//   为什么要写出来：`docker run` 是**隐式**拉取，命令末尾那串镜像地址用户根本看不出
+	//   "这是从 GitHub 拉的"。写成两步后，来源一目了然；也便于单独排查拉取失败。
+	dockerCommand := "docker pull " + image + " && \\\n" + strings.Join(dockerLines, " \\\n")
 
 	return enrollCommands{
 		Linux:   shellCommand,

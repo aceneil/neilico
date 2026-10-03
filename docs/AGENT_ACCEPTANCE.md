@@ -23,6 +23,7 @@
 地址可在 `enroll.agent_image` 覆盖；离线环境请自行 `docker build -f deploy/agent/Dockerfile`。
 
 ```bash
+docker pull ghcr.io/aceneil/neilico-agent:latest && \
 docker run -d --name neilico-agent --restart unless-stopped \
   --network host --cap-add NET_ADMIN --device /dev/net/tun \
   -v neilico-agent-state:/var/lib/neilico-agent \

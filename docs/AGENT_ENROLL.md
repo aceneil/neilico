@@ -108,6 +108,7 @@ Windows/macOS 没有可用 WireGuard 组件时，Agent **只继续注册/心跳/
 registry 环境请改成自己的地址，或在本机用 `deploy/agent/Dockerfile` 自行构建。
 
 ```bash
+docker pull ghcr.io/aceneil/neilico-agent:latest && \
 docker run -d --name neilico-agent --restart unless-stopped \
   --network host --cap-add NET_ADMIN --device /dev/net/tun \
   -v neilico-agent-state:/var/lib/neilico-agent \
