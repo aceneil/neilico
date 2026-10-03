@@ -87,8 +87,8 @@ func (s *Server) handleEnrollTokens(w http.ResponseWriter, r *http.Request) {
 			"name_hint":       created.Item.NameHint,
 		})
 		writeJSON(w, http.StatusCreated, map[string]any{
-			"id":         created.Item.ID,
-			"token":      created.Token,
+			"id":    created.Item.ID,
+			"token": created.Token,
 			// 命令是在此刻由后端固化的：前端据此提示"升级/改配置后需重新生成"
 			"created_at": created.Item.CreatedAt,
 			"expires_at": created.Item.ExpiresAt,
