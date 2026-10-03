@@ -124,6 +124,10 @@ NEILICO（Unified Mesh & Proxy Platform）：统一「内网穿透 + Mesh 组网
 cd control-plane && go test ./... && go run ./cmd/api -c configs/config.yaml
 # Dashboard
 cd dashboard && npm ci && npm run dev
+# 前端 e2e 冒烟（浏览器真跑；含「登录表单哑火」回归护栏）
+#   默认打常驻部署，可用 E2E_BASE_URL 覆盖；用系统 Chrome，无需下浏览器
+cd dashboard && npm run e2e
+cd dashboard && E2E_BASE_URL=http://127.0.0.1:5175 npm run e2e
 # 全栈（默认偏移端口）
 cd deploy/docker-compose && docker compose up -d --build
 # 端到端冒烟
