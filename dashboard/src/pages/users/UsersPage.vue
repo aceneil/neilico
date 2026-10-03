@@ -20,6 +20,7 @@ import { usersApi } from '@/api/users'
 import { useAuthStore } from '@/stores/auth'
 import { canManageAPITokens, canManageUsers, isPlatformAdmin } from '@/utils/permissions'
 import { formatTime } from '@/utils/format'
+import { copyText } from '@/utils/clipboard'
 import type { APIToken, APITokenCreateResult, Role, Tenant, User } from '@/types/api'
 
 const auth = useAuthStore()
@@ -191,11 +192,11 @@ async function saveToken() {
 
 async function copyToken() {
   if (!tokenResult.value) return
-  try {
-    await navigator.clipboard.writeText(tokenResult.value.token)
+  const ok = await copyText(tokenResult.value.token)
+  if (ok) {
     message.success('Token 已复制到剪贴板')
-  } catch {
-    message.error('复制失败，请手动选择并复制')
+  } else {
+    message.error('复制失败：请手动选中 Token 复制')
   }
 }
 

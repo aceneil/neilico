@@ -3,13 +3,18 @@ import { computed } from 'vue'
 import { CopyOutlined } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
 import { maskSecret } from '@/utils/sensitive'
+import { copyText } from '@/utils/clipboard'
 
 const props = defineProps<{ value: string; allowCopy?: boolean }>()
 const display = computed(() => maskSecret(props.value))
 
 async function copy() {
-  await navigator.clipboard.writeText(props.value)
-  message.success('已复制')
+  const ok = await copyText(props.value)
+  if (ok) {
+    message.success('已复制')
+  } else {
+    message.error('复制失败：请手动选中文本复制')
+  }
 }
 </script>
 

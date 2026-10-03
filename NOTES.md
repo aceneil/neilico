@@ -165,10 +165,12 @@ cd deploy/helm && bash neilico/ci/verify.sh
 - **浅色主题下 AntDV 预设 tag 文字对比度不足**（实测 12px 小字：绿 3.37 / 橙 3.34 / 蓝 ≈3.7，均 < 4.5）。已用 `[data-theme='light'] .ant-tag-{green,orange,red,blue}` 压到同色系更深一档（现 5.09–7.04）。**新加任何 tag 色都要量对比度**。
 - **验前端不必先部署**：`VITE_API_BASE` 同时被当作 dev 代理目标**和**客户端 API base（Vite 会把 `VITE_*` 注入前端），所以给 dev server 设它会让浏览器跨域直连后端 → **CORS 失败（Network Error）**。可靠做法：`npm run build` 后用 `/tmp/serve-dist.py`（静态服务 dist + 同源 `/api` 反代到真后端）——验的就是待部署的那个 bundle，且同源无 CORS。
 - **Agent 跨平台现状（E2）**：六目标 `windows/amd64`、`darwin/{amd64,arm64}`、`linux/{amd64,arm64,armv7}` 均已本地 `go build` 通过；能力探测按工具/TUN/系统组件/管理员权限真实上报。Windows/macOS 真机安装、WireGuardNT/系统扩展和 launchd/Windows Service 生命周期尚未在真机执行，不能据脚本语法通过推断真机已组网。
+- **HTTP + 局域网 IP 访问时 `navigator.clipboard` 根本不存在（已修）**：浏览器只在**安全上下文**（HTTPS 或 localhost）提供剪贴板 API。本次部署是 `http://192.168.123.90:13000` → `isSecureContext=false`、`navigator.clipboard === undefined`，于是**全应用 5 处复制**（接入命令 / 注册凭据 / 用户 Token / API Token / 敏感值）在真机**全部失效**，而提示还是误导性的「请检查浏览器剪贴板权限」（不是权限问题）。已加 `dashboard/src/utils/clipboard.ts::copyText()`：优先异步剪贴板 API，失败回退 `textarea + document.execCommand('copy')`（HTTP 下可用，但**必须由真实用户手势触发**），两者都失败才提示手动复制。**真机验证**：在真实 origin 上真实点击 → 出现成功提示；再用 CDP 发 Ctrl+V 粘回输入框，内容与页面显示的命令**逐字一致**（471 B）。
 
 ## 验收方法论教训（本项目实测踩到）
 
 - **验「API 能登录」≠ 验「用户能登录」**：`curl POST /api/v1/auth/login` 返回 200 曾让我误判登录可用；而 UI 表单从 M4 起就是哑的（缺 `:model`），一路躲过所有验收。
+- **验收必须在「用户实际访问的 origin」上做，localhost 会骗你**：`127.0.0.1` / `localhost` 属**安全上下文**，而 `http://<局域网IP>` 不是——两者浏览器能力不同（前者有 `navigator.clipboard`，后者 `undefined`）。我曾用 127.0.0.1 验过「复制命令可用」（绿），真机 HTTP 下却是全线失效。同类受影响的还有 `crypto.subtle`、Service Worker、摄像头/麦克风/地理定位。**规矩：凡涉这些 API，先读 `window.isSecureContext`，并一律加非安全上下文的兜底。**
 - **截图脚本注入 token 会掩盖坏掉表单**：V1F 那 18 张「已登录」截图是往 localStorage 写 token 拿到的，没走表单。凡交付含交互（表单/按钮/参数提交），验收必须**真点一遍**。
 - **权威网络证据用 `performance.getEntriesByType('resource')`**（页面内 patch fetch/XHR 可能被绕过）：点击后看有无**新增** `/api/` 条目。
 - 复验「登录后」而不碰真密码：`curl` 取 token → 注入 localStorage（键 `neilico.access_token/refresh_token/user/remember`）→ 断言 URL 不回落 `/login` + 已鉴权 API 全通 + 侧栏渲染。

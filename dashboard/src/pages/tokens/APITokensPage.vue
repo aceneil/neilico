@@ -10,6 +10,7 @@ import {
   SyncOutlined
 } from '@ant-design/icons-vue'
 import { message, Modal } from 'ant-design-vue'
+import { copyText } from '@/utils/clipboard'
 import DataState from '@/components/DataState.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import { apiTokensApi } from '@/api/api-tokens'
@@ -116,8 +117,12 @@ function revoke(token: APIToken) {
 
 async function copyOneTime() {
   if (!oneTimeResult.value) return
-  await navigator.clipboard.writeText(oneTimeResult.value.token)
-  message.success('Token 已复制到剪贴板')
+  const ok = await copyText(oneTimeResult.value.token)
+  if (ok) {
+    message.success('Token 已复制到剪贴板')
+  } else {
+    message.error('复制失败：请手动选中 Token 复制')
+  }
 }
 
 function tokenState(token: APIToken): { label: string; color: string } {

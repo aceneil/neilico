@@ -23,6 +23,7 @@ import { nodesApi, type NodeListQuery } from '@/api/nodes'
 import EnrollDeviceModal from '@/pages/nodes/EnrollDeviceModal.vue'
 import EnrollTokenPanel from '@/pages/nodes/EnrollTokenPanel.vue'
 import { useAuthStore } from '@/stores/auth'
+import { copyText } from '@/utils/clipboard'
 import { useThemeStore } from '@/stores/theme'
 import { canManageNodes } from '@/utils/permissions'
 import { formatBytes, formatTime } from '@/utils/format'
@@ -315,8 +316,12 @@ function closeRegistration() {
 async function copyRegistration() {
   if (!registration.value) return
   const content = `node_id=${registration.value.node_id}\nagent_token=${registration.value.agent_token}`
-  await navigator.clipboard.writeText(content)
-  message.success('注册凭据已复制')
+  const ok = await copyText(content)
+  if (ok) {
+    message.success('注册凭据已复制')
+  } else {
+    message.error('复制失败：请手动选中凭据复制')
+  }
 }
 
 function resetRegister() {

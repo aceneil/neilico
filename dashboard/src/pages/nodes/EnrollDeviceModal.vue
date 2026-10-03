@@ -12,6 +12,7 @@ import { enrollTokensApi } from '@/api/enroll-tokens'
 import { networksApi } from '@/api/networks'
 import { apiErrorMessage } from '@/api/http'
 import { formatTime } from '@/utils/format'
+import { copyText } from '@/utils/clipboard'
 import type {
   EnrollTokenCommands,
   EnrollTokenCreateResult,
@@ -127,11 +128,11 @@ async function generate() {
 
 async function copyCommand(command: string) {
   if (!command) return
-  try {
-    await navigator.clipboard.writeText(command)
+  const ok = await copyText(command)
+  if (ok) {
     message.success('命令已复制到剪贴板')
-  } catch {
-    message.error('复制失败，请检查浏览器剪贴板权限')
+  } else {
+    message.error('复制失败：请手动选中命令文本复制')
   }
 }
 
