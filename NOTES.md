@@ -47,7 +47,7 @@ NEILICO（Unified Mesh & Proxy Platform）：统一「内网穿透 + Mesh 组网
 | **改名 UMPP→NEILICO** | ✅ | `1e42e4f` | Go 模块、容器名、compose 项目名、`UMPP_→NEILICO_` 环境变量前缀、文档全量改名 |
 | **V2A1 单容器打包** | ✅ | `21c8450` | 6 容器 → 1（`deploy/allinone/`）；Go 二进制同源直接服务前端，去掉 nginx |
 | **E1 节点一键接入（CF Tunnel 式）** | ✅ | `9abbb7f` + `25dfc15` | 自包含签名令牌、无鉴权自注册、`/install.sh`、`/downloads/agent-*`、Agent `enroll`/`NEILICO_TOKEN`、`deploy/agent/Dockerfile`；**manager 实测 26/26 通过**（含原样执行接口给的 docker 命令 → 节点 online + VIP + wg0 + 心跳） |
-| **E2 跨平台连接器 + Mesh 能力如实上报** | ✅ | （未提交） | Windows `/install.ps1`、macOS `/install.sh` Darwin 分支、六目标分发、`commands.{linux,macos,windows,docker}`、`nodes.capabilities` migration/API、详情补 `virtual_ip`/`network_id`；PowerShell Parser + Darwin PATH shim 已测，真机服务待 manager/用户验证 |
+| **E2 跨平台连接器 + 能力上报** | ✅ | `4a75dc4` | `install.ps1`（New-Service/sha256/管理员检查/-DryRun）、`install.sh` 增 Darwin/launchd 分支、6 个平台二进制分发、`nodes.capabilities` 如实上报、补上节点详情 VIP；**过程中修掉一个升级崩溃 bug** |
 | **上线后缺陷修复** | ✅ | `d12230a` `ece5629` `2c3cefb` `ddf34c1` | ①登录表单点击无反应（AntDV `<a-form>` 缺 `:model`）②侧栏/header 深底深字（1.13:1）③页头标题被裁（AntDV `Layout.Header` 的 64px 高/行高盖掉我们的 76px） |
 
 ### 常驻部署（生产用 Docker 目录那份；2026-10-03 改为**单容器**）
@@ -152,6 +152,10 @@ cd deploy/helm && bash neilico/ci/verify.sh
 - **E1 的节点详情展示缺口已由 E2 后端补齐**：列表/详情返回成员关系对应的 `virtual_ip`/`network_id`，同时返回 `capabilities`；Dashboard 展示仍留给 E3，前端本轮未改。
 - **E1 一键接入的实测口径**（`/tmp/neilico-e2e-docker.sh`，26 PASS）：公开端点 200+sha256/404、负向对照（受限 API Token 建接入令牌 → 403）、原样执行接口给的 docker 命令 → 容器自注册 online、成员表分到 VIP、心跳 30s 推进、容器内 `wg0` 公钥与 state.json 一致、用尽 410/撤销 401/篡改 401、同请求重放返回同一节点且 `replayed=true`。
   - 踩过的测试坑：**时间窗必须 > 心跳间隔 30s**（我一开始只等 12s，误判"心跳不动"）；**Mesh 接口要等 20s+ 再断言**（刚 enroll 完 wg0 还没建）；测试要**可重入**（API Token 名与网络 CIDR 都要唯一，否则 409）。
+- **🔴 AutoMigrate 给已有数据的表加 NOT NULL 列必须带 default，否则升级必崩**：`nodes` 新增 `capabilities` 时 tag 写成 `type:jsonb;not null` 无 default → 生成 `ALTER TABLE nodes ADD capabilities JSONB NOT NULL` → PostgreSQL 报 `column "capabilities" ... contains null values` → API exit 1 → **容器无限重启**（真机实测，库里只有 1 行历史数据就触发）。修法：tag 加 `default:'{}'`，空值在读取边界用 `Capabilities.Normalize()` 补成明确状态。
+  - **注意：`migrations/*.sql` 在启动时根本不会被执行**（`cmd/api`、`db.go`、entrypoint 都没引用），**AutoMigrate 是生产唯一的 schema 路径**，所以**模型 tag 才是唯一真相**，SQL 文件只是文档/外部工具用。
+  - **这类 bug 单测抓不到**：单测迁移的是**空库**，没有行就永远不会报 `contains null values`。已补回归测试 `internal/db/migrate_upgrade_test.go`（建表 → 删新列 → 用原始 SQL 插历史行 → 再 AutoMigrate），并做过**变异验证**（去掉 default 会红，报 `Cannot add a NOT NULL column with default value NULL`）。**今后凡新增 NOT NULL 列，必须先跑这条测试。**
+- **删除处于 online 的节点返回 500**（实测；容器已删但 sweeper 尚未把它标 offline 时删就 500）。属健壮性小问题，建议改成 409（提示先下线）或直接允许删除。
 - **Agent 跨平台现状（E2）**：六目标 `windows/amd64`、`darwin/{amd64,arm64}`、`linux/{amd64,arm64,armv7}` 均已本地 `go build` 通过；能力探测按工具/TUN/系统组件/管理员权限真实上报。Windows/macOS 真机安装、WireGuardNT/系统扩展和 launchd/Windows Service 生命周期尚未在真机执行，不能据脚本语法通过推断真机已组网。
 
 ## 验收方法论教训（本项目实测踩到）
