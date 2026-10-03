@@ -140,6 +140,16 @@ func run() error {
 			Dir: cfg.Server.DashboardDir,
 			SPA: cfg.Server.DashboardSPA,
 		},
+		// ⚠️ 这两个必须显式传：漏掉 Downloads 会让 /downloads/* 全部 404
+		//（downloadsDir 为空 → filepath.Join("", name) 变成相对路径），
+		// 而单测自己构造 options 传了临时目录，所以只有真机部署才暴露。
+		Downloads: api.DownloadsOptions{
+			Dir: cfg.Downloads.Dir,
+		},
+		Enroll: api.EnrollOptions{
+			SigningKey: cfg.Enroll.SigningKey,
+			PublicURL:  cfg.Enroll.PublicURL,
+		},
 		RateLimit: api.RateLimitOptions{
 			Enabled: cfg.RateLimit.Enabled,
 			RPS:     cfg.RateLimit.RPS,
@@ -155,6 +165,14 @@ func run() error {
 			RenewBeforeDays: cfg.PKI.RenewBeforeDays,
 		},
 	})
+	if cfg.Downloads.Dir == "" {
+		logger.Warn("agent downloads are disabled: downloads.dir is empty, /downloads/* will return 404")
+	} else if info, err := os.Stat(cfg.Downloads.Dir); err != nil || !info.IsDir() {
+		logger.Warn("agent downloads directory is unusable, /downloads/* will return 404",
+			"dir", cfg.Downloads.Dir, "error", err)
+	} else {
+		logger.Info("agent downloads ready", "dir", cfg.Downloads.Dir)
+	}
 	go handler.StartCertificateLifecycle(ctx)
 	go handler.StartAlertEvaluation(ctx)
 	if cfg.ACME.Enabled {
