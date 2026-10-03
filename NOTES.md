@@ -47,6 +47,7 @@ NEILICO（Unified Mesh & Proxy Platform）：统一「内网穿透 + Mesh 组网
 | **改名 UMPP→NEILICO** | ✅ | `1e42e4f` | Go 模块、容器名、compose 项目名、`UMPP_→NEILICO_` 环境变量前缀、文档全量改名 |
 | **V2A1 单容器打包** | ✅ | `21c8450` | 6 容器 → 1（`deploy/allinone/`）；Go 二进制同源直接服务前端，去掉 nginx |
 | **E1 节点一键接入（CF Tunnel 式）** | ✅ | `9abbb7f` + `25dfc15` | 自包含签名令牌、无鉴权自注册、`/install.sh`、`/downloads/agent-*`、Agent `enroll`/`NEILICO_TOKEN`、`deploy/agent/Dockerfile`；**manager 实测 26/26 通过**（含原样执行接口给的 docker 命令 → 节点 online + VIP + wg0 + 心跳） |
+| **E2 跨平台连接器 + Mesh 能力如实上报** | ✅ | （未提交） | Windows `/install.ps1`、macOS `/install.sh` Darwin 分支、六目标分发、`commands.{linux,macos,windows,docker}`、`nodes.capabilities` migration/API、详情补 `virtual_ip`/`network_id`；PowerShell Parser + Darwin PATH shim 已测，真机服务待 manager/用户验证 |
 | **上线后缺陷修复** | ✅ | `d12230a` `ece5629` `2c3cefb` `ddf34c1` | ①登录表单点击无反应（AntDV `<a-form>` 缺 `:model`）②侧栏/header 深底深字（1.13:1）③页头标题被裁（AntDV `Layout.Header` 的 64px 高/行高盖掉我们的 76px） |
 
 ### 常驻部署（生产用 Docker 目录那份；2026-10-03 改为**单容器**）
@@ -107,8 +108,8 @@ NEILICO（Unified Mesh & Proxy Platform）：统一「内网穿透 + Mesh 组网
 - 告警：`GET /api/v1/alerts`（firing/resolved 筛选）、`/alerts/rules`、`/alerts/summary`、`GET /alerts/{id}` 时间线；`POST /api/v1/alerts/evaluate` 仅 platform_admin/tenant_admin/ops。platform_admin 列表可传 `tenant_id`。
 - `Alert.state` 只有 `firing|resolved`；P2P/中继采集缺失用 `data_status=insufficient_data` 且不落库/不通知。`since` 是最近观测时间，`started_at` 是首次触发时间（Dashboard 持续时长使用后者）。
 - `/metrics` 的 `neilico_p2p_success_rate`、`neilico_relay_bytes`、`neilico_agent_heartbeat_latency` 当前无真实采集，恒为 0，V2 接入；其余 V1-R2 必需指标有数据库或请求真实来源。
-- 接入令牌格式 `neilico-enroll.<base64url payload>.<base64url HMAC>`，payload 自带 server/tenant/network/jti/exp；DB 只存完整串 SHA-256。创建响应的 `commands.{linux,docker}` 与 token 都只出现一次；同 jti+同请求重放不重发凭据。
-- 公开引导：`GET /install.sh`（shell script）与 `GET /downloads/neilico-agent-{os}-{arch}`（`X-Neilico-Sha256`）；enroll 走来源 IP 令牌桶，install/download 明确限流豁免。
+- 接入令牌格式 `neilico-enroll.<base64url payload>.<base64url HMAC>`，payload 自带 server/tenant/network/jti/exp；DB 只存完整串 SHA-256。创建响应的 `commands.{linux,macos,windows,docker}` 与 token 都只出现一次；同 jti+同请求重放不重发凭据。
+- 公开引导：`GET /install.sh`（Linux systemd/macOS launchd）与 `GET /install.ps1`（Windows Service），下载固定六名且带 `X-Neilico-Sha256`；enroll 走来源 IP 令牌桶，install/download 明确限流豁免。
 - Agent 可用 `neilico-agent enroll --token` 或 `run --token/--token-file/NEILICO_TOKEN`；state 目录取 `NEILICO_STATE_DIR`/`--state-dir`。
 - API Token 明文 `neilico_<32-byte base64url>` 只在 create/rotate 响应出现一次；数据库只存 SHA-256，展示/审计最多 `token_prefix + "…"`。撤销幂等，rotate 旧值立即失效。
 - API Token scope：`nodes/networks/proxy/certs/tokens/alerts` 的 read/write + `admin`；API Token 严格按自身 scopes 且不能创建更大 scopes 的子 Token。JWT 维持 RBAC，映射表见 `internal/auth/scopes.go` 与 `docs/API.md`。
@@ -148,10 +149,10 @@ cd deploy/helm && bash neilico/ci/verify.sh
   - 约定：**侧栏 = 深色面**（`--sider-bg`，日/夜一致，菜单恒 `theme="dark"`，文字一律 `rgba(255,255,255,.88)`/白）；**header 属于内容区**，跟随主题（`background: var(--surface) !important`）。`.ant-layout` 的默认灰底 `#f5f5f5` 也要归位成 `--page-bg`。
   - 验证方式：逐元素读 `getComputedStyle(el).color/backgroundColor` 算对比度，**两套主题都要量**（header 那条只在浅色模式暴露，深色模式看不出来）。当前实测：侧栏文字 13–18:1、header 标题 14–16:1；选中项 4.1:1（AntDV 蓝底白字）。
 - **装配漏传 option 会让公开端点静默 404（单测抓不到）**：`cmd/api/main.go` 构造 `api.ProxyOptions` 时漏了 `Downloads`/`Enroll` → `downloadsDir` 为空 → `/downloads/*` 全 404（尽管镜像里二进制齐全）。**单测自己构造 options 传了临时目录，所以全绿**。已在 main.go 补齐并加启动告警（`agent downloads ready` / `warns when unusable`）——凡"只在真机部署才暴露"的装配项，都要留一条启动日志或部署级断言。
-- **节点详情接口不返回 `virtual_ip`/`network_id`**（VIP 只存在于网络成员表与 agent state.json）。功能正常，但 Dashboard 设备列表看不到节点 IP —— 属待补的展示缺口（E3 可一并做）。
+- **E1 的节点详情展示缺口已由 E2 后端补齐**：列表/详情返回成员关系对应的 `virtual_ip`/`network_id`，同时返回 `capabilities`；Dashboard 展示仍留给 E3，前端本轮未改。
 - **E1 一键接入的实测口径**（`/tmp/neilico-e2e-docker.sh`，26 PASS）：公开端点 200+sha256/404、负向对照（受限 API Token 建接入令牌 → 403）、原样执行接口给的 docker 命令 → 容器自注册 online、成员表分到 VIP、心跳 30s 推进、容器内 `wg0` 公钥与 state.json 一致、用尽 410/撤销 401/篡改 401、同请求重放返回同一节点且 `replayed=true`。
   - 踩过的测试坑：**时间窗必须 > 心跳间隔 30s**（我一开始只等 12s，误判"心跳不动"）；**Mesh 接口要等 20s+ 再断言**（刚 enroll 完 wg0 还没建）；测试要**可重入**（API Token 名与网络 CIDR 都要唯一，否则 409）。
-- **Agent 跨平台现状（实测）**：`windows/amd64`、`darwin/{amd64,arm64}`、`linux/{amd64,arm64}` **均可编译**，全 agent 仅 `cmd/agent/main.go` 一处 Linux 相关引用。所以 Windows/macOS 连接器的剩余工作是**服务安装脚本（New-Service/launchd）+ 分发命名 + Mesh 能力如实上报**，不是重写。当前只做了 **Docker + Linux**（用户指定 Docker 优先）。
+- **Agent 跨平台现状（E2）**：六目标 `windows/amd64`、`darwin/{amd64,arm64}`、`linux/{amd64,arm64,armv7}` 均已本地 `go build` 通过；能力探测按工具/TUN/系统组件/管理员权限真实上报。Windows/macOS 真机安装、WireGuardNT/系统扩展和 launchd/Windows Service 生命周期尚未在真机执行，不能据脚本语法通过推断真机已组网。
 
 ## 验收方法论教训（本项目实测踩到）
 

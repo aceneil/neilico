@@ -1,13 +1,18 @@
 package client
 
-import "encoding/json"
+import (
+	"encoding/json"
+
+	"neilico/control-plane/pkg/capabilities"
+)
 
 type RegisterRequest struct {
-	Name    string   `json:"name"`
-	OS      string   `json:"os"`
-	Arch    string   `json:"arch"`
-	Version string   `json:"version"`
-	Tags    []string `json:"tags"`
+	Name         string                     `json:"name"`
+	OS           string                     `json:"os"`
+	Arch         string                     `json:"arch"`
+	Version      string                     `json:"version"`
+	Tags         []string                   `json:"tags"`
+	Capabilities *capabilities.Capabilities `json:"capabilities,omitempty"`
 }
 
 type RegisterResponse struct {
@@ -20,7 +25,8 @@ type RegisterResponse struct {
 }
 
 type HeartbeatRequest struct {
-	Version string `json:"version"`
+	Version      string                     `json:"version"`
+	Capabilities *capabilities.Capabilities `json:"capabilities,omitempty"`
 }
 
 type HeartbeatResponse struct {

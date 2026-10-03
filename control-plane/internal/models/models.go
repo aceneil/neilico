@@ -9,6 +9,8 @@ import (
 
 	"github.com/google/uuid"
 	"gorm.io/datatypes"
+
+	"neilico/control-plane/pkg/capabilities"
 )
 
 type Tenant struct {
@@ -31,21 +33,23 @@ type User struct {
 }
 
 type Node struct {
-	ID             uuid.UUID                   `gorm:"type:uuid;primaryKey" json:"id"`
-	TenantID       uuid.UUID                   `gorm:"type:uuid;not null;index" json:"tenant_id"`
-	Name           string                      `gorm:"type:varchar(255);not null" json:"name"`
-	PublicKey      string                      `gorm:"type:text;not null" json:"public_key"`
-	PrivateKey     string                      `gorm:"type:text;not null;default:''" json:"-"`
-	VirtualIP      *string                     `gorm:"type:inet" json:"virtual_ip"`
-	PublicEndpoint *string                     `gorm:"type:varchar(255)" json:"public_endpoint,omitempty"`
-	OS             string                      `gorm:"type:varchar(64);not null" json:"os"`
-	Arch           string                      `gorm:"type:varchar(64);not null" json:"arch"`
-	Version        string                      `gorm:"type:varchar(64);not null" json:"version"`
-	Status         string                      `gorm:"type:varchar(32);not null;default:offline;index" json:"status"`
-	LastSeen       *time.Time                  `gorm:"type:timestamp" json:"last_seen"`
-	Tags           datatypes.JSONSlice[string] `gorm:"type:jsonb;not null" json:"tags"`
-	AgentTokenHash string                      `gorm:"type:char(64);not null;uniqueIndex" json:"-"`
-	CreatedAt      time.Time                   `gorm:"type:timestamp;not null;index" json:"created_at"`
+	ID             uuid.UUID                                     `gorm:"type:uuid;primaryKey" json:"id"`
+	TenantID       uuid.UUID                                     `gorm:"type:uuid;not null;index" json:"tenant_id"`
+	Name           string                                        `gorm:"type:varchar(255);not null" json:"name"`
+	PublicKey      string                                        `gorm:"type:text;not null" json:"public_key"`
+	PrivateKey     string                                        `gorm:"type:text;not null;default:''" json:"-"`
+	VirtualIP      *string                                       `gorm:"type:inet" json:"virtual_ip"`
+	PublicEndpoint *string                                       `gorm:"type:varchar(255)" json:"public_endpoint,omitempty"`
+	OS             string                                        `gorm:"type:varchar(64);not null" json:"os"`
+	Arch           string                                        `gorm:"type:varchar(64);not null" json:"arch"`
+	Version        string                                        `gorm:"type:varchar(64);not null" json:"version"`
+	Status         string                                        `gorm:"type:varchar(32);not null;default:offline;index" json:"status"`
+	LastSeen       *time.Time                                    `gorm:"type:timestamp" json:"last_seen"`
+	Tags           datatypes.JSONSlice[string]                   `gorm:"type:jsonb;not null" json:"tags"`
+	Capabilities   datatypes.JSONType[capabilities.Capabilities] `gorm:"type:jsonb;not null;default:'{}'" json:"capabilities"`
+	AgentTokenHash string                                        `gorm:"type:char(64);not null;uniqueIndex" json:"-"`
+	CreatedAt      time.Time                                     `gorm:"type:timestamp;not null;index" json:"created_at"`
+	NetworkID      *uuid.UUID                                    `gorm:"-" json:"network_id,omitempty"`
 
 	Tenant *Tenant `gorm:"foreignKey:TenantID;constraint:OnDelete:RESTRICT,OnUpdate:CASCADE" json:"-"`
 }

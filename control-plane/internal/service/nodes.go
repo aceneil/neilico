@@ -19,6 +19,7 @@ import (
 	"neilico/control-plane/internal/models"
 	"neilico/control-plane/internal/service/cert"
 	"neilico/control-plane/internal/service/mesh/wireguard"
+	"neilico/control-plane/pkg/capabilities"
 )
 
 const (
@@ -47,13 +48,14 @@ func (s *NodeService) ConfigureKeyCrypto(keyCrypto *cert.Crypto) {
 }
 
 type NodeRegisterInput struct {
-	Name      string   `json:"name"`
-	VirtualIP *string  `json:"virtual_ip,omitempty"`
-	PublicKey string   `json:"public_key"`
-	OS        string   `json:"os"`
-	Arch      string   `json:"arch"`
-	Version   string   `json:"version"`
-	Tags      []string `json:"tags"`
+	Name         string                     `json:"name"`
+	VirtualIP    *string                    `json:"virtual_ip,omitempty"`
+	PublicKey    string                     `json:"public_key"`
+	OS           string                     `json:"os"`
+	Arch         string                     `json:"arch"`
+	Version      string                     `json:"version"`
+	Tags         []string                   `json:"tags"`
+	Capabilities *capabilities.Capabilities `json:"capabilities,omitempty"`
 }
 
 type NodeRegisterOutput struct {
@@ -63,6 +65,18 @@ type NodeRegisterOutput struct {
 	Status     string    `json:"status"`
 	PublicKey  string    `json:"public_key"`
 	PrivateKey string    `json:"private_key,omitempty"`
+}
+
+func resolveCapabilities(value *capabilities.Capabilities) (capabilities.Capabilities, error) {
+	if value == nil {
+		return capabilities.Unknown("尚未上报"), nil
+	}
+	resolved := *value
+	resolved.Reason = strings.TrimSpace(resolved.Reason)
+	if err := resolved.Validate(); err != nil {
+		return capabilities.Capabilities{}, err
+	}
+	return resolved, nil
 }
 
 func validateVirtualIP(value string) error {
@@ -77,7 +91,8 @@ func validateVirtualIP(value string) error {
 }
 
 type HeartbeatInput struct {
-	Version string `json:"version"`
+	Version      string                     `json:"version"`
+	Capabilities *capabilities.Capabilities `json:"capabilities,omitempty"`
 }
 
 func (s *NodeService) Register(ctx context.Context, tenantID uuid.UUID, input NodeRegisterInput) (NodeRegisterOutput, error) {
@@ -89,6 +104,10 @@ func (s *NodeService) RegisterTx(ctx context.Context, tx *gorm.DB, tenantID uuid
 	input.OS = strings.TrimSpace(input.OS)
 	input.Arch = strings.TrimSpace(input.Arch)
 	input.Version = strings.TrimSpace(input.Version)
+	caps, err := resolveCapabilities(input.Capabilities)
+	if err != nil {
+		return NodeRegisterOutput{}, fmt.Errorf("%w: %v", ErrInvalidInput, err)
+	}
 	if input.Name == "" || input.OS == "" || input.Arch == "" {
 		return NodeRegisterOutput{}, fmt.Errorf("%w: name, os, and arch are required", ErrInvalidInput)
 	}
@@ -128,6 +147,7 @@ func (s *NodeService) RegisterTx(ctx context.Context, tx *gorm.DB, tenantID uuid
 		Version:        input.Version,
 		Status:         NodeStatusOffline,
 		Tags:           datatypes.JSONSlice[string](tags),
+		Capabilities:   datatypes.NewJSONType(caps),
 		AgentTokenHash: tokenHash,
 	}
 	if err := tx.WithContext(ctx).Create(&node).Error; err != nil {
@@ -265,6 +285,11 @@ func (s *NodeService) Heartbeat(ctx context.Context, nodeID uuid.UUID, agentToke
 	if version := strings.TrimSpace(input.Version); version != "" {
 		node.Version = version
 	}
+	if input.Capabilities != nil {
+		if caps, capErr := resolveCapabilities(input.Capabilities); capErr == nil {
+			node.Capabilities = datatypes.NewJSONType(caps)
+		}
+	}
 	if err := s.db.WithContext(ctx).Save(&node).Error; err != nil {
 		return models.Node{}, fmt.Errorf("record heartbeat: %w", err)
 	}
@@ -302,6 +327,13 @@ func (s *NodeService) List(ctx context.Context, tenantID *uuid.UUID, filter Node
 	var nodes []models.Node
 	if err := query.Order("created_at DESC").Find(&nodes).Error; err != nil {
 		return NodeList{}, fmt.Errorf("list nodes: %w", err)
+	}
+	nodePointers := make([]*models.Node, len(nodes))
+	for index := range nodes {
+		nodePointers[index] = &nodes[index]
+	}
+	if err := s.attachMembership(ctx, nodePointers...); err != nil {
+		return NodeList{}, err
 	}
 	if filter.Tag != "" {
 		filtered := nodes[:0]
@@ -342,7 +374,56 @@ func (s *NodeService) Get(ctx context.Context, id uuid.UUID, tenantID *uuid.UUID
 	if err != nil {
 		return models.Node{}, fmt.Errorf("get node: %w", err)
 	}
+	if err := s.attachMembership(ctx, &node); err != nil {
+		return models.Node{}, err
+	}
 	return node, nil
+}
+
+type nodeMembership struct {
+	NodeID    uuid.UUID `gorm:"column:node_id"`
+	NetworkID uuid.UUID `gorm:"column:network_id"`
+	VirtualIP string    `gorm:"column:virtual_ip"`
+}
+
+func (s *NodeService) attachMembership(ctx context.Context, nodes ...*models.Node) error {
+	if len(nodes) == 0 {
+		return nil
+	}
+	ids := make([]uuid.UUID, 0, len(nodes))
+	for _, node := range nodes {
+		ids = append(ids, node.ID)
+	}
+	var memberships []nodeMembership
+	if err := s.db.WithContext(ctx).Model(&models.NetworkMember{}).
+		Select("node_id, network_id, virtual_ip").
+		Where("node_id IN ?", ids).
+		Order("joined_at DESC, id DESC").
+		Find(&memberships).Error; err != nil {
+		return fmt.Errorf("load node network membership: %w", err)
+	}
+	byNode := make(map[uuid.UUID]nodeMembership, len(memberships))
+	for _, membership := range memberships {
+		if _, exists := byNode[membership.NodeID]; !exists {
+			byNode[membership.NodeID] = membership
+		}
+	}
+	// 老数据（AutoMigrate 用 default '{}' 补出的列）里 capabilities 是空对象；
+	// 在读取边界补成明确状态，避免界面/接口把它显示成空白。
+	for _, node := range nodes {
+		node.Capabilities = datatypes.NewJSONType(node.Capabilities.Data().Normalize())
+	}
+	for _, node := range nodes {
+		membership, ok := byNode[node.ID]
+		if !ok {
+			continue
+		}
+		virtualIP := membership.VirtualIP
+		node.VirtualIP = &virtualIP
+		networkID := membership.NetworkID
+		node.NetworkID = &networkID
+	}
+	return nil
 }
 
 func (s *NodeService) Delete(ctx context.Context, id uuid.UUID, tenantID *uuid.UUID) error {

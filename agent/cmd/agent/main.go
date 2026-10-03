@@ -17,6 +17,7 @@ import (
 	"syscall"
 	"time"
 
+	agentcapabilities "neilico/agent/internal/capabilities"
 	"neilico/agent/internal/client"
 	"neilico/agent/internal/config"
 	"neilico/agent/internal/heartbeat"
@@ -24,6 +25,7 @@ import (
 	agentmetrics "neilico/agent/internal/metrics"
 	"neilico/agent/internal/route"
 	"neilico/agent/internal/state"
+	"neilico/control-plane/pkg/capabilities"
 	"neilico/control-plane/pkg/enrolltoken"
 )
 
@@ -74,8 +76,10 @@ func run(args []string, stdout, stderr io.Writer) error {
 	}
 	logger := newLogger(cfg.Log.Level, stderr)
 	warnInsecureTLS(cfg.TLS.InsecureSkipVerify, logger, stderr)
+	capabilityReport := agentcapabilities.Detect()
+	logCapabilities(capabilityReport, logger)
 	metrics := agentmetrics.New()
-	metrics.SetDryRun(*dryRun || !hasNetAdmin())
+	metrics.SetDryRun(*dryRun || !capabilityReport.MeshReady() || capabilityReport.SubnetRoutes != "ready")
 	if metrics.DryRun() {
 		logger.Info("network application running in dry-run; no system writes will be executed", "requested", *dryRun, "cap_net_admin", hasNetAdmin())
 	}
@@ -86,7 +90,7 @@ func run(args []string, stdout, stderr io.Writer) error {
 	if err != nil {
 		return err
 	}
-	identity, err := ensureIdentity(ctx, cfg, apiClient, *forceRegister, logger)
+	identity, err := ensureIdentityWithCapabilities(ctx, cfg, apiClient, *forceRegister, capabilityReport, logger)
 	if err != nil {
 		return client.SafeError(err, cfg.EnrollToken, cfg.Token)
 	}
@@ -121,7 +125,7 @@ func run(args []string, stdout, stderr io.Writer) error {
 	go func() {
 		defer wg.Done()
 		heartbeat.Run(ctx, time.Duration(cfg.HeartbeatInterval), func(ctx context.Context) (time.Duration, error) {
-			response, err := apiClient.Heartbeat(ctx, identity.NodeID, version)
+			response, err := apiClient.HeartbeatWithCapabilities(ctx, identity.NodeID, version, capabilitySnapshot())
 			if err != nil {
 				return 0, err
 			}
@@ -201,7 +205,7 @@ func runEnroll(args []string, stdout, stderr io.Writer) error {
 	if strings.TrimSpace(cfg.EnrollToken) == "" {
 		return errors.New("enrollment token is required; pass --token or --token-file")
 	}
-	_, err := enrollAndSave(context.Background(), cfg, stdout)
+	_, err := enrollAndSaveWithCapabilities(context.Background(), cfg, stdout, agentcapabilities.Detect())
 	return err
 }
 
@@ -263,6 +267,10 @@ func newAPIClient(cfg config.Config) (*client.Client, error) {
 }
 
 func ensureIdentity(ctx context.Context, cfg config.Config, apiClient *client.Client, force bool, logger *slog.Logger) (state.State, error) {
+	return ensureIdentityWithCapabilities(ctx, cfg, apiClient, force, agentcapabilities.Detect(), logger)
+}
+
+func ensureIdentityWithCapabilities(ctx context.Context, cfg config.Config, apiClient *client.Client, force bool, reported capabilities.Capabilities, logger *slog.Logger) (state.State, error) {
 	stored, exists, err := state.Load(cfg.StatePath)
 	if err != nil {
 		return state.State{}, err
@@ -271,7 +279,7 @@ func ensureIdentity(ctx context.Context, cfg config.Config, apiClient *client.Cl
 		return stored, nil
 	}
 	if strings.TrimSpace(cfg.EnrollToken) != "" {
-		return enrollAndSave(ctx, cfg, io.Discard)
+		return enrollAndSaveWithCapabilities(ctx, cfg, io.Discard, reported)
 	}
 	if strings.TrimSpace(cfg.Token) == "" {
 		return state.State{}, errors.New("node credentials are missing; run `neilico-agent enroll --token <TOKEN>`, or provide --token/--token-file/NEILICO_TOKEN")
@@ -279,11 +287,12 @@ func ensureIdentity(ctx context.Context, cfg config.Config, apiClient *client.Cl
 	var registered state.State
 	err = heartbeat.RetryUntil(ctx, func(ctx context.Context) error {
 		response, err := apiClient.Register(ctx, client.RegisterRequest{
-			Name:    cfg.Node.Name,
-			OS:      runtime.GOOS,
-			Arch:    runtime.GOARCH,
-			Version: version,
-			Tags:    cfg.Node.Tags,
+			Name:         cfg.Node.Name,
+			OS:           runtime.GOOS,
+			Arch:         runtime.GOARCH,
+			Version:      version,
+			Tags:         cfg.Node.Tags,
+			Capabilities: &reported,
 		})
 		if err != nil {
 			return err
@@ -305,6 +314,10 @@ func ensureIdentity(ctx context.Context, cfg config.Config, apiClient *client.Cl
 }
 
 func enrollAndSave(ctx context.Context, cfg config.Config, stdout io.Writer) (state.State, error) {
+	return enrollAndSaveWithCapabilities(ctx, cfg, stdout, agentcapabilities.Detect())
+}
+
+func enrollAndSaveWithCapabilities(ctx context.Context, cfg config.Config, stdout io.Writer, reported capabilities.Capabilities) (state.State, error) {
 	stored, exists, err := state.Load(cfg.StatePath)
 	if err != nil {
 		return state.State{}, err
@@ -326,6 +339,7 @@ func enrollAndSave(ctx context.Context, cfg config.Config, stdout io.Writer) (st
 	response, err := apiClient.Enroll(ctx, client.EnrollRequest{
 		Token: rawToken, Name: requestName, Hostname: hostname,
 		OS: runtime.GOOS, Arch: runtime.GOARCH, Version: version, Tags: cfg.Node.Tags,
+		Capabilities: &reported,
 	})
 	if err != nil {
 		return state.State{}, client.SafeError(err, rawToken)
@@ -495,6 +509,27 @@ func hasNetAdmin() bool {
 		}
 	}
 	return false
+}
+
+func capabilitySnapshot() *capabilities.Capabilities {
+	reported := agentcapabilities.Detect()
+	return &reported
+}
+
+func logCapabilities(reported capabilities.Capabilities, logger *slog.Logger) {
+	logger.Info("agent capabilities detected", "mesh", reported.Mesh, "subnet_routes", reported.SubnetRoutes, "tunnel", reported.Tunnel)
+	for _, item := range []struct {
+		name   string
+		status string
+	}{
+		{name: "mesh", status: reported.Mesh},
+		{name: "subnet_routes", status: reported.SubnetRoutes},
+		{name: "tunnel", status: reported.Tunnel},
+	} {
+		if item.status != "ready" {
+			logger.Warn("能力不可用", "capability", item.name, "status", item.status, "reason", reported.Reason)
+		}
+	}
 }
 
 func newLogger(level string, output io.Writer) *slog.Logger {

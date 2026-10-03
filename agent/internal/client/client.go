@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"neilico/agent/internal/state"
+	"neilico/control-plane/pkg/capabilities"
 )
 
 const agentVersion = "dev"
@@ -109,9 +110,14 @@ func (c *Client) Register(ctx context.Context, input RegisterRequest) (RegisterR
 }
 
 func (c *Client) Heartbeat(ctx context.Context, nodeID string, version string) (HeartbeatResponse, error) {
+	return c.HeartbeatWithCapabilities(ctx, nodeID, version, nil)
+}
+
+func (c *Client) HeartbeatWithCapabilities(ctx context.Context, nodeID, version string, reported *capabilities.Capabilities) (HeartbeatResponse, error) {
 	var output HeartbeatResponse
 	path := "/api/v1/nodes/" + url.PathEscape(nodeID) + "/heartbeat"
-	if err := c.do(ctx, http.MethodPost, path, HeartbeatRequest{Version: version}, &output); err != nil {
+	request := HeartbeatRequest{Version: version, Capabilities: reported}
+	if err := c.do(ctx, http.MethodPost, path, request, &output); err != nil {
 		return HeartbeatResponse{}, err
 	}
 	return output, nil

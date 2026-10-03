@@ -154,7 +154,7 @@ func TestRateLimitBurstRecoveryIsolationAndExemptions(t *testing.T) {
 		w.WriteHeader(http.StatusNoContent)
 	}))
 	exemptKey := Principal{AuthMethod: auth.AuthMethodAPIToken, APITokenID: uuid.MustParse("33333333-3333-3333-3333-333333333333")}
-	for _, path := range []string{"/healthz", "/metrics", "/.well-known/acme-challenge/token"} {
+	for _, path := range []string{"/healthz", "/metrics", "/install.sh", "/install.ps1", "/downloads/neilico-agent-windows-amd64.exe", "/.well-known/acme-challenge/token"} {
 		for index := 0; index < 4; index++ {
 			request := httptest.NewRequest(http.MethodGet, path, nil)
 			request = request.WithContext(context.WithValue(request.Context(), principalKey, exemptKey))

@@ -1,0 +1,5 @@
+BEGIN;
+
+ALTER TABLE nodes DROP COLUMN IF EXISTS capabilities;
+
+COMMIT;

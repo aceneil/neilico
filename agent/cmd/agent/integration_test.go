@@ -25,6 +25,7 @@ import (
 	agentmetrics "neilico/agent/internal/metrics"
 	"neilico/agent/internal/route"
 	"neilico/agent/internal/state"
+	"neilico/control-plane/pkg/capabilities"
 )
 
 type integrationApp struct {
@@ -387,5 +388,17 @@ func TestRunWithoutCredentialsExplainsEnrollCommand(t *testing.T) {
 	_, err := ensureIdentity(context.Background(), cfg, client.New(cfg.Server, ""), false, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err == nil || !strings.Contains(err.Error(), "neilico-agent enroll --token") {
 		t.Fatalf("missing credentials error = %v", err)
+	}
+}
+
+func TestUnavailableCapabilitiesAreLoggedExplicitly(t *testing.T) {
+	var output bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&output, nil))
+	logCapabilities(capabilities.Unknown("缺 wg 工具 / 无 TUN / 需管理员权限"), logger)
+	text := output.String()
+	for _, expected := range []string{"能力不可用", "capability=mesh", "capability=subnet_routes", "capability=tunnel", "缺 wg 工具 / 无 TUN / 需管理员权限"} {
+		if !strings.Contains(text, expected) {
+			t.Fatalf("capability log omitted %q:\n%s", expected, text)
+		}
 	}
 }

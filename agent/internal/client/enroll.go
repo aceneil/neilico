@@ -5,17 +5,20 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+
+	"neilico/control-plane/pkg/capabilities"
 )
 
 type EnrollRequest struct {
-	Token     string   `json:"token"`
-	Name      string   `json:"name,omitempty"`
-	Hostname  string   `json:"hostname,omitempty"`
-	OS        string   `json:"os"`
-	Arch      string   `json:"arch"`
-	Version   string   `json:"version"`
-	Tags      []string `json:"tags,omitempty"`
-	PublicKey string   `json:"public_key,omitempty"`
+	Token        string                     `json:"token"`
+	Name         string                     `json:"name,omitempty"`
+	Hostname     string                     `json:"hostname,omitempty"`
+	OS           string                     `json:"os"`
+	Arch         string                     `json:"arch"`
+	Version      string                     `json:"version"`
+	Tags         []string                   `json:"tags,omitempty"`
+	PublicKey    string                     `json:"public_key,omitempty"`
+	Capabilities *capabilities.Capabilities `json:"capabilities,omitempty"`
 }
 
 type EnrollResponse struct {

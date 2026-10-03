@@ -26,8 +26,10 @@ type enrollTokenCreateResponse struct {
 	NameHint  string     `json:"name_hint"`
 	Server    string     `json:"server"`
 	Commands  struct {
-		Linux  string `json:"linux"`
-		Docker string `json:"docker"`
+		Linux   string `json:"linux"`
+		MacOS   string `json:"macos"`
+		Windows string `json:"windows"`
+		Docker  string `json:"docker"`
 	} `json:"commands"`
 }
 
@@ -69,6 +71,12 @@ func TestNodeEnrollTokenLifecycleAndSelfEnroll(t *testing.T) {
 	}
 	if !strings.Contains(created.Commands.Linux, created.Token) || !strings.Contains(created.Commands.Docker, "NEILICO_TOKEN="+created.Token) {
 		t.Fatalf("creation response omitted ready-to-run commands: %#v", created.Commands)
+	}
+	if created.Commands.MacOS != created.Commands.Linux || !strings.Contains(created.Commands.MacOS, "sudo") {
+		t.Fatalf("macOS command must be separate and require sudo: %#v", created.Commands)
+	}
+	if !strings.Contains(created.Commands.Windows, "/install.ps1") || !strings.Contains(created.Commands.Windows, "-Token "+created.Token) {
+		t.Fatalf("Windows command omitted ready-to-run install.ps1 invocation: %#v", created.Commands)
 	}
 	sum := sha256.Sum256([]byte(created.Token))
 	var tokenRow models.NodeEnrollToken

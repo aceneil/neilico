@@ -13,9 +13,11 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"gorm.io/datatypes"
 	"gorm.io/gorm"
 
 	"neilico/control-plane/internal/models"
+	"neilico/control-plane/pkg/capabilities"
 	"neilico/control-plane/pkg/enrolltoken"
 )
 
@@ -205,14 +207,15 @@ func NodeEnrollTokenStatus(item models.NodeEnrollToken, now time.Time) string {
 }
 
 type NodeEnrollInput struct {
-	Token     string   `json:"token"`
-	Name      string   `json:"name,omitempty"`
-	Hostname  string   `json:"hostname,omitempty"`
-	OS        string   `json:"os"`
-	Arch      string   `json:"arch"`
-	Version   string   `json:"version"`
-	Tags      []string `json:"tags,omitempty"`
-	PublicKey string   `json:"public_key,omitempty"`
+	Token        string                     `json:"token"`
+	Name         string                     `json:"name,omitempty"`
+	Hostname     string                     `json:"hostname,omitempty"`
+	OS           string                     `json:"os"`
+	Arch         string                     `json:"arch"`
+	Version      string                     `json:"version"`
+	Tags         []string                   `json:"tags,omitempty"`
+	PublicKey    string                     `json:"public_key,omitempty"`
+	Capabilities *capabilities.Capabilities `json:"capabilities,omitempty"`
 }
 
 type NodeEnrollOutput struct {
@@ -291,7 +294,7 @@ func (s *NodeEnrollService) Enroll(ctx context.Context, rawToken string, input N
 		var previous models.NodeEnrollment
 		err := tx.Where("token_id = ? AND request_hash = ?", token.ID, requestHash).First(&previous).Error
 		if err == nil {
-			replayed, loadErr := replayOutput(ctx, tx, token, previous.NodeID, payload.Server)
+			replayed, loadErr := replayOutput(ctx, tx, token, previous.NodeID, payload.Server, input.Capabilities)
 			if loadErr != nil {
 				return loadErr
 			}
@@ -315,6 +318,7 @@ func (s *NodeEnrollService) Enroll(ctx context.Context, rawToken string, input N
 		}
 		registered, err := s.nodes.RegisterTx(ctx, tx, token.TenantID, NodeRegisterInput{
 			Name: input.Name, OS: input.OS, Arch: input.Arch, Version: input.Version, Tags: input.Tags,
+			Capabilities: input.Capabilities,
 		})
 		if err != nil {
 			return err
@@ -348,13 +352,18 @@ func (s *NodeEnrollService) Enroll(ctx context.Context, rawToken string, input N
 	return output, nil
 }
 
-func replayOutput(ctx context.Context, tx *gorm.DB, token models.NodeEnrollToken, nodeID uuid.UUID, server string) (NodeEnrollOutput, error) {
+func replayOutput(ctx context.Context, tx *gorm.DB, token models.NodeEnrollToken, nodeID uuid.UUID, server string, reportedCapabilities *capabilities.Capabilities) (NodeEnrollOutput, error) {
 	var node models.Node
 	if err := tx.WithContext(ctx).Where("id = ? AND tenant_id = ?", nodeID, token.TenantID).First(&node).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return NodeEnrollOutput{}, ErrEnrollUnauthorized
 		}
 		return NodeEnrollOutput{}, fmt.Errorf("load enrolled node: %w", err)
+	}
+	if reportedCapabilities != nil {
+		if err := updateNodeCapabilities(ctx, tx, &node, *reportedCapabilities); err != nil {
+			return NodeEnrollOutput{}, err
+		}
 	}
 	result := NodeEnrollOutput{
 		NodeID: node.ID, PublicKey: node.PublicKey, Server: server, Replayed: true,
@@ -371,6 +380,19 @@ func replayOutput(ctx context.Context, tx *gorm.DB, token models.NodeEnrollToken
 		result.NetworkID = token.NetworkID
 	}
 	return result, nil
+}
+
+func updateNodeCapabilities(ctx context.Context, tx *gorm.DB, node *models.Node, value capabilities.Capabilities) error {
+	value.Reason = strings.TrimSpace(value.Reason)
+	if err := value.Validate(); err != nil {
+		return fmt.Errorf("%w: %v", ErrInvalidInput, err)
+	}
+	node.Capabilities = datatypes.NewJSONType(value)
+	if err := tx.WithContext(ctx).Model(&models.Node{}).Where("id = ?", node.ID).
+		Update("capabilities", node.Capabilities).Error; err != nil {
+		return fmt.Errorf("update enrolled node capabilities: %w", err)
+	}
+	return nil
 }
 
 func addEnrollMember(ctx context.Context, tx *gorm.DB, networkID, tenantID, nodeID uuid.UUID) (models.NetworkMember, error) {

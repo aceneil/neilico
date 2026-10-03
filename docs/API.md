@@ -11,7 +11,7 @@
 | 刷新 | `Authorization: Bearer <refresh token>` 或请求体 `{ "refresh_token": "..." }` |
 | Agent 心跳、流量、端点上报 | `Authorization: Bearer <agent_token>` |
 | Agent config | agent token（返回私钥），或 tenant/platform admin JWT（不返回私钥） |
-| `/healthz`, `/metrics`, `/install.sh`, `/downloads/*` | 无需认证 |
+| `/healthz`, `/metrics`, `/install.sh`, `/install.ps1`, `/downloads/*` | 无需认证；公开安装/下载路径限流豁免 |
 
 登录请求不会输出密码；生产环境必须使用 TLS 和独立的密钥管理。
 
@@ -43,14 +43,14 @@ scope 不足时还会返回 `detail`；API Token 使用 `insufficient_scope`，J
 | GET/PUT/DELETE | `/api/v1/tenants/{id}` | platform_admin | 租户详情/更新/删除 |
 | GET/POST | `/api/v1/users` | JWT；创建需 admin | 用户列表/创建 |
 | GET/PUT/DELETE | `/api/v1/users/{id}` | JWT，按 tenant scope | 用户详情/更新/删除 |
-| POST | `/api/v1/enroll-tokens` | `nodes:write` | 创建一次性自注册令牌，返回 token 与 Linux/Docker 命令 |
+| POST | `/api/v1/enroll-tokens` | `nodes:write` | 创建一次性自注册令牌，返回 token 与 Linux/macOS/Windows/Docker 命令 |
 | GET | `/api/v1/enroll-tokens` | `nodes:read` | 接入令牌列表与 active/used/expired/revoked 状态 |
 | DELETE | `/api/v1/enroll-tokens/{id}` | `nodes:write` | 幂等撤销接入令牌 |
 | POST | `/api/v1/nodes/enroll` | public + 接入令牌 + IP 限流 | 自注册；同一 jti/请求幂等 |
 | POST | `/api/v1/nodes/register` | platform_admin/tenant_admin/ops | 兼容的管理 token 注册，返回一次性 `agent_token` |
-| GET | `/api/v1/nodes` | JWT | 节点列表，可按 `status`、`tag`、分页 |
-| POST | `/api/v1/nodes/{id}/heartbeat` | agent_token | 心跳，返回下一次间隔 |
-| GET/DELETE | `/api/v1/nodes/{id}` | JWT，按 tenant scope | 节点详情/删除 |
+| GET | `/api/v1/nodes` | JWT | 节点列表；返回 `capabilities`，可按 `status`、`tag`、分页 |
+| POST | `/api/v1/nodes/{id}/heartbeat` | agent_token | 心跳；可更新 `capabilities`，返回下一次间隔 |
+| GET/DELETE | `/api/v1/nodes/{id}` | JWT，按 tenant scope | 详情含 `capabilities`/`virtual_ip`/`network_id`；删除 |
 | POST | `/api/v1/nodes/{id}/network-report` | agent_token | 公网端点上报 |
 | POST | `/api/v1/nodes/{id}/traffic` | agent_token | 流量增量上报 |
 | GET/POST | `/api/v1/domains` | JWT；写需 proxy 管理权限 | 域名列表/创建 |
@@ -184,27 +184,57 @@ curl -sS -X POST http://127.0.0.1:18080/api/v1/networks \
 curl -sS -X POST http://127.0.0.1:18080/api/v1/enroll-tokens \
   -H "Authorization: Bearer <tenant-access>" -H 'Content-Type: application/json' \
   -d '{"name_hint":"nas","network_id":"<network-id>","expires_in_seconds":86400,"max_uses":1}'
-# token 与 commands.{linux,docker} 只返回一次；库里只存完整令牌的 SHA-256。
+# token 与 commands.{linux,macos,windows,docker} 只返回一次；库里只存完整令牌的 SHA-256。
+# commands.windows: powershell -ExecutionPolicy Bypass -Command "& ([scriptblock]::Create((irm <server>/install.ps1))) -Token <TOKEN>"
+# commands.macos 与 commands.linux 可同串，但必须分别返回且包含 sudo。
 
 curl -sS -X POST http://127.0.0.1:18080/api/v1/nodes/enroll \
   -H 'Content-Type: application/json' \
-  -d '{"token":"neilico-enroll.<payload>.<signature>","name":"nas-01","os":"linux","arch":"amd64","version":"dev"}'
+  -d '{"token":"neilico-enroll.<payload>.<signature>","name":"nas-01","os":"linux","arch":"amd64","version":"dev","capabilities":{"mesh":"ready","subnet_routes":"ready","tunnel":"unavailable","reason":"未检测到可用的隧道/代理客户端"}}'
 # 响应含 node_id/agent_token/private_key/server；同一 jti+请求重放只返回同一 node，不重发凭据。
 
 curl -fsSL http://127.0.0.1:18080/install.sh | sudo bash -s -- --token "$ENROLL_TOKEN"
+curl -fsSL http://127.0.0.1:18080/install.sh | sudo bash -s -- --token "$ENROLL_TOKEN"  # macOS 同一脚本、Darwin 分支
+powershell -ExecutionPolicy Bypass -Command "& ([scriptblock]::Create((irm http://127.0.0.1:18080/install.ps1))) -Token $ENROLL_TOKEN"
 
 curl -sS -X POST http://127.0.0.1:18080/api/v1/nodes/register \
   -H "Authorization: Bearer <tenant-access>" -H 'Content-Type: application/json' \
-  -d '{"name":"nas-01","os":"linux","arch":"amd64","version":"dev","tags":["home"]}'
+  -d '{"name":"nas-01","os":"linux","arch":"amd64","version":"dev","tags":["home"],"capabilities":{"mesh":"degraded","subnet_routes":"unavailable","tunnel":"ready","reason":"需管理员权限"}}'
 # 响应包含 node_id、agent_token、public_key、private_key；private_key 只应保存到 Agent state。
 
 curl -sS -X POST http://127.0.0.1:18080/api/v1/nodes/<node-id>/heartbeat \
   -H "Authorization: Bearer <agent-token>" -H 'Content-Type: application/json' \
-  -d '{"version":"dev"}'
+  -d '{"version":"dev","capabilities":{"mesh":"unavailable","subnet_routes":"unavailable","tunnel":"unavailable","reason":"缺少 WireGuard 系统组件 / 平台不支持"}}'
 
 curl -sS http://127.0.0.1:18080/api/v1/agent/config?node_id=<node-id>\&version=0 \
   -H "Authorization: Bearer <agent-token>"
 ```
+
+### 公开安装与下载
+
+| Endpoint | Content-Type / 行为 |
+| :--- | :--- |
+| `GET /install.sh` | `text/x-shellscript`；Linux systemd 与 macOS launchd，同一脚本按 `uname -s` 分支 |
+| `GET /install.ps1` | `text/plain; charset=utf-8`；Windows PowerShell 5.1/7+ 安装器 |
+| `GET /downloads/{filename}` | `application/octet-stream`，响应头 `X-Neilico-Sha256` |
+
+下载白名单严格限定为 `neilico-agent-linux-{amd64,arm64,armv7}`、`neilico-agent-darwin-{amd64,arm64}` 和 `neilico-agent-windows-amd64.exe`。未知文件名返回非 HTML 的 404。两个安装脚本和下载路径公开且限流豁免，但安装器自身仍校验令牌、下载哈希和权限。
+
+`POST /api/v1/nodes/register`、`POST /api/v1/nodes/enroll` 与心跳都接受：
+
+```json
+{
+  "capabilities": {
+    "mesh": "ready | unavailable | degraded",
+    "subnet_routes": "ready | unavailable",
+    "tunnel": "ready | unavailable",
+    "reason": "任一能力非 ready 时必填"
+  }
+}
+```
+
+能力写入 `nodes.capabilities` JSONB。`GET /api/v1/nodes` 的每一项和 `GET /api/v1/nodes/{id}` 都返回 `capabilities`；详情还返回该节点当前成员关系对应的 `virtual_ip` 与 `network_id`。能力不足不会令注册/心跳失败，Agent 会继续上报并记录不可用原因。
+
 
 ### ACME 自动签发
 

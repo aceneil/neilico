@@ -30,8 +30,10 @@ RUN CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=${VERSION}"
 # ── stage 2b: Agent 二进制（供 /downloads/ 分发给一键安装脚本）──────────
 #   ⚠️ agent 模块有 `replace neilico/control-plane => ../control-plane`，
 #   所以两个源码目录都要在（与 deploy/agent/Dockerfile 一致）。
-#   文件名必须与 control-plane/internal/api/public_downloads.go 的 install.sh 期望一致：
+#   文件名必须与 install.sh / install.ps1 和 public_downloads.go 白名单完全一致：
 #   neilico-agent-linux-{amd64,arm64,armv7}
+#   neilico-agent-darwin-{amd64,arm64}
+#   neilico-agent-windows-amd64.exe
 FROM golang:1.27-alpine AS agent-build
 WORKDIR /src/agent
 COPY agent/go.mod agent/go.sum ./
@@ -40,14 +42,27 @@ RUN go mod download
 COPY agent/ ./
 COPY control-plane/ /src/control-plane/
 ARG VERSION=dev
-RUN set -eux; mkdir -p /out/downloads; \
-    for spec in "amd64:amd64:7" "arm64:arm64:7" "armv7:arm:7"; do \
-      name="${spec%%:*}"; rest="${spec#*:}"; arch="${rest%%:*}"; arm="${rest##*:}"; \
-      CGO_ENABLED=0 GOOS=linux GOARCH="$arch" GOARM="$arm" go build -trimpath \
+RUN set -eux; \
+    mkdir -p /out/downloads; \
+    CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath \
         -ldflags "-s -w -X main.version=${VERSION}" \
-        -o "/out/downloads/neilico-agent-linux-${name}" ./cmd/agent; \
-    done; \
-    cd /out/downloads && sha256sum neilico-agent-linux-* > SHA256SUMS && cat SHA256SUMS
+        -o /out/downloads/neilico-agent-linux-amd64 ./cmd/agent; \
+    CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath \
+        -ldflags "-s -w -X main.version=${VERSION}" \
+        -o /out/downloads/neilico-agent-linux-arm64 ./cmd/agent; \
+    CGO_ENABLED=0 GOOS=linux GOARCH=arm GOARM=7 go build -trimpath \
+        -ldflags "-s -w -X main.version=${VERSION}" \
+        -o /out/downloads/neilico-agent-linux-armv7 ./cmd/agent; \
+    CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -trimpath \
+        -ldflags "-s -w -X main.version=${VERSION}" \
+        -o /out/downloads/neilico-agent-darwin-amd64 ./cmd/agent; \
+    CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -trimpath \
+        -ldflags "-s -w -X main.version=${VERSION}" \
+        -o /out/downloads/neilico-agent-darwin-arm64 ./cmd/agent; \
+    CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath \
+        -ldflags "-s -w -X main.version=${VERSION}" \
+        -o /out/downloads/neilico-agent-windows-amd64.exe ./cmd/agent; \
+    cd /out/downloads && sha256sum neilico-agent-* > SHA256SUMS && cat SHA256SUMS
 
 # ── stage 3: 运行时（postgres 官方镜像为底座，自带 initdb/pg_isready/psql）──
 FROM postgres:16-alpine
@@ -64,7 +79,7 @@ COPY --from=control-build /out/neilico-control-api /usr/local/bin/neilico-contro
 COPY --from=agent-build /out/downloads/ /usr/local/share/neilico/downloads/
 COPY --from=control-build /src/control-plane/configs/config.example.yaml /opt/neilico/configs/config.example.yaml
 COPY deploy/allinone/entrypoint.sh /usr/local/bin/neilico-entrypoint.sh
-RUN chmod 0755 /usr/local/bin/neilico-entrypoint.sh /usr/local/bin/neilico-control-api /usr/local/share/neilico/downloads/neilico-agent-linux-*
+RUN chmod 0755 /usr/local/bin/neilico-entrypoint.sh /usr/local/bin/neilico-control-api /usr/local/share/neilico/downloads/neilico-agent-*
 
 # 应用侧默认值（数据库连接由 entrypoint 在运行时导出，密码只走环境变量）
 ENV PGDATA=/var/lib/postgresql/data \

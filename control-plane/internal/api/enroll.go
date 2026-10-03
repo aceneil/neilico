@@ -31,8 +31,10 @@ type enrollTokenView struct {
 }
 
 type enrollCommands struct {
-	Linux  string `json:"linux"`
-	Docker string `json:"docker"`
+	Linux   string `json:"linux"`
+	MacOS   string `json:"macos"`
+	Windows string `json:"windows"`
+	Docker  string `json:"docker"`
 }
 
 func (s *Server) registerEnroll(mux *http.ServeMux) {
@@ -216,9 +218,12 @@ func validateEnrollServer(value string) error {
 
 func enrollCommandSet(server, token string) enrollCommands {
 	base := strings.TrimRight(server, "/")
+	shellCommand := "curl -fsSL " + base + "/install.sh | sudo bash -s -- --token " + token
 	return enrollCommands{
-		Linux:  "curl -fsSL " + base + "/install.sh | sudo bash -s -- --token " + token,
-		Docker: "docker run -d --name neilico-agent --restart unless-stopped \\\n  --network host --cap-add NET_ADMIN --device /dev/net/tun \\\n  -v neilico-agent-state:/var/lib/neilico-agent \\\n  -e NEILICO_TOKEN=" + token + " neilico-agent:local",
+		Linux:   shellCommand,
+		MacOS:   shellCommand,
+		Windows: `powershell -ExecutionPolicy Bypass -Command "& ([scriptblock]::Create((irm ` + base + `/install.ps1))) -Token ` + token + `"`,
+		Docker:  "docker run -d --name neilico-agent --restart unless-stopped \\\n  --network host --cap-add NET_ADMIN --device /dev/net/tun \\\n  -v neilico-agent-state:/var/lib/neilico-agent \\\n  -e NEILICO_TOKEN=" + token + " neilico-agent:local",
 	}
 }
 
