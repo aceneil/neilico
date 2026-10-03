@@ -12,6 +12,7 @@ NEILICO（Unified Mesh & Proxy Platform）：统一「内网穿透 + Mesh 组网
 | `PLAN.md` | **执行计划**：里程碑 M1–M5、验收标准、技术裁决 D1–D6 |
 | `docs/API.md` | 真实 REST 路由、认证、curl、错误码 |
 | `docs/USER_GUIDE.md` | 部署、Agent、网络、域名、FAQ |
+| `docs/AGENT_ACCEPTANCE.md` | **四种接入方式（Docker/Linux/macOS/Windows）的真机验收清单**：逐步命令、判定标准、回收步骤、错误对照、能力边界（Windows/macOS 的 Mesh 目前如实报 degraded） |
 | `docs/OPS.md` | 架构、端口、备份恢复、升级、监控告警、排障 |
 | `control-plane/` | Go 控制面 API（stdlib HTTP + GORM + PostgreSQL16；含 ACME 生命周期和 SNI TLS） |
 | `agent/` | Go Agent（注册/心跳/拉配置/应用 WireGuard/子网路由） |
@@ -156,7 +157,7 @@ cd deploy/helm && bash neilico/ci/verify.sh
 - **🔴 AutoMigrate 给已有数据的表加 NOT NULL 列必须带 default，否则升级必崩**：`nodes` 新增 `capabilities` 时 tag 写成 `type:jsonb;not null` 无 default → 生成 `ALTER TABLE nodes ADD capabilities JSONB NOT NULL` → PostgreSQL 报 `column "capabilities" ... contains null values` → API exit 1 → **容器无限重启**（真机实测，库里只有 1 行历史数据就触发）。修法：tag 加 `default:'{}'`，空值在读取边界用 `Capabilities.Normalize()` 补成明确状态。
   - **注意：`migrations/*.sql` 在启动时根本不会被执行**（`cmd/api`、`db.go`、entrypoint 都没引用），**AutoMigrate 是生产唯一的 schema 路径**，所以**模型 tag 才是唯一真相**，SQL 文件只是文档/外部工具用。
   - **这类 bug 单测抓不到**：单测迁移的是**空库**，没有行就永远不会报 `contains null values`。已补回归测试 `internal/db/migrate_upgrade_test.go`（建表 → 删新列 → 用原始 SQL 插历史行 → 再 AutoMigrate），并做过**变异验证**（去掉 default 会红，报 `Cannot add a NOT NULL column with default value NULL`）。**今后凡新增 NOT NULL 列，必须先跑这条测试。**
-- **删除处于 online 的节点返回 500**（实测；容器已删但 sweeper 尚未把它标 offline 时删就 500）。属健壮性小问题，建议改成 409（提示先下线）或直接允许删除。
+- **删除节点曾返回 500（已修 `Delete` + 外键冲突兜 409）**：`network_members` / `subnet_routes` / `traffic_logs` 对 `nodes` 都是 **ON DELETE RESTRICT**（`node_enrollments` 是 CASCADE），直接删节点会撞外键 → 500。现在 `NodeService.Delete` 在**事务内**先清节点级附着与遥测（网络成员/子网路由/流量日志）再删节点；审计留痕在 `audit_logs`（无外键）不受影响。**真机验证**：删一个有成员的节点 → **204**，成员行同时消失，无外键报错。回归测试用 `_pragma=foreign_keys(1)` 的 sqlite 复现该约束（默认单测不启用外键，抓不到），并做过变异验证。
 - **浅色主题下 AntDV 预设 tag 文字对比度不足**（实测 12px 小字：绿 3.37 / 橙 3.34 / 蓝 ≈3.7，均 < 4.5）。已用 `[data-theme='light'] .ant-tag-{green,orange,red,blue}` 压到同色系更深一档（现 5.09–7.04）。**新加任何 tag 色都要量对比度**。
 - **验前端不必先部署**：`VITE_API_BASE` 同时被当作 dev 代理目标**和**客户端 API base（Vite 会把 `VITE_*` 注入前端），所以给 dev server 设它会让浏览器跨域直连后端 → **CORS 失败（Network Error）**。可靠做法：`npm run build` 后用 `/tmp/serve-dist.py`（静态服务 dist + 同源 `/api` 反代到真后端）——验的就是待部署的那个 bundle，且同源无 CORS。
 - **Agent 跨平台现状（E2）**：六目标 `windows/amd64`、`darwin/{amd64,arm64}`、`linux/{amd64,arm64,armv7}` 均已本地 `go build` 通过；能力探测按工具/TUN/系统组件/管理员权限真实上报。Windows/macOS 真机安装、WireGuardNT/系统扩展和 launchd/Windows Service 生命周期尚未在真机执行，不能据脚本语法通过推断真机已组网。

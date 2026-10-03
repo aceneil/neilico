@@ -648,7 +648,26 @@ func (s *Server) decodeRequest(w http.ResponseWriter, r *http.Request, dst any) 
 	return true
 }
 
+// isForeignKeyViolation 判断错误是否来自外键约束冲突（即「还有别的行引用它」）。
+// 同时匹配 PostgreSQL 的 SQLSTATE 23503、其错误文案，以及 SQLite 的同类文案，
+// 以免为了拿驱动错误类型而引入额外依赖。
+func isForeignKeyViolation(err error) bool {
+	if err == nil {
+		return false
+	}
+	message := err.Error()
+	return strings.Contains(message, "SQLSTATE 23503") ||
+		strings.Contains(message, "violates foreign key constraint") ||
+		strings.Contains(message, "FOREIGN KEY constraint failed")
+}
+
 func (s *Server) serviceError(w http.ResponseWriter, err error) {
+	// 外键冲突（PostgreSQL SQLSTATE 23503）：说明还有引用没清干净。
+	// 这是「有依赖、无法删除」而非服务端故障，回 409 并给出可操作信息，别兜成 500。
+	if isForeignKeyViolation(err) {
+		writeError(w, http.StatusConflict, "conflict", "resource is still referenced by other records")
+		return
+	}
 	if errors.Is(err, service.ErrOrderInFlight) {
 		writeError(w, http.StatusConflict, "order_in_flight", err.Error())
 		return

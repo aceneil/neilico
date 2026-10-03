@@ -431,10 +431,27 @@ func (s *NodeService) Delete(ctx context.Context, id uuid.UUID, tenantID *uuid.U
 	if err != nil {
 		return err
 	}
-	if err := s.db.WithContext(ctx).Delete(&models.Node{}, "id = ?", node.ID).Error; err != nil {
-		return fmt.Errorf("delete node: %w", err)
-	}
-	return nil
+	// 指向 nodes 的外键里，network_members / subnet_routes / traffic_logs 都是 RESTRICT
+	// （node_enrollments 是 CASCADE）。所以直接删节点会撞外键：
+	//   update or delete on table "nodes" violates foreign key constraint "fk_network_members_node"
+	// 真机表现为 HTTP 500（实测）。这些行都是「该设备自身的附着状态与遥测」，随设备一起清理；
+	// 审计留痕在 audit_logs（不依赖 nodes 外键），因此历史不受影响。
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		children := []any{
+			&models.NetworkMember{}, // 退出所有虚拟网络
+			&models.SubnetRoute{},   // 撤销该节点的子网路由
+			&models.TrafficLog{},    // 该设备自身的流量遥测
+		}
+		for _, child := range children {
+			if err := tx.Where("node_id = ?", node.ID).Delete(child).Error; err != nil {
+				return fmt.Errorf("detach node reference (%T): %w", child, err)
+			}
+		}
+		if err := tx.Delete(&models.Node{}, "id = ?", node.ID).Error; err != nil {
+			return fmt.Errorf("delete node: %w", err)
+		}
+		return nil
+	})
 }
 
 func IsHeartbeatExpired(lastSeen *time.Time, timeout time.Duration, now time.Time) bool {
