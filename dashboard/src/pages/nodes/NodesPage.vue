@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import {
   CopyOutlined,
   DeleteOutlined,
@@ -126,22 +126,82 @@ function capabilityReason(node: Node): string {
   return capabilitiesFor(node).reason?.trim() || '未提供原因'
 }
 
-async function load() {
-  loading.value = true
-  error.value = ''
+async function load(options: { silent?: boolean } = {}) {
+  const silent = options.silent === true
+  if (!silent) {
+    loading.value = true
+    error.value = ''
+  }
   try {
     const query: NodeListQuery = { page: page.value, page_size: pageSize.value }
     if (filters.status) query.status = filters.status
     if (filters.tag.trim()) query.tag = filters.tag.trim()
     const result = await nodesApi.list(query)
+    announceNewNodes(nodes.value, result.items)
     nodes.value = result.items
     total.value = result.total
+    lastRefreshedAt.value = Date.now()
   } catch (cause) {
-    error.value = apiErrorMessage(cause)
+    // 静默轮询失败不覆盖已有内容：网络抖一下不该把页面变成错误态
+    if (!silent) error.value = apiErrorMessage(cause)
   } finally {
-    loading.value = false
+    if (!silent) loading.value = false
   }
 }
+
+// ── 自动刷新：设备接入后无需手动刷新 ─────────────────────────────────────
+const AUTO_REFRESH_MS = 10000
+const autoRefresh = ref(true)
+const lastRefreshedAt = ref<number | null>(null)
+let pollTimer: number | undefined
+
+const lastRefreshedLabel = computed(() =>
+  lastRefreshedAt.value
+    ? new Date(lastRefreshedAt.value).toLocaleTimeString('zh-CN', { hour12: false })
+    : '—'
+)
+
+// 对比前后两次列表，把「新出现的设备」直接说出来，避免用户以为没生效
+function announceNewNodes(previous: Node[], next: Node[]) {
+  if (lastRefreshedAt.value === null) return // 首次加载不算「新增」
+  const known = new Set(previous.map((item) => item.id))
+  const added = next.filter((item) => !known.has(item.id))
+  if (added.length === 0) return
+  const names = added.slice(0, 3).map((item) => item.name).join('、')
+  message.success(`发现 ${added.length} 台新设备：${names}${added.length > 3 ? ' 等' : ''}`)
+}
+
+function startPolling() {
+  stopPolling()
+  pollTimer = window.setInterval(() => {
+    if (document.visibilityState !== 'visible' || !autoRefresh.value) return
+    void load({ silent: true })
+  }, AUTO_REFRESH_MS)
+}
+
+function stopPolling() {
+  if (pollTimer !== undefined) {
+    window.clearInterval(pollTimer)
+    pollTimer = undefined
+  }
+}
+
+// 从后台切回来时立刻刷一次（标签页在后台时轮询是暂停的）
+function handleVisibilityChange() {
+  if (document.visibilityState === 'visible' && autoRefresh.value) {
+    void load({ silent: true })
+  }
+}
+
+onMounted(() => {
+  startPolling()
+  document.addEventListener('visibilitychange', handleVisibilityChange)
+})
+
+onBeforeUnmount(() => {
+  stopPolling()
+  document.removeEventListener('visibilitychange', handleVisibilityChange)
+})
 
 async function loadEnrollTokens() {
   enrollTokensLoading.value = true
@@ -344,7 +404,13 @@ void loadEnrollTokens()
   <div class="page-container">
     <PageHeader title="设备管理" subtitle="注册、查看和维护接入 NEILICO 的节点设备">
       <template #actions>
-        <a-button @click="load"><ReloadOutlined /> 刷新</a-button>
+        <a-tooltip :title="`每 ${AUTO_REFRESH_MS / 1000} 秒自动刷新；上次 ${lastRefreshedLabel}`">
+          <span class="auto-refresh">
+            <a-switch v-model:checked="autoRefresh" size="small" />
+            <span class="auto-refresh-label">自动刷新</span>
+          </span>
+        </a-tooltip>
+        <a-button @click="load()"><ReloadOutlined /> 刷新</a-button>
         <a-button v-if="canWrite" type="primary" @click="enrollOpen = true">
           <LinkOutlined /> 接入设备
         </a-button>
@@ -593,6 +659,7 @@ void loadEnrollTokens()
     <EnrollDeviceModal
       v-model:open="enrollOpen"
       @created="loadEnrollTokens"
+      @enrolled="load({ silent: true })"
     />
 
     <a-modal

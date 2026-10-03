@@ -11,12 +11,14 @@ import {
 import { message } from 'ant-design-vue'
 import { enrollTokensApi } from '@/api/enroll-tokens'
 import { networksApi } from '@/api/networks'
+import { nodesApi } from '@/api/nodes'
 import { apiErrorMessage } from '@/api/http'
 import { formatTime } from '@/utils/format'
 import { copyText } from '@/utils/clipboard'
 import type {
   EnrollTokenCommands,
   EnrollTokenCreateResult,
+  Node,
   VirtualNetwork
 } from '@/types/api'
 
@@ -24,6 +26,8 @@ const props = defineProps<{ open: boolean }>()
 const emit = defineEmits<{
   (event: 'update:open', value: boolean): void
   (event: 'created', value: EnrollTokenCreateResult): void
+  // 探测到设备真的接入了 → 让父页面立刻刷新列表（免手刷）
+  (event: 'enrolled', value: Node): void
 }>()
 
 const step = ref<1 | 2>(1)
@@ -106,6 +110,47 @@ async function loadNetworks() {
   }
 }
 
+// ── 设备接入探测 ────────────────────────────────────────────────────────
+// 令牌生成后，命令要拿去设备上执行；设备 enroll 成功的瞬间，这个弹窗应当自己发现，
+// 而不是让用户关掉窗口、手动刷新页面才看到新设备。
+const detected = ref<Node | null>(null)
+let detectTimer: number | undefined
+
+function stopDetect() {
+  if (detectTimer !== undefined) {
+    window.clearInterval(detectTimer)
+    detectTimer = undefined
+  }
+}
+
+async function detectEnrolledNode() {
+  if (!result.value) return
+  // 只认「令牌生成之后」出现的节点（前后各留 5s 容差，避免时钟误差误判）
+  const since = new Date(result.value.created_at ?? Date.now()).getTime() - 5000
+  try {
+    const page = await nodesApi.list({ page: 1, page_size: 20 })
+    const candidates = page.items
+      .filter((node) => new Date(node.created_at).getTime() >= since)
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+    const hit = candidates[0]
+    if (hit) {
+      detected.value = hit
+      stopDetect()
+      emit('enrolled', hit)
+    }
+  } catch {
+    // 静默：探测失败不该打扰正在展示的命令
+  }
+}
+
+function startDetect() {
+  stopDetect()
+  detected.value = null
+  detectTimer = window.setInterval(() => {
+    if (document.visibilityState === 'visible') void detectEnrolledNode()
+  }, 4000)
+}
+
 async function generate() {
   await formRef.value?.validate()
   generating.value = true
@@ -120,6 +165,7 @@ async function generate() {
     step.value = 2
     now.value = Date.now()
     emit('created', created)
+    startDetect()
   } catch (cause) {
     message.error(apiErrorMessage(cause))
   } finally {
@@ -138,6 +184,8 @@ async function copyCommand(command: string) {
 }
 
 function reset() {
+  stopDetect()
+  detected.value = null
   step.value = 1
   result.value = null
   now.value = Date.now()
@@ -145,6 +193,7 @@ function reset() {
 }
 
 function close() {
+  stopDetect()
   result.value = null
   step.value = 1
   emit('update:open', false)
@@ -157,6 +206,7 @@ watch(
       void loadNetworks()
       reset()
     } else {
+      stopDetect()
       result.value = null
       step.value = 1
     }
@@ -181,6 +231,7 @@ watch(
 
 onBeforeUnmount(() => {
   if (countdownTimer != null) window.clearInterval(countdownTimer)
+  stopDetect()
 })
 </script>
 
@@ -289,6 +340,14 @@ onBeforeUnmount(() => {
           <ReloadOutlined /> 重新生成
         </a-button>
       </div>
+      <a-alert
+        v-if="detected"
+        class="enroll-detected"
+        type="success"
+        show-icon
+        :message="`设备已接入：${detected.name}`"
+        :description="`${detected.os}/${detected.arch}${detected.virtual_ip ? ' · 虚拟 IP ' + detected.virtual_ip : ''}── 命令已生效，设备列表已自动刷新，可以直接关闭本窗口。`"
+      />
       <a-tabs v-if="result" class="enroll-command-tabs" default-active-key="docker">
         <a-tab-pane v-for="tab in commandTabs" :key="tab.key" :tab="tab.label">
           <div v-if="commandFor(tab.key)" class="enroll-command-card">
@@ -416,6 +475,10 @@ onBeforeUnmount(() => {
   color: var(--text-secondary);
   font-size: 12px;
   line-height: 1.55;
+}
+
+.enroll-detected {
+  margin-bottom: 12px;
 }
 
 /* Docker 页签的「镜像来源」标注：让用户一眼看出镜像是从哪个仓库拉的 */
