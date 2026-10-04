@@ -58,10 +58,16 @@ func (*Provider) RenderNodeConfig(_ context.Context, node mesh.Node) ([]byte, er
 	for _, peer := range peers {
 		output.WriteString("\n[Peer]\n")
 		fmt.Fprintf(&output, "PublicKey = %s\n", peer.PublicKey)
-		fmt.Fprintf(&output, "Endpoint = %s\n", strings.TrimSpace(peer.Endpoint))
+		// 对端还没上报 endpoint 时**不要写空行**：`Endpoint = ` 会让解析器再报一个错。
+		// 没有 endpoint 的 peer 仍然可用——只要对端主动发起，本端就会学到它的地址（WireGuard roaming）。
+		if endpoint := strings.TrimSpace(peer.Endpoint); endpoint != "" {
+			fmt.Fprintf(&output, "Endpoint = %s\n", endpoint)
+		}
 		fmt.Fprintf(&output, "AllowedIPs = %s\n", strings.Join(peer.AllowedIPs, ", "))
-		if node.Network.PresharedKey != "" {
-			fmt.Fprintf(&output, "PresharedKey = %s\n", node.Network.PresharedKey)
+		// NormalizeKey：兜底把历史遗留的 base64url 预共享密钥转成标准 base64，
+		// 否则 wg 会拒绝整份配置（见 mesh.NormalizeKey 的注释）。
+		if psk := mesh.NormalizeKey(node.Network.PresharedKey); psk != "" {
+			fmt.Fprintf(&output, "PresharedKey = %s\n", psk)
 		}
 		output.WriteString("PersistentKeepalive = 25\n")
 	}

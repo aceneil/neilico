@@ -561,11 +561,12 @@ func (m *Manager) Delivery(ctx context.Context, nodeID uuid.UUID, requestedVersi
 		if err := m.db.WithContext(ctx).Where("id = ?", delivery.Network.ID).First(&network).Error; err == nil {
 			secret, secretErr := m.crypto.Decrypt(network.Secret)
 			if secretErr == nil {
-				delivery.Network.NetworkSecret = secret
+				delivery.Network.NetworkSecret = mesh.NormalizeKey(secret)
 			}
 			if network.PresharedKey != "" {
 				if psk, pskErr := m.crypto.Decrypt(network.PresharedKey); pskErr == nil {
-					delivery.Network.PresharedKey = psk
+					// 历史库里的 PSK 可能是 base64url（见 mesh.NormalizeKey），下发前规整
+					delivery.Network.PresharedKey = mesh.NormalizeKey(psk)
 				}
 			}
 		}

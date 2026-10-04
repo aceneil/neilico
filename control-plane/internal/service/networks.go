@@ -601,5 +601,10 @@ func generateNetworkSecret() (string, error) {
 	if _, err := rand.Read(raw); err != nil {
 		return "", fmt.Errorf("generate network secret: %w", err)
 	}
-	return base64.RawURLEncoding.EncodeToString(raw), nil
+	// ⚠️ 必须用**标准 base64**：这个值会被当作 WireGuard 的 PresharedKey 下发，
+	// 而 wg 的解析器只接受标准 base64。历史上这里用的是 base64.RawURLEncoding，
+	// 于是密钥里会出现 '-'/'_' 且缺少 '=' 填充，agent 执行 `wg setconf` 时报
+	//   failed to parse base64-encoded key: illegal base64 data at input byte 20
+	// 导致**该网络下所有节点**的配置应用失败、mesh 根本起不来（实测）。
+	return base64.StdEncoding.EncodeToString(raw), nil
 }

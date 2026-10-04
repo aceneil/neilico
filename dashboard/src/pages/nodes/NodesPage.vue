@@ -18,10 +18,8 @@ import DataState from '@/components/DataState.vue'
 import EChart from '@/components/EChart.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import { apiErrorMessage, apiErrorStatus } from '@/api/http'
-import { enrollTokensApi } from '@/api/enroll-tokens'
 import { nodesApi, type NodeListQuery } from '@/api/nodes'
 import EnrollDeviceModal from '@/pages/nodes/EnrollDeviceModal.vue'
-import EnrollTokenPanel from '@/pages/nodes/EnrollTokenPanel.vue'
 import { useAuthStore } from '@/stores/auth'
 import { copyText } from '@/utils/clipboard'
 import { useThemeStore } from '@/stores/theme'
@@ -29,7 +27,6 @@ import { canManageNodes } from '@/utils/permissions'
 import { formatBytes, formatTime } from '@/utils/format'
 import { maskSecret } from '@/utils/sensitive'
 import type {
-  EnrollToken,
   Node,
   NodeCapabilities,
   NodeCertificate,
@@ -56,9 +53,6 @@ const registerOpen = ref(false)
 const registering = ref(false)
 const registerFormRef = ref()
 const registration = ref<NodeRegisterResult | null>(null)
-const enrollTokens = ref<EnrollToken[]>([])
-const enrollTokensLoading = ref(false)
-const enrollTokensError = ref('')
 const nodeMetrics = ref<NodeMetrics | null>(null)
 const mtlsCertificate = ref<NodeCertificate | null>(null)
 const mtlsLoading = ref(false)
@@ -202,34 +196,6 @@ onBeforeUnmount(() => {
   stopPolling()
   document.removeEventListener('visibilitychange', handleVisibilityChange)
 })
-
-async function loadEnrollTokens() {
-  enrollTokensLoading.value = true
-  enrollTokensError.value = ''
-  try {
-    const result = await enrollTokensApi.list()
-    enrollTokens.value = result.items
-  } catch (cause) {
-    enrollTokensError.value = apiErrorMessage(cause)
-  } finally {
-    enrollTokensLoading.value = false
-  }
-}
-
-function revokeEnrollToken(token: EnrollToken) {
-  Modal.confirm({
-    title: '撤销接入令牌？',
-    content: '撤销后该令牌立即失效，不能再用于设备接入。',
-    okText: '确认撤销',
-    okType: 'danger',
-    cancelText: '取消',
-    async onOk() {
-      await enrollTokensApi.revoke(token.id)
-      message.success('接入令牌已撤销')
-      await loadEnrollTokens()
-    }
-  })
-}
 
 function applyFilters() {
   page.value = 1
@@ -397,7 +363,6 @@ function resetRegister() {
 }
 
 void load()
-void loadEnrollTokens()
 </script>
 
 <template>
@@ -531,14 +496,6 @@ void loadEnrollTokens()
         </DataState>
       </section>
 
-      <EnrollTokenPanel
-        :tokens="enrollTokens"
-        :loading="enrollTokensLoading"
-        :error="enrollTokensError"
-        :can-write="canWrite"
-        @refresh="loadEnrollTokens"
-        @revoke="revokeEnrollToken"
-      />
     </div>
 
     <a-drawer
@@ -658,7 +615,6 @@ void loadEnrollTokens()
 
     <EnrollDeviceModal
       v-model:open="enrollOpen"
-      @created="loadEnrollTokens"
       @enrolled="load({ silent: true })"
     />
 
