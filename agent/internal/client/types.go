@@ -38,7 +38,7 @@ type HeartbeatResponse struct {
 
 type NetworkReportRequest struct {
 	PublicEndpoint string `json:"public_endpoint"`
-	// LocalAddresses 是本机内网地址（CIDR 形式，如 192.168.123.90/24）。
+	// LocalAddresses 是本机内网地址（CIDR 形式，如 192.168.50.10/24）。
 	// 控制面把它转给同网络的对端，让"同一内网"的设备直接用内网地址建隧道——
 	// 公网地址在 NAT/代理出口后常常互相拨不通（实测）。
 	LocalAddresses []string `json:"local_addresses,omitempty"`

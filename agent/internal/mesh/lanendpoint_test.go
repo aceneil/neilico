@@ -26,14 +26,14 @@ MTU = 1420
 
 [Peer]
 PublicKey = BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB=
-Endpoint = 47.242.186.221:51820
+Endpoint = 203.0.113.10:51820
 AllowedIPs = 100.64.0.2/32
 PresharedKey = CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC=
 PersistentKeepalive = 25
 `
 
 // 同内网的对端应改用内网地址——实测中公网出口（云代理 IP）互相拨不通，
-// 而同内网的 192.168.123.x 是直连可达的，这是 mesh 能否连上的关键。
+// 而同内网的 192.168.50.x 是直连可达的，这是 mesh 能否连上的关键。
 func TestPreferLANEndpointsRewritesSameSubnetPeer(t *testing.T) {
 	config := Config{
 		Version:         1,
@@ -42,25 +42,25 @@ func TestPreferLANEndpointsRewritesSameSubnetPeer(t *testing.T) {
 		Peers: []client.Peer{{
 			NodeID:         "peer-1",
 			PublicKey:      "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB=",
-			Endpoint:       "47.242.186.221:51820",
+			Endpoint:       "203.0.113.10:51820",
 			AllowedIPs:     []string{"100.64.0.2/32"},
 			VirtualIP:      "100.64.0.2",
-			LocalAddresses: []string{"192.168.123.106/24"},
+			LocalAddresses: []string{"192.168.50.20/24"},
 			ListenPort:     51820,
 		}},
 	}
-	notes := PreferLANEndpoints(&config, []netip.Prefix{mustPrefix(t, "192.168.123.90/24")})
+	notes := PreferLANEndpoints(&config, []netip.Prefix{mustPrefix(t, "192.168.50.10/24")})
 	if len(notes) != 1 {
 		t.Fatalf("应替换 1 个对端，实际 %d：%v", len(notes), notes)
 	}
-	want := "192.168.123.106:51820"
+	want := "192.168.50.20:51820"
 	if config.Peers[0].Endpoint != want {
 		t.Fatalf("结构体 endpoint = %q，期望 %q", config.Peers[0].Endpoint, want)
 	}
 	if strings.Count(config.WireGuardConfig, "Endpoint = "+want) != 1 {
 		t.Fatalf("配置文本里应恰好有一行内网 Endpoint，实际：\n%s", config.WireGuardConfig)
 	}
-	if strings.Contains(config.WireGuardConfig, "47.242.186.221:51820") {
+	if strings.Contains(config.WireGuardConfig, "203.0.113.10:51820") {
 		t.Fatal("原公网 endpoint 应被替换掉")
 	}
 	parsed, err := parseWireGuardConfig(config.WireGuardConfig)
@@ -79,31 +79,31 @@ func TestPreferLANEndpointsKeepsForeignPeer(t *testing.T) {
 		WireGuardConfig: sampleConfigText,
 		Peers: []client.Peer{{
 			PublicKey:      "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB=",
-			Endpoint:       "47.242.186.221:51820",
+			Endpoint:       "203.0.113.10:51820",
 			LocalAddresses: []string{"10.9.9.9/24"},
 		}},
 	}
-	if notes := PreferLANEndpoints(&config, []netip.Prefix{mustPrefix(t, "192.168.123.90/24")}); len(notes) != 0 {
+	if notes := PreferLANEndpoints(&config, []netip.Prefix{mustPrefix(t, "192.168.50.10/24")}); len(notes) != 0 {
 		t.Fatalf("不该替换跨网对端：%v", notes)
 	}
-	if config.Peers[0].Endpoint != "47.242.186.221:51820" || !strings.Contains(config.WireGuardConfig, "47.242.186.221:51820") {
+	if config.Peers[0].Endpoint != "203.0.113.10:51820" || !strings.Contains(config.WireGuardConfig, "203.0.113.10:51820") {
 		t.Fatal("跨网对端应保持原样")
 	}
 }
 
 // 对端没有 Endpoint 行（未上报公网地址）时，应补上内网 Endpoint 行。
 func TestPreferLANEndpointsInsertsMissingEndpointLine(t *testing.T) {
-	text := strings.Replace(sampleConfigText, "Endpoint = 47.242.186.221:51820\n", "", 1)
+	text := strings.Replace(sampleConfigText, "Endpoint = 203.0.113.10:51820\n", "", 1)
 	config := Config{
 		ListenPort:      51820,
 		WireGuardConfig: text,
 		Peers: []client.Peer{{
 			PublicKey:      "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB=",
-			LocalAddresses: []string{"192.168.123.106"},
+			LocalAddresses: []string{"192.168.50.20"},
 		}},
 	}
-	PreferLANEndpoints(&config, []netip.Prefix{mustPrefix(t, "192.168.123.90/24")})
-	if strings.Count(config.WireGuardConfig, "Endpoint = 192.168.123.106:51820") != 1 {
+	PreferLANEndpoints(&config, []netip.Prefix{mustPrefix(t, "192.168.50.10/24")})
+	if strings.Count(config.WireGuardConfig, "Endpoint = 192.168.50.20:51820") != 1 {
 		t.Fatalf("应补一行内网 Endpoint，实际：\n%s", config.WireGuardConfig)
 	}
 	if _, err := parseWireGuardConfig(config.WireGuardConfig); err != nil {
@@ -112,7 +112,7 @@ func TestPreferLANEndpointsInsertsMissingEndpointLine(t *testing.T) {
 }
 
 // 实测教训：宿主机上会有 10 个左右 docker 网桥 + 隧道接口自己的 VIP，
-// 它们把上报条数配额吃光，真正的 192.168.123.90/24 被挤掉 → 同内网直连失效。
+// 它们把上报条数配额吃光，真正的 192.168.50.10/24 被挤掉 → 同内网直连失效。
 func TestLocalPrefixesSkipsVirtualInterfacesAndMeshRange(t *testing.T) {
 	prefixes := LocalPrefixes("wg0")
 	for _, prefix := range prefixes {
@@ -139,15 +139,15 @@ func TestPreferLANEndpointsUsesPeerListenPort(t *testing.T) {
 		WireGuardConfig: sampleConfigText,
 		Peers: []client.Peer{{
 			PublicKey:      "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB=",
-			LocalAddresses: []string{"192.168.123.106/24"},
+			LocalAddresses: []string{"192.168.50.20/24"},
 			ListenPort:     51999, // 对端自己的端口
 		}},
 	}
-	PreferLANEndpoints(&config, []netip.Prefix{mustPrefix(t, "192.168.123.90/24")})
-	if want := "192.168.123.106:51999"; config.Peers[0].Endpoint != want {
+	PreferLANEndpoints(&config, []netip.Prefix{mustPrefix(t, "192.168.50.10/24")})
+	if want := "192.168.50.20:51999"; config.Peers[0].Endpoint != want {
 		t.Fatalf("endpoint = %q，期望 %q（要用对端自己的端口）", config.Peers[0].Endpoint, want)
 	}
-	if !strings.Contains(config.WireGuardConfig, "Endpoint = 192.168.123.106:51999") {
+	if !strings.Contains(config.WireGuardConfig, "Endpoint = 192.168.50.20:51999") {
 		t.Fatal("配置文本里也应是带对端端口的内网地址")
 	}
 }
