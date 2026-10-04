@@ -1681,14 +1681,19 @@ pre {
 .nodes-workspace {
   display: grid;
   min-height: 0;
-  flex: 1;
-  grid-template-columns: minmax(0, 1.55fr) minmax(390px, 0.75fr);
+  /* 不再拉伸填满视口：设备只有几台时，卡片会被撑出一整屏空白（用户反馈） */
+  flex: 0 1 auto;
+  /* 单列铺满：此容器只有一个子元素，原来的第二列（0.75fr）永远是空的 */
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
   gap: 14px;
   overflow: hidden;
 }
 
 .nodes-table-panel {
   min-width: 0;
+  /* 按内容收缩：数据少时不要留大片空白（与 .nodes-workspace 的 flex 收缩配套） */
+  flex: 0 1 auto;
 }
 
 .capability-list {
