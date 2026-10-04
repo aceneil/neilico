@@ -70,7 +70,16 @@ func (a *WGCtrlApplier) Apply(ctx context.Context, config Config) error {
 		return fmt.Errorf("configure WireGuard with wgctrl: %w", err)
 	}
 	link := route.Command{Name: "ip", Args: []string{"link", "set", config.Interface, "mtu", fmt.Sprintf("%d", config.MTU), "up"}}
-	return a.executor.Run(ctx, link)
+	if err := a.executor.Run(ctx, link); err != nil {
+		return err
+	}
+	// 接口起来之后再补对端路由（缺了它握手成功但数据不通，见 PeerRouteCommands）
+	for _, command := range PeerRouteCommands(config) {
+		if err := a.executor.Run(ctx, command); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (a *WGCtrlApplier) Cleanup(ctx context.Context) error {
