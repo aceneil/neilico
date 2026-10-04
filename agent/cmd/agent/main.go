@@ -431,18 +431,41 @@ func runConfigLoop(ctx context.Context, cfg config.Config, identity state.State,
 	}
 }
 
+// needsSchemaReapply 判断是否需要因为"本地应用逻辑版本"变化而重新应用配置。
+// agent 升级（新增/修改本地动作，如为对端 AllowedIPs 加路由）后，服务端配置可能
+// 一点没变；若此时按"版本已应用"短路返回，升级带来的新动作永远装不上（真机踩到）。
+func needsSchemaReapply(appliedSchema int) bool {
+	return appliedSchema != mesh.ApplicationSchemaVersion
+}
+
 func pollOnce(ctx context.Context, identity state.State, apiClient *client.Client, reconciler *mesh.Reconciler, observer *agentmetrics.Metrics, logger *slog.Logger) error {
+	schemaChanged := needsSchemaReapply(identity.ApplicationSchema)
 	result, err := apiClient.Config(ctx, identity.NodeID, identity.AppliedVersion)
 	if err != nil {
 		observer.ConfigPull("failure")
 		logger.Warn("configuration pull failed", "error", err)
 		return err
 	}
-	if result.NotModified {
+	if schemaChanged {
+		// 需要最新快照（NotModified 时响应里没有 delivery），拿到后交给 Reconcile
+		latest, latestErr := apiClient.Config(ctx, identity.NodeID, 0)
+		if latestErr != nil {
+			observer.ConfigPull("failure")
+			logger.Warn("configuration latest fetch failed", "error", latestErr)
+			return latestErr
+		}
+		if !latest.NotModified && latest.Delivery.Version > 0 {
+			result = latest
+		} else if result.NotModified {
+			observer.ConfigPull("not_modified")
+			return nil
+		}
+		logger.Info("local application schema changed; re-applying configuration",
+			"applied_schema", identity.ApplicationSchema, "agent_schema", mesh.ApplicationSchemaVersion)
+	} else if result.NotModified {
 		observer.ConfigPull("not_modified")
 		return nil
-	}
-	if result.Delivery.Version <= identity.AppliedVersion {
+	} else if result.Delivery.Version <= identity.AppliedVersion {
 		// M2b snapshots may return the requested historical version. Fetch the
 		// latest snapshot explicitly before applying anything.
 		latest, latestErr := apiClient.Config(ctx, identity.NodeID, 0)

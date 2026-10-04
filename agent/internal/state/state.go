@@ -26,6 +26,10 @@ type State struct {
 	// LastLocalAddresses 是上次上报的内网地址列表：地址一变就立刻重报，
 	// 不必等 5 分钟节流窗口（换网络/换网段后能马上恢复同内网直连）。
 	LastLocalAddresses []string `json:"last_local_addresses,omitempty"`
+	// ApplicationSchema 是上次成功应用时 agent 的"本地应用逻辑版本"。
+	// agent 升级后该值会与二进制里的常量不一致 → 必须重新拉取并应用配置，
+	// 否则升级带来的本地动作（例如新增对端路由）永远装不上（真机踩到）。
+	ApplicationSchema int `json:"application_schema,omitempty"`
 }
 
 func Load(path string) (State, bool, error) {

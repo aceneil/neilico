@@ -95,6 +95,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, delivery client.Delivery) er
 	}
 	if current.AppliedConfigHash == hash {
 		current.AppliedVersion = delivery.Version
+		current.ApplicationSchema = ApplicationSchemaVersion
 		if err := state.Save(r.statePath, current); err != nil {
 			return err
 		}
@@ -171,6 +172,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, delivery client.Delivery) er
 
 	current.AppliedVersion = delivery.Version
 	current.AppliedConfigHash = hash
+	current.ApplicationSchema = ApplicationSchemaVersion
 	current.NetworkSecret = secret
 	if parsed, parseErr := parseWireGuardConfig(delivery.WireGuardConfig); parseErr == nil && parsed.privateKey != "" {
 		current.PrivateKey = parsed.privateKey
