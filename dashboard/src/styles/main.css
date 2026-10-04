@@ -351,7 +351,9 @@ pre {
 .table-panel {
   display: flex;
   min-height: 0;
-  flex: 1;
+  /* 按内容收缩：列表页数据少时不要被拉满视口留出大片空白（用户反馈：设备页/虚拟网络页）
+     如需某页恢复拉伸，用页面级类覆盖，不要改这条全局规则。 */
+  flex: 0 1 auto;
   flex-direction: column;
   overflow: hidden;
 }
@@ -657,7 +659,8 @@ pre {
 }
 
 .network-list-panel {
-  flex: 1;
+  /* 按内容收缩：网络只有少数几个时，不要被拉满视口留出大片空白（同设备页修复） */
+  flex: 0 1 auto;
 }
 
 .network-summary {
@@ -1409,7 +1412,8 @@ pre {
 .list-page .list-panel {
   display: flex;
   min-height: 0;
-  flex: 1;
+  /* 按内容收缩：证书等列表页数据少时不要被拉满视口留出大片空白（同设备页修复） */
+  flex: 0 1 auto;
   flex-direction: column;
   overflow: hidden;
 }
