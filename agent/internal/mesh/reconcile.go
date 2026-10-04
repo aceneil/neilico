@@ -207,10 +207,23 @@ func (r *Reconciler) Cleanup(ctx context.Context, cleanupMesh bool) error {
 	return nil
 }
 
+// ApplicationSchemaVersion 标识"本地应用逻辑"的版本，参与配置哈希。
+//
+// 为什么需要它：哈希一致时 agent 会跳过应用（省事、幂等）。但**改动了 applier 的行为**
+// （例如新增"为对端 AllowedIPs 加路由"）后，同一份控制面配置对应的本地动作变了，
+// 若哈希不变，已升级的 agent 会一直跳过应用，新动作永远装不上——真机踩到：
+// 升级到带路由修复的镜像后 wg0 上依然一条路由都没有，直到配置发生变化才生效。
+//
+// 规则：凡是修改 applier/本地应用行为，必须把这个常量 +1。
+const ApplicationSchemaVersion = 3
+
 func ConfigHash(delivery client.Delivery) (string, error) {
 	comparable := delivery
 	comparable.Version = 0
-	encoded, err := json.Marshal(comparable)
+	encoded, err := json.Marshal(struct {
+		SchemaVersion int             `json:"schema_version"`
+		Delivery      client.Delivery `json:"delivery"`
+	}{SchemaVersion: ApplicationSchemaVersion, Delivery: comparable})
 	if err != nil {
 		return "", fmt.Errorf("hash configuration: %w", err)
 	}
