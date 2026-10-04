@@ -53,6 +53,10 @@ type Peer struct {
 	Endpoint   string   `json:"endpoint"`
 	AllowedIPs []string `json:"allowed_ips"`
 	VirtualIP  string   `json:"virtual_ip"`
+	// LocalAddresses 是对端上报的内网地址（CIDR 形式），供 agent 判断是否同内网直连。
+	LocalAddresses []string `json:"local_addresses,omitempty"`
+	// ListenPort 是对端自己的 WireGuard 监听端口（与本机可能不同）。
+	ListenPort int `json:"listen_port,omitempty"`
 }
 
 type Network struct {
@@ -389,6 +393,9 @@ func (m *Manager) buildNetworkConfig(ctx context.Context, db *gorm.DB, network m
 			Endpoint:   stringValue(node.PublicEndpoint),
 			AllowedIPs: allowed,
 			VirtualIP:  member.VirtualIP,
+			// 对端内网地址随配置下发：agent 若判断与本机同内网，会优先用它建隧道
+			LocalAddresses: []string(node.LocalAddresses),
+			ListenPort:     node.ListenPort,
 		})
 	}
 	sort.Slice(peers, func(i, j int) bool {

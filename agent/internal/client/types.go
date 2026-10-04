@@ -38,6 +38,12 @@ type HeartbeatResponse struct {
 
 type NetworkReportRequest struct {
 	PublicEndpoint string `json:"public_endpoint"`
+	// LocalAddresses 是本机内网地址（CIDR 形式，如 192.168.123.90/24）。
+	// 控制面把它转给同网络的对端，让"同一内网"的设备直接用内网地址建隧道——
+	// 公网地址在 NAT/代理出口后常常互相拨不通（实测）。
+	LocalAddresses []string `json:"local_addresses,omitempty"`
+	// ListenPort 是本机 WireGuard 监听端口；对端要用它拼内网 endpoint。
+	ListenPort int `json:"listen_port,omitempty"`
 }
 
 type NodeIdentity struct {
@@ -53,6 +59,10 @@ type Peer struct {
 	Endpoint   string   `json:"endpoint"`
 	AllowedIPs []string `json:"allowed_ips"`
 	VirtualIP  string   `json:"virtual_ip"`
+	// LocalAddresses 是对端上报的内网地址；与本机同一内网时优先用它当 endpoint。
+	LocalAddresses []string `json:"local_addresses,omitempty"`
+	// ListenPort 是对端自己的监听端口（与本机可能不同）。
+	ListenPort int `json:"listen_port,omitempty"`
 }
 
 type Network struct {

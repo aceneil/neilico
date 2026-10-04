@@ -123,9 +123,18 @@ func (c *Client) HeartbeatWithCapabilities(ctx context.Context, nodeID, version 
 	return output, nil
 }
 
-func (c *Client) ReportEndpoint(ctx context.Context, nodeID, endpoint string) error {
+func (c *Client) ReportEndpoint(ctx context.Context, nodeID string, report NetworkReportRequest) error {
 	path := "/api/v1/nodes/" + url.PathEscape(nodeID) + "/network-report"
-	return c.do(ctx, http.MethodPost, path, NetworkReportRequest{PublicEndpoint: endpoint}, nil)
+	cleaned := NetworkReportRequest{
+		PublicEndpoint: strings.TrimSpace(report.PublicEndpoint),
+		ListenPort:     report.ListenPort,
+	}
+	for _, address := range report.LocalAddresses {
+		if trimmed := strings.TrimSpace(address); trimmed != "" {
+			cleaned.LocalAddresses = append(cleaned.LocalAddresses, trimmed)
+		}
+	}
+	return c.do(ctx, http.MethodPost, path, cleaned, nil)
 }
 
 func (c *Client) Config(ctx context.Context, nodeID string, version int) (ConfigResult, error) {

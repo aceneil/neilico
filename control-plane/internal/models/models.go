@@ -33,13 +33,19 @@ type User struct {
 }
 
 type Node struct {
-	ID             uuid.UUID                                     `gorm:"type:uuid;primaryKey" json:"id"`
-	TenantID       uuid.UUID                                     `gorm:"type:uuid;not null;index" json:"tenant_id"`
-	Name           string                                        `gorm:"type:varchar(255);not null" json:"name"`
-	PublicKey      string                                        `gorm:"type:text;not null" json:"public_key"`
-	PrivateKey     string                                        `gorm:"type:text;not null;default:''" json:"-"`
-	VirtualIP      *string                                       `gorm:"type:inet" json:"virtual_ip"`
-	PublicEndpoint *string                                       `gorm:"type:varchar(255)" json:"public_endpoint,omitempty"`
+	ID             uuid.UUID `gorm:"type:uuid;primaryKey" json:"id"`
+	TenantID       uuid.UUID `gorm:"type:uuid;not null;index" json:"tenant_id"`
+	Name           string    `gorm:"type:varchar(255);not null" json:"name"`
+	PublicKey      string    `gorm:"type:text;not null" json:"public_key"`
+	PrivateKey     string    `gorm:"type:text;not null;default:''" json:"-"`
+	VirtualIP      *string   `gorm:"type:inet" json:"virtual_ip"`
+	PublicEndpoint *string   `gorm:"type:varchar(255)" json:"public_endpoint,omitempty"`
+	// LocalAddresses 是 agent 上报的本机内网地址（CIDR，如 192.168.123.90/24）。
+	// 用途：同网络内"处于同一内网"的设备之间直接用内网地址建 WireGuard 隧道，
+	// 因为公网出口在 NAT/代理后经常互相不可达（实测导致 mesh 起不来）。
+	LocalAddresses datatypes.JSONSlice[string] `gorm:"type:jsonb;not null;default:'[]'" json:"local_addresses"`
+	// ListenPort 是节点 WireGuard 的监听端口；对端拼内网 endpoint 时要用它。
+	ListenPort     int                                           `gorm:"not null;default:51820" json:"listen_port"`
 	OS             string                                        `gorm:"type:varchar(64);not null" json:"os"`
 	Arch           string                                        `gorm:"type:varchar(64);not null" json:"arch"`
 	Version        string                                        `gorm:"type:varchar(64);not null" json:"version"`

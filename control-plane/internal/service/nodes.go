@@ -233,6 +233,59 @@ func (s *NodeService) AuthenticateNode(ctx context.Context, nodeID uuid.UUID, ag
 
 type NetworkReportInput struct {
 	PublicEndpoint string `json:"public_endpoint"`
+	// LocalAddresses：agent 上报的本机内网地址（CIDR）。见 models.Node.LocalAddresses。
+	LocalAddresses []string `json:"local_addresses"`
+	// ListenPort：agent 自己的 WireGuard 监听端口（对端拼内网 endpoint 时使用）。
+	ListenPort int `json:"listen_port"`
+}
+
+// defaultWireGuardListenPort 是 agent 未上报/上报非法端口时的兜底监听端口。
+const defaultWireGuardListenPort = 51820
+
+// maxReportedLocalAddresses 限制上报条数，避免超长请求体撑爆 jsonb 字段。
+const maxReportedLocalAddresses = 8
+
+// normalizeLocalAddresses 校验并规整 agent 上报的内网地址：
+// 只接受可解析的 IP/CIDR，跳过回环与链路本地，去重，最多保留 maxReportedLocalAddresses 条。
+// 无法识别的条目直接丢弃（不让脏数据进库）。
+func normalizeLocalAddresses(values []string) []string {
+	normalized := make([]string, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		trimmed := strings.TrimSpace(value)
+		if trimmed == "" {
+			continue
+		}
+		if prefix, err := netip.ParsePrefix(trimmed); err == nil {
+			address := prefix.Addr()
+			if !usableReportedAddress(address) {
+				continue
+			}
+			// 保留上报的**具体地址 + 前缀长度**（如 192.168.123.90/24）：对端要用这个
+			// 地址建隧道；若掩码成网段会变成 192.168.123.0，是个没法拨号的网络地址。
+			trimmed = prefix.String()
+		} else if address, err := netip.ParseAddr(trimmed); err == nil {
+			if !usableReportedAddress(address) {
+				continue
+			}
+			trimmed = address.String()
+		} else {
+			continue
+		}
+		if _, ok := seen[trimmed]; ok {
+			continue
+		}
+		seen[trimmed] = struct{}{}
+		normalized = append(normalized, trimmed)
+		if len(normalized) >= maxReportedLocalAddresses {
+			break
+		}
+	}
+	return normalized
+}
+
+func usableReportedAddress(address netip.Addr) bool {
+	return address.IsValid() && !address.IsLoopback() && !address.IsLinkLocalUnicast() && !address.IsUnspecified()
 }
 
 func (s *NodeService) NetworkReport(ctx context.Context, nodeID uuid.UUID, agentToken string, input NetworkReportInput) (models.Node, error) {
@@ -258,6 +311,12 @@ func (s *NodeService) NetworkReport(ctx context.Context, nodeID uuid.UUID, agent
 		node.PublicEndpoint = nil
 	} else {
 		node.PublicEndpoint = &endpoint
+	}
+	node.LocalAddresses = datatypes.JSONSlice[string](normalizeLocalAddresses(input.LocalAddresses))
+	if input.ListenPort >= 1 && input.ListenPort <= 65535 {
+		node.ListenPort = input.ListenPort
+	} else if node.ListenPort < 1 {
+		node.ListenPort = defaultWireGuardListenPort
 	}
 	if err := s.db.WithContext(ctx).Save(&node).Error; err != nil {
 		return models.Node{}, fmt.Errorf("record network report: %w", err)

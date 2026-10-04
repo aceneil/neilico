@@ -23,6 +23,9 @@ type State struct {
 	NetworkSecret      string    `json:"network_secret,omitempty"`
 	LastEndpoint       string    `json:"last_endpoint,omitempty"`
 	LastEndpointReport time.Time `json:"last_endpoint_report,omitempty"`
+	// LastLocalAddresses 是上次上报的内网地址列表：地址一变就立刻重报，
+	// 不必等 5 分钟节流窗口（换网络/换网段后能马上恢复同内网直连）。
+	LastLocalAddresses []string `json:"last_local_addresses,omitempty"`
 }
 
 func Load(path string) (State, bool, error) {

@@ -478,16 +478,30 @@ func runEndpointLoop(ctx context.Context, cfg config.Config, identity state.Stat
 		if endpoint == "" {
 			endpoint = detectPublicEndpoint(ctx, cfg.Mesh.ListenPort)
 		}
-		if endpoint != "" {
+		// 同时上报本机内网地址：处于同一内网的设备之间可以直接用内网地址建隧道，
+		// 不必依赖（常常不可达的）公网出口。注意即使公网地址探测失败也要上报——
+		// 恰恰是这种环境（无公网出口）最需要内网直连。
+		localAddresses := make([]string, 0, 4)
+		for _, prefix := range mesh.LocalPrefixes(cfg.Mesh.Interface) {
+			localAddresses = append(localAddresses, prefix.String())
+		}
+		if endpoint != "" || len(localAddresses) > 0 {
 			current, exists, err := state.Load(cfg.StatePath)
 			if err == nil && exists {
 				identity = current
 				due := time.Since(identity.LastEndpointReport) >= 5*time.Minute
-				if identity.LastEndpoint != endpoint || due {
-					if err := apiClient.ReportEndpoint(ctx, identity.NodeID, endpoint); err != nil {
+				changed := identity.LastEndpoint != endpoint || !sameAddresses(identity.LastLocalAddresses, localAddresses)
+				if changed || due {
+					report := client.NetworkReportRequest{
+						PublicEndpoint: endpoint,
+						LocalAddresses: localAddresses,
+						ListenPort:     cfg.Mesh.ListenPort,
+					}
+					if err := apiClient.ReportEndpoint(ctx, identity.NodeID, report); err != nil {
 						logger.Warn("public endpoint report failed", "error", err)
 					} else {
 						identity.LastEndpoint = endpoint
+						identity.LastLocalAddresses = localAddresses
 						identity.LastEndpointReport = time.Now().UTC()
 						if err := state.Save(cfg.StatePath, identity); err != nil {
 							logger.Warn("save public endpoint state failed", "error", err)
@@ -498,6 +512,24 @@ func runEndpointLoop(ctx context.Context, cfg config.Config, identity state.Stat
 		}
 		timer.Reset(5 * time.Minute)
 	}
+}
+
+// sameAddresses 比较两次上报的内网地址列表是否一致（顺序无关）。
+func sameAddresses(left, right []string) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	counts := make(map[string]int, len(left))
+	for _, value := range left {
+		counts[value]++
+	}
+	for _, value := range right {
+		counts[value]--
+		if counts[value] < 0 {
+			return false
+		}
+	}
+	return true
 }
 
 func detectPublicEndpoint(ctx context.Context, listenPort int) string {

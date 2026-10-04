@@ -121,6 +121,12 @@ func (r *Reconciler) Reconcile(ctx context.Context, delivery client.Delivery) er
 		Routes:          delivery.Routes,
 		NetworkSecret:   secret,
 	}
+	// 同内网的对端改用内网地址（公网出口常常不可达，见 PreferLANEndpoints 注释）
+	for _, note := range PreferLANEndpoints(&config, LocalPrefixes(r.meshOptions.Interface)) {
+		if r.logger != nil {
+			r.logger.Info("mesh endpoint preference", "detail", note)
+		}
+	}
 	if err := r.applier.Apply(ctx, config); err != nil {
 		if r.metrics != nil {
 			r.metrics.Apply("failure")
