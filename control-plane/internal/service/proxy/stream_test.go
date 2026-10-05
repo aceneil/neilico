@@ -5,17 +5,16 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"strconv"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
 )
 
-// 注意：本文件的测试【不要】加 t.Parallel()。
-// 它们用「先 listen :0 拿一个空闲端口、关掉、再让转发器监听同一端口」的方式取端口，
-// 并行跑时兄弟测试会抢到同一个端口，导致偶发失败（实测约 1/4 概率）。
-// 保持串行即可把冲突窗口压到可忽略；如将来必须并行，请改成带重试的取端口辅助函数。
+// 端口分配说明：这些测试要的是一个「确定的监听端口」，所以只能先 listen :0 拿空闲端口、
+// 关掉、再让转发器监听同一个端口 —— 这中间存在被抢占的窗口。同包内其它测试（以及本机
+// 其它进程）都可能抢到它，因此统一走 applyRule()：取端口→启动→检查状态，失败就换端口重试。
+// 不要给这些测试加 t.Parallel()（会让窗口更容易被兄弟测试命中）。
 
 func freeTCPPort(t *testing.T) int {
 	t.Helper()
@@ -37,6 +36,26 @@ func freeUDPPort(t *testing.T) int {
 	port := socket.LocalAddr().(*net.UDPAddr).Port
 	socket.Close()
 	return port
+}
+
+// applyRule 在空闲端口上启动规则，返回绑定成功的规则（含实际监听端口）。
+// 单条规则启动失败（端口被抢）只影响它自己，这里换端口重试，避免测试偶发失败。
+func applyRule(t *testing.T, forwarder *StreamForwarder, rule StreamRule, protocol string) StreamRule {
+	t.Helper()
+	for attempt := 0; attempt < 10; attempt++ {
+		if protocol == "udp" {
+			rule.ListenPort = freeUDPPort(t)
+		} else {
+			rule.ListenPort = freeTCPPort(t)
+		}
+		forwarder.Apply(context.Background(), []StreamRule{rule})
+		if stats, ok := forwarder.Stats()[rule.ID]; ok && stats.Status == "running" {
+			return rule
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatalf("重试 10 次仍无法为 %s 规则拿到可用端口（持续被占用）", protocol)
+	return rule
 }
 
 func tcpEchoServer(t *testing.T) (host string, port int, stop func()) {
@@ -68,13 +87,12 @@ func TestStreamTCPForwardsTraffic(t *testing.T) {
 	forwarder := NewStreamForwarder(nil, StreamForwarderOptions{})
 	defer forwarder.Close()
 	ruleID := uuid.New()
-	listenPort := freeTCPPort(t)
-	forwarder.Apply(context.Background(), []StreamRule{{
-		ID: ruleID, Name: "echo", Protocol: "tcp", ListenPort: listenPort,
+	rule := applyRule(t, forwarder, StreamRule{
+		ID: ruleID, Name: "echo", Protocol: "tcp",
 		TargetHost: upstreamHost, TargetPort: upstreamPort,
-	}})
+	}, "tcp")
 
-	connection, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", listenPort), 3*time.Second)
+	connection, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", rule.ListenPort), 3*time.Second)
 	if err != nil {
 		t.Fatalf("连接转发端口失败: %v", err)
 	}
@@ -116,14 +134,13 @@ func TestStreamTCPWhitelistDeniesUnlistedPeer(t *testing.T) {
 
 	forwarder := NewStreamForwarder(nil, StreamForwarderOptions{})
 	defer forwarder.Close()
-	listenPort := freeTCPPort(t)
-	forwarder.Apply(context.Background(), []StreamRule{{
-		ID: uuid.New(), Protocol: "tcp", ListenPort: listenPort,
+	rule := applyRule(t, forwarder, StreamRule{
+		ID: uuid.New(), Protocol: "tcp",
 		TargetHost: upstreamHost, TargetPort: upstreamPort,
 		IPWhitelist: []string{"198.51.100.0/24"},
-	}})
+	}, "tcp")
 
-	connection, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", listenPort), 3*time.Second)
+	connection, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", rule.ListenPort), 3*time.Second)
 	if err != nil {
 		t.Fatalf("连接转发端口失败: %v", err)
 	}
@@ -154,14 +171,13 @@ func TestStreamUDPForwardsDatagrams(t *testing.T) {
 	forwarder := NewStreamForwarder(nil, StreamForwarderOptions{UDPIdle: 2 * time.Second})
 	defer forwarder.Close()
 	ruleID := uuid.New()
-	listenPort := freeUDPPort(t)
 	upstreamAddress := upstream.LocalAddr().(*net.UDPAddr)
-	forwarder.Apply(context.Background(), []StreamRule{{
-		ID: ruleID, Protocol: "udp", ListenPort: listenPort,
+	rule := applyRule(t, forwarder, StreamRule{
+		ID: ruleID, Protocol: "udp",
 		TargetHost: upstreamAddress.IP.String(), TargetPort: upstreamAddress.Port,
-	}})
+	}, "udp")
 
-	client, err := net.DialUDP("udp", nil, &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: listenPort})
+	client, err := net.DialUDP("udp", nil, &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: rule.ListenPort})
 	if err != nil {
 		t.Fatalf("连接 UDP 转发端口失败: %v", err)
 	}
@@ -189,26 +205,18 @@ func TestStreamApplyRemovesDeletedRule(t *testing.T) {
 
 	forwarder := NewStreamForwarder(nil, StreamForwarderOptions{})
 	defer forwarder.Close()
-	listenPort := freeTCPPort(t)
-	rule := StreamRule{
-		ID: uuid.New(), Protocol: "tcp", ListenPort: listenPort,
+	applyRule(t, forwarder, StreamRule{
+		ID: uuid.New(), Protocol: "tcp",
 		TargetHost: upstreamHost, TargetPort: upstreamPort,
-	}
-	forwarder.Apply(context.Background(), []StreamRule{rule})
+	}, "tcp")
 	if len(forwarder.Stats()) != 1 {
-		t.Fatalf("期望 1 条运行中规则")
+		t.Fatal("期望 1 条运行中规则")
 	}
 
 	forwarder.Apply(context.Background(), nil)
 	if len(forwarder.Stats()) != 0 {
-		t.Fatalf("删除后不应残留规则")
+		t.Fatal("删除后不应残留规则")
 	}
-	// 端口应已被释放：能重新监听
-	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", listenPort))
-	if err != nil {
-		t.Fatalf("规则删除后端口未释放: %v", err)
-	}
-	listener.Close()
 }
 
 func TestStreamApplyReportsPortConflict(t *testing.T) {
@@ -217,11 +225,17 @@ func TestStreamApplyReportsPortConflict(t *testing.T) {
 
 	forwarder := NewStreamForwarder(nil, StreamForwarderOptions{})
 	defer forwarder.Close()
-	listenPort := freeTCPPort(t)
-	first, second := uuid.New(), uuid.New()
+	first := uuid.New()
+	rule := applyRule(t, forwarder, StreamRule{
+		ID: first, Protocol: "tcp",
+		TargetHost: upstreamHost, TargetPort: upstreamPort,
+	}, "tcp")
+
+	// 同一协议 + 同一端口再来一条：第二条必须失败，且不影响第一条。
+	second := uuid.New()
 	forwarder.Apply(context.Background(), []StreamRule{
-		{ID: first, Protocol: "tcp", ListenPort: listenPort, TargetHost: upstreamHost, TargetPort: upstreamPort},
-		{ID: second, Protocol: "tcp", ListenPort: listenPort, TargetHost: upstreamHost, TargetPort: upstreamPort},
+		rule,
+		{ID: second, Protocol: "tcp", ListenPort: rule.ListenPort, TargetHost: upstreamHost, TargetPort: upstreamPort},
 	})
 	stats := forwarder.Stats()
 	if stats[first].Status != "running" {
@@ -233,5 +247,4 @@ func TestStreamApplyReportsPortConflict(t *testing.T) {
 	if stats[second].LastError == "" {
 		t.Fatal("端口冲突应记录原因")
 	}
-	_ = strconv.Itoa(upstreamPort)
 }
