@@ -18,7 +18,7 @@ func passwordPolicyView() map[string]any {
 		"min_length":  service.MinAdminPasswordLength,
 		"max_length":  service.MaxAdminPasswordLength,
 		"min_classes": service.RequiredCharacterClasses,
-		"description": "至少 16 个字符，且包含大写字母、小写字母、数字、符号中的至少三类",
+		"description": "至少 16 个字符；需包含大写字母、小写字母、数字、符号中的至少三类，或使用 32 位以上的随机长串（如 openssl rand -hex 32）",
 	}
 }
 

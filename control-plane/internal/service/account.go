@@ -85,7 +85,7 @@ func ValidatePasswordStrength(password string) error {
 			classes++
 		}
 	}
-	if classes < RequiredCharacterClasses {
+	if classes < RequiredCharacterClasses && len([]rune(password)) < 32 {
 		return fmt.Errorf("%w: password must mix at least %d of uppercase, lowercase, digits, and symbols",
 			ErrInvalidInput, RequiredCharacterClasses)
 	}

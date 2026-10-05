@@ -168,6 +168,10 @@ if [[ -n "$bootstrap_env_file" && -f "$bootstrap_env_file" ]]; then
 fi
 
 log "starting NEILICO control API and dashboard"
+# 轮换密码时控制面要往 /opt/neilico/bootstrap.env 原子回写（临时文件 + rename），
+# 而 rename 需要目标【目录】可写：把 /opt/neilico 交给控制面运行用户，否则会
+# 报 "create temp bootstrap env file: ... permission denied"（实测踩到）。
+chown "$CONTROL_USER" /opt/neilico 2>/dev/null || chmod 0775 /opt/neilico 2>/dev/null || true
 su-exec "$CONTROL_USER" /usr/local/bin/neilico-control-api --config /opt/neilico/configs/config.example.yaml &
 APP_PID=$!
 
