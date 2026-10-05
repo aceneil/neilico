@@ -58,7 +58,7 @@ const targetHint = computed(
     ({
       node: '节点 ID:端口（如 e8e6a600-1111-…:5432），节点换网络也不用改',
       virtual_ip: '虚拟 IP:端口（如 100.64.0.2:5432），走 Mesh 隧道',
-      internal_ip: '内网 IP:端口（如 192.168.123.211:5432），需控制面能直达'
+      internal_ip: '内网 IP:端口（如 192.168.1.20:5432），需控制面能直达'
     })[form.target_type]
 )
 
@@ -67,7 +67,7 @@ const targetPlaceholder = computed(
     ({
       node: 'e8e6a600-1111-2222-3333-444455556666:5432',
       virtual_ip: '100.64.0.2:5432',
-      internal_ip: '192.168.123.211:5432'
+      internal_ip: '192.168.1.20:5432'
     })[form.target_type]
 )
 
@@ -348,7 +348,7 @@ void load()
           <a-select
             v-model:value="form.ip_whitelist"
             mode="tags"
-            placeholder="输入单个 IP 或 CIDR 后回车，如 192.168.123.0/24"
+            placeholder="输入单个 IP 或 CIDR 后回车，如 192.168.1.0/24"
             :token-separators="[',']"
           />
           <div class="stream-meta">TCP/UDP 层面只能按来源 IP 限制；Basic/JWT 只对 HTTP 反代有意义。</div>

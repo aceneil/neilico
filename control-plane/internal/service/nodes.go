@@ -261,8 +261,8 @@ func normalizeLocalAddresses(values []string) []string {
 			if !usableReportedAddress(address) {
 				continue
 			}
-			// 保留上报的**具体地址 + 前缀长度**（如 192.168.123.90/24）：对端要用这个
-			// 地址建隧道；若掩码成网段会变成 192.168.123.0，是个没法拨号的网络地址。
+			// 保留上报的**具体地址 + 前缀长度**（如 192.168.1.10/24）：对端要用这个
+			// 地址建隧道；若掩码成网段会变成 192.168.1.0，是个没法拨号的网络地址。
 			trimmed = prefix.String()
 		} else if address, err := netip.ParseAddr(trimmed); err == nil {
 			if !usableReportedAddress(address) {

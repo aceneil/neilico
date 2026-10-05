@@ -41,7 +41,7 @@
 ```bash
 cd deploy/allinone
 ./sync-source.sh
-cp .env.example /home/neil/Documents/Docker/data/neilico/neilico.env
+cp .env.example $HOME/Documents/Docker/data/neilico/neilico.env
 # 用密码管理器/openssl rand -hex 32 替换所有 replace-* 占位符
 docker compose up -d --build
 curl -fsS http://127.0.0.1:13000/healthz
@@ -85,10 +85,10 @@ bash scripts/smoke-down.sh --yes
 
 ```bash
 # 唯一的查看入口（值不落文档、不入仓库）
-/home/neil/Documents/Docker/data/neilico/show-admin-password.sh
+$HOME/Documents/Docker/data/neilico/show-admin-password.sh
 ```
 
-- 文件：`/home/neil/Documents/Docker/data/neilico/neilico.env`（mode 600）
+- 文件：`$HOME/Documents/Docker/data/neilico/neilico.env`（mode 600）
 - 键：`NEILICO_BOOTSTRAP_ADMIN_PASSWORD`（密码）、`NEILICO_BOOTSTRAP_ADMIN_EMAIL`（邮箱）
 - 在控制台执行「轮换密码 / 修改邮箱」后，控制面会把新值**原子回写**到该 env 文件的同一键（同目录临时文件 + rename、保持 mode 600、只替换目标键、不动其它行），因此 `show-admin-password.sh` 读到的始终是最新值。
 - 容器侧：compose 把该文件以 rw 方式挂载到 `/opt/neilico/bootstrap.env`，并设置 `NEILICO_BOOTSTRAP_ENV_FILE` 指向它（该路径可配置，默认值就是 `/opt/neilico/bootstrap.env`）。

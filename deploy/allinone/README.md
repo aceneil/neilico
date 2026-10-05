@@ -9,7 +9,7 @@
 **构建上下文必须是仓库根**（Dockerfile 在多阶段里直接 `COPY control-plane/` 与 `dashboard/`）：
 
 ```bash
-cd /home/neil/Documents/Projects/neilico          # ← 仓库根，不是本目录
+cd $HOME/Documents/Projects/neilico          # ← 仓库根，不是本目录
 docker build -f deploy/allinone/Dockerfile -t neilico-allinone:local .
 ```
 
@@ -17,9 +17,9 @@ docker build -f deploy/allinone/Dockerfile -t neilico-allinone:local .
 它自己 `build`（`context` = 仓库根绝对路径），不需要手工 build：
 
 ```bash
-cd /home/neil/Documents/Docker
+cd $HOME/Documents/Docker
 mkdir -p data/neilico/pg
-cp /home/neil/Documents/Projects/neilico/deploy/allinone/.env.example data/neilico/neilico.env
+cp $HOME/Documents/Projects/neilico/deploy/allinone/.env.example data/neilico/neilico.env
 chmod 600 data/neilico/neilico.env            # 编辑该文件，替换全部密码/密钥占位符
 docker compose -f docker-compose.neilico.yaml up -d --build
 ```
@@ -34,7 +34,7 @@ open http://127.0.0.1:13000/
 
 ## 数据、备份与升级
 
-PostgreSQL 持久化目录是 `/home/neil/Documents/Docker/data/neilico/pg`，容器内挂载到 `/var/lib/postgresql/data`。该路径保存数据库、角色和 WAL；不要把 `neilico.env` 放进数据库目录。
+PostgreSQL 持久化目录是 `$HOME/Documents/Docker/data/neilico/pg`，容器内挂载到 `/var/lib/postgresql/data`。该路径保存数据库、角色和 WAL；不要把 `neilico.env` 放进数据库目录。
 
 逻辑备份（命令不会输出密码）：
 
@@ -47,7 +47,7 @@ docker exec neilico pg_dump --username=neilico --format=custom --dbname=neilico 
 升级时保持数据目录不变：
 
 ```bash
-cd /home/neil/Documents/Projects/neilico/deploy/allinone
+cd $HOME/Documents/Projects/neilico/deploy/allinone
 docker compose build --pull app
 docker compose up -d
 docker inspect --format '{{.State.Health.Status}}' neilico
@@ -56,7 +56,7 @@ docker inspect --format '{{.State.Health.Status}}' neilico
 从旧六容器迁移：先对旧 `postgres` 执行 `pg_dump`，保存旧 Compose 的 `.env` 中所需配置（不要复制无关的 Redis/NATS/relay 配置），准备好 `neilico.env` 和空 `pg` 目录，恢复备份后启动本 Compose。确认登录、节点和配置数据正常后，旧栈可按原目录执行：
 
 ```bash
-cd /home/neil/Documents/Projects/neilico/deploy/docker-compose
+cd $HOME/Documents/Projects/neilico/deploy/docker-compose
 docker compose down --remove-orphans
 ```
 
@@ -67,4 +67,4 @@ docker compose down --remove-orphans
 - 单容器是单点部署，不具备水平扩展、滚动升级或独立数据库故障域。
 - PostgreSQL 和应用共享生命周期；必须使用 `docker stop` 等正常停止方式，entrypoint 会先停应用，再以 `fast` 模式停 PostgreSQL。
 - `relay` 是原 wg-easy 占位，不是 NEILICO 中继数据面。V2 实现真实 relay/ICE 后再增加独立服务或进程。
-- 生产密钥只放在 `/home/neil/Documents/Docker/data/neilico/neilico.env`，仓库中的 `.env.example` 只有占位符。
+- 生产密钥只放在 `$HOME/Documents/Docker/data/neilico/neilico.env`，仓库中的 `.env.example` 只有占位符。

@@ -2,7 +2,7 @@
  * 复制到剪贴板（含非安全上下文兜底）。
  *
  * 背景：`navigator.clipboard` **只在安全上下文**（HTTPS 或 localhost）才存在。
- * 本项目常驻部署默认是 **HTTP + 局域网 IP**（例如 http://192.168.123.90:13000），
+ * 本项目常驻部署默认是 **HTTP + 局域网 IP**（例如 http://192.168.1.10:13000），
  * 此时 `navigator.clipboard` 是 `undefined`，直接调用会抛 TypeError，
  * 表现为「点复制没反应 / 提示去检查浏览器剪贴板权限」——但那不是权限问题，
  * 而是浏览器根本没提供这个 API（实测：isSecureContext=false）。

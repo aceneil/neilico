@@ -1,7 +1,7 @@
 import { defineConfig } from '@playwright/test'
 
 // 目标默认是常驻部署；CI 里用 E2E_BASE_URL 覆盖。
-const baseURL = process.env.E2E_BASE_URL || 'http://192.168.123.90:13000'
+const baseURL = process.env.E2E_BASE_URL || 'http://localhost:13000'
 
 export default defineConfig({
   testDir: './e2e',

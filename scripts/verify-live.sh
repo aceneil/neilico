@@ -1,7 +1,7 @@
 #!/bin/bash
 # NEILICO 独立验证：直连正在运行的栈，只打印状态与计数，绝不回显任何密钥
 set -u
-cd /home/neil/Documents/Projects/neilico/deploy/docker-compose || exit 1
+cd $HOME/Documents/Projects/neilico/deploy/docker-compose || exit 1
 API=http://127.0.0.1:18080
 PW=$(grep -E '^BOOTSTRAP_ADMIN_PASSWORD=' .env | cut -d= -f2-)
 EMAIL=$(grep -E '^BOOTSTRAP_ADMIN_EMAIL=' .env | cut -d= -f2-)

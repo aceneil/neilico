@@ -6,7 +6,7 @@
 
 ## 0. 通用准备
 
-1. 控制面地址（本文示例）：`http://192.168.123.90:13000`
+1. 控制面地址（本文示例）：`http://192.168.1.10:13000`
 2. 登录控制台 → **设备管理** → 右上角「**接入设备**」→ 填名称提示（可选）→ 选网络（可选）→
    有效期 → **生成接入令牌**
 3. 弹窗第 2 步有四个页签，**复制相应平台的命令**（命令里已内嵌令牌，一次性、有有效期）
@@ -26,7 +26,7 @@
 > `docker run -v 名字:/路径` 会自动建命名卷；compose 里**必须在顶层声明 `volumes:`**，
 > 否则报 `refers to undefined volume ...: invalid compose project`。用绑定挂载（如
 > `./data/neilico-agent:/var/lib/neilico-agent`）可以完全绕开这个坑。本机现成的
-> compose 文件见 `/home/neil/Documents/Docker/docker-compose.neilico-agent.yaml`。
+> compose 文件见 `$HOME/Documents/Docker/docker-compose.neilico-agent.yaml`。
 
 ```bash
 docker run -d --name neilico-agent --restart unless-stopped \
@@ -54,11 +54,11 @@ docker run -d --name neilico-agent --restart unless-stopped \
 
 **执行**：
 ```bash
-curl -fsSL http://192.168.123.90:13000/install.sh | sudo bash -s -- --token <TOKEN>
+curl -fsSL http://192.168.1.10:13000/install.sh | sudo bash -s -- --token <TOKEN>
 ```
 先看它要做什么（不落盘、不改系统）：
 ```bash
-curl -fsSL http://192.168.123.90:13000/install.sh | sudo bash -s -- --token <TOKEN> --dry-run
+curl -fsSL http://192.168.1.10:13000/install.sh | sudo bash -s -- --token <TOKEN> --dry-run
 ```
 
 **判定通过**：
@@ -79,11 +79,11 @@ curl -fsSL http://192.168.123.90:13000/install.sh | sudo bash -s -- --token <TOK
 
 **执行**（与 Linux 同一条命令；脚本按 `uname -s` 自动走 Darwin 分支）：
 ```bash
-curl -fsSL http://192.168.123.90:13000/install.sh | sudo bash -s -- --token <TOKEN>
+curl -fsSL http://192.168.1.10:13000/install.sh | sudo bash -s -- --token <TOKEN>
 ```
 先 dry-run 看步骤（会打印 launchd plist 路径与 `launchctl bootstrap/kickstart`）：
 ```bash
-curl -fsSL http://192.168.123.90:13000/install.sh | sudo bash -s -- --token <TOKEN> --dry-run
+curl -fsSL http://192.168.1.10:13000/install.sh | sudo bash -s -- --token <TOKEN> --dry-run
 ```
 
 **判定通过**：
@@ -105,7 +105,7 @@ curl -fsSL http://192.168.123.90:13000/install.sh | sudo bash -s -- --token <TOK
 
 **执行**（管理员 PowerShell）：
 ```powershell
-powershell -ExecutionPolicy Bypass -Command "& ([scriptblock]::Create((irm http://192.168.123.90:13000/install.ps1))) -Token <TOKEN>"
+powershell -ExecutionPolicy Bypass -Command "& ([scriptblock]::Create((irm http://192.168.1.10:13000/install.ps1))) -Token <TOKEN>"
 ```
 先 dry-run：在上面命令末尾加 ` -DryRun`。
 
@@ -133,18 +133,18 @@ powershell -ExecutionPolicy Bypass -Command "& ([scriptblock]::Create((irm http:
 | `GET /downloads/...` **404** | 该平台二进制不在镜像里 | 检查控制面启动日志的 `agent downloads ready` 与目录 |
 | 服务起不来、日志 `permission denied` | 缺 root/管理员 | 用 `sudo`（Linux/macOS）或管理员 PowerShell（Windows） |
 | 能力显示 `Mesh unavailable`（原因「无 TUN」/「缺 wg 工具」） | 宿主缺内核或工具 | Linux 装 `wireguard-tools`、确认 `/dev/net/tun`、容器加 `--cap-add NET_ADMIN --device /dev/net/tun` |
-| 控制面看不到节点 | 网络不通 / 令牌过期 | 从目标机 `curl http://192.168.123.90:13000/healthz` 验证连通性 |
+| 控制面看不到节点 | 网络不通 / 令牌过期 | 从目标机 `curl http://192.168.1.10:13000/healthz` 验证连通性 |
 
 ## 6. 控制面侧核对（与界面互相印证）
 
 ```bash
 # 节点是否在线、能力是什么
 curl -s -H "Authorization: Bearer <ADMIN_JWT>" \
-  'http://192.168.123.90:13000/api/v1/nodes?page_size=100' | jq '.items[] | {name,status,virtual_ip,capabilities}'
+  'http://192.168.1.10:13000/api/v1/nodes?page_size=100' | jq '.items[] | {name,status,virtual_ip,capabilities}'
 
 # 网络成员（虚拟 IP 分配）
 curl -s -H "Authorization: Bearer <ADMIN_JWT>" \
-  'http://192.168.123.90:13000/api/v1/networks/<NETWORK_ID>/members' | jq
+  'http://192.168.1.10:13000/api/v1/networks/<NETWORK_ID>/members' | jq
 ```
 
 ## 7. 明确的能力边界（不要在验收时误判为故障）

@@ -55,25 +55,25 @@ NEILICO（Unified Mesh & Proxy Platform）：统一「内网穿透 + Mesh 组网
 
 ### 常驻部署（生产用 Docker 目录那份；2026-10-03 改为**单容器**）
 > **仓库内 `deploy/docker-compose/`（6 容器：postgres/redis/nats/control-api/dashboard/relay）仅供历史上的测试栈**（项目名 `neilico-m5`、命名卷、固定端口），**不是现行形态**。
-> **现行形态 = `deploy/allinone/`（单容器）**，由 `/home/neil/Documents/Docker/docker-compose.neilico.yaml`（顶层 `name: neilico`）常驻，按本机目录约定维护。
+> **现行形态 = `deploy/allinone/`（单容器）**，由 `$HOME/Documents/Docker/docker-compose.neilico.yaml`（顶层 `name: neilico`）常驻，按本机目录约定维护。
 
 - 形态：**1 个容器 `neilico`** = PostgreSQL 16 + 控制面 API + 内置反代 + Dashboard 静态资源（Go 二进制直接服务前端，**同源、无 nginx**）
-- 部署文件：`/home/neil/Documents/Docker/docker-compose.neilico.yaml`
-  （`build.context` = 仓库根 `/home/neil/Documents/Projects/neilico` 绝对路径，`dockerfile: deploy/allinone/Dockerfile`，`image: neilico-allinone:local`）
-- 持久数据：`/home/neil/Documents/Docker/data/neilico/pg`（宿主目录绑定到容器 `/var/lib/postgresql/data`）
-- 秘密：`/home/neil/Documents/Docker/data/neilico/neilico.env`（mode 600，非仓库；管理员邮箱 `admin@neilico.local`）
-  查看管理员密码（值不入文档）：`/home/neil/Documents/Docker/data/neilico/show-admin-password.sh`
+- 部署文件：`$HOME/Documents/Docker/docker-compose.neilico.yaml`
+  （`build.context` = 仓库根 `$HOME/Documents/Projects/neilico` 绝对路径，`dockerfile: deploy/allinone/Dockerfile`，`image: neilico-allinone:local`）
+- 持久数据：`$HOME/Documents/Docker/data/neilico/pg`（宿主目录绑定到容器 `/var/lib/postgresql/data`）
+- 秘密：`$HOME/Documents/Docker/data/neilico/neilico.env`（mode 600，非仓库；管理员邮箱 `admin@neilico.local`）
+  查看管理员密码（值不入文档）：`$HOME/Documents/Docker/data/neilico/show-admin-password.sh`
 - 端口：`13000 -> 8080`（Dashboard + API **同端口/同源**，LAN）、`18081 -> 8081`（内置反代，LAN）；PostgreSQL **只在容器内**（不映射宿主）
 - `restart: unless-stopped`；TLS/mTLS 与 ACME 本轮关闭
-- 启停：`cd /home/neil/Documents/Docker && docker compose -f docker-compose.neilico.yaml up -d|stop|restart`
+- 启停：`cd $HOME/Documents/Docker && docker compose -f docker-compose.neilico.yaml up -d|stop|restart`
   （源码更新后 `up -d --build` 重建镜像；**禁止 `down -v`**）
 - **已移除的 3 个无用容器及理由**：
   - `redis` —— 代码里**零引用**（纯装饰容器，REDIS 相关配置项无任何调用点）
   - `nats` —— 代码里**零引用**（纯装饰容器）
   - `relay` —— wg-easy **占位**，无 NEILICO relay 数据面（TURN 3478 从未实现）；V2 实现真实中继后再加独立进程
   （`nginx` 也一并去掉：其唯一作用是静态托管 + 反代，现由 Go 二进制同源直接提供）
-- Homepage 导航卡片：`/home/neil/Documents/Docker/data/homepage/config/services.yaml` 的 `- 业务:` 组
-  `neilico`（原 umpp 卡片原地改名），href `http://192.168.123.90:13000`，container `neilico`
+- Homepage 导航卡片：`$HOME/Documents/Docker/data/homepage/config/services.yaml` 的 `- 业务:` 组
+  `neilico`（原 umpp 卡片原地改名），href `http://192.168.1.10:13000`，container `neilico`
 - **2026-10-03 实测（单容器）**：`docker ps` 恰好 1 行 `neilico (healthy)`；
   容器内同时有 `postgres` 与 `neilico-control` 两个进程；LAN `13000` → **200** 且 body 含 `<div id="app"`；
   `/healthz` = `{"db":"up","status":"ok","version":"v1-single-20261003"}`；`/metrics` **67 条 `neilico_*`**（2026-10-03 19:1x 实测，随 V1-R2/R4 增长）；
@@ -83,7 +83,7 @@ NEILICO（Unified Mesh & Proxy Platform）：统一「内网穿透 + Mesh 组网
   `docker stop -t 30` → 退出码 **0**、日志含 `shutdown complete`、无 recovery 痕迹。
 
 > 旧的常驻 6 容器 UMPP 栈（项目名 `umpp`）已于同日下线，数据改名保留在
-> `/home/neil/Documents/Docker/data/umpp-legacy-20261003/`（取证：业务表全空，仅 bootstrap 管理员+租户+6 条登录审计）。
+> `$HOME/Documents/Docker/data/umpp-legacy-20261003/`（取证：业务表全空，仅 bootstrap 管理员+租户+6 条登录审计）。
 
 ### 历史运行状态（2026-10-02 01:5x 测试栈实测，现已被上节替代）
 - 测试栈曾整体运行（`Up 3 hours (healthy)`）：API `:18080`、内置反代 `:18081`、Dashboard `:13000`、PG `:15432`、Redis `:16379`、NATS `:14222`、relay 占位 UDP `:51820/:3478`
@@ -167,14 +167,14 @@ cd deploy/helm && bash neilico/ci/verify.sh
 - **验前端不必先部署**：`VITE_API_BASE` 同时被当作 dev 代理目标**和**客户端 API base（Vite 会把 `VITE_*` 注入前端），所以给 dev server 设它会让浏览器跨域直连后端 → **CORS 失败（Network Error）**。可靠做法：`npm run build` 后用 `/tmp/serve-dist.py`（静态服务 dist + 同源 `/api` 反代到真后端）——验的就是待部署的那个 bundle，且同源无 CORS。
 - **Agent 跨平台现状（E2）**：六目标 `windows/amd64`、`darwin/{amd64,arm64}`、`linux/{amd64,arm64,armv7}` 均已本地 `go build` 通过；能力探测按工具/TUN/系统组件/管理员权限真实上报。Windows/macOS 真机安装、WireGuardNT/系统扩展和 launchd/Windows Service 生命周期尚未在真机执行，不能据脚本语法通过推断真机已组网。
 - **令牌只在首次需要，但历史实现会让「文件里留着废令牌」的 agent 崩溃重启（已修）**：`applyEnrollFlags` 过去只从令牌推导服务器地址——令牌不可解析就直接退出；更隐蔽的是 state 里保存的 `Server` **从不被采纳**，于是 `cfg.Server` 会停在 `config.Default()` 的占位地址 `https://api.neilico.example.com`。触发场景：compose 文件里留了个占位/过期/贴错的令牌 → 容器 `Restarting (1)`（实测日志 `cannot read server from enrollment token; pass --server`），而 state.json 里凭据一应俱全。现优先级明确为 **`--server` > 配置文件里的非默认 server > 令牌载荷 > state.json > 默认值**；令牌不可解析但 state 可用 → 打警告并沿用 state（无 state 时仍明确报错，因为首次接入确实需要令牌）。回归测试 `agent/cmd/agent/enroll_flags_test.go`（含 6 个子场景）。
-- **compose 与 `docker run` 的卷语义不同（本机 agent 部署踩到）**：`docker run -v 名字:/路径` 会自动创建命名卷并隐式声明；**compose 必须在顶层写 `volumes:`**，否则报 `service "..." refers to undefined volume ...: invalid compose project`。本机 agent 的 compose 用**绑定挂载** `./data/neilico-agent` 绕开该坑，见 `/home/neil/Documents/Docker/docker-compose.neilico-agent.yaml`（也用 `docker-compose.neilico.yaml` 定义控制面）。
+- **compose 与 `docker run` 的卷语义不同（本机 agent 部署踩到）**：`docker run -v 名字:/路径` 会自动创建命名卷并隐式声明；**compose 必须在顶层写 `volumes:`**，否则报 `service "..." refers to undefined volume ...: invalid compose project`。本机 agent 的 compose 用**绑定挂载** `./data/neilico-agent` 绕开该坑，见 `$HOME/Documents/Docker/docker-compose.neilico-agent.yaml`（也用 `docker-compose.neilico.yaml` 定义控制面）。
 - **设备列表曾需手动刷新才看到新设备（已加自动刷新）**：`NodesPage` 现在每 **10s** 静默轮询（`load({silent:true})`：不显示 loading、失败不覆盖内容），页面不可见时**暂停**、切回前台**立即刷一次**；对比前后列表**发现新设备时弹提示**（`发现 N 台新设备：xxx`）；页头有开关（默认开）+ 上次刷新时间。另外「接入设备」弹窗在展示命令期间每 4s 探测一次，设备一 enroll 就在弹窗里直接显示**成功横幅**（设备名/平台/虚拟IP）并 `emit('enrolled')` 让列表立刻刷新——**无需关窗、无需 F5**。
   - 验收（真实浏览器 + 真实设备）：页面零操作下 4 台 → 5 台自动更新，并抓到提示 `发现 1 台新设备：autorefresh-check-3`；轮询请求数按 10s 递增。
   - **测这类"自动刷新"要小心**：无头浏览器里 `document.visibilityState === 'hidden'`，我的"不可见则暂停"逻辑会正确地不发请求 → 看起来像"没生效"。必须先用 CDP `Page.bringToFront` 让页面变 visible 再测；且**时序要可控**（先开观察窗口、再让设备延迟 enroll），否则提示（3 秒）会在两次工具调用的空隙里弹出又消失，误判成"没提示"。
 - **Docker 接入命令的镜像地址必须是「目标机真能拉到」的**：命令历史上写的是本机 tag `neilico-agent:local`，别的机器执行会得到 `pull access denied for neilico-agent, repository does not exist`（实测）。现已由**公开仓库 `aceneil/neilico-agent`** 的 GitHub Actions 构建发布为 **public 包**；地址可配（`enroll.agent_image` / `NEILICO_ENROLL_AGENT_IMAGE`，代码默认值见 `config.DefaultAgentImage`）。回归测试 `internal/api/enroll_commands_test.go` **独立断言不含 `neilico-agent:local`**。
 - **🔴 预共享密钥曾用 base64url 生成，导致整个网络的 mesh 起不来（已修 `9a88740`）**：`generateNetworkSecret()` 用的是 `base64.RawURLEncoding`（43 字符、含 `-`/`_`、无 `=` 填充），而**WireGuard 只接受标准 base64**；由于 PSK 会写进每个 peer，**该网络下所有节点**的 `wg setconf` 都失败：`failed to parse base64-encoded key: illegal base64 data at input byte 20`（真机实测：agent 每 30s 重试一次、从未成功，宿主 `wg0` 一直没有地址，节点看似"成员"实际不通）。修法：改用 `base64.StdEncoding`；新增 `mesh.NormalizeKey()` 兼容存量 base64url 数据（**无需数据迁移**）；配置下发与渲染两处都过一遍规整。回归测试：`wireguard/keys_encoding_test.go` **逐行校验渲染出的每个密钥都必须是标准 base64/32 字节**（这正是当初缺的闸门，变异验证：还原 bug 版即红）、`mesh/keys_test.go`、`service/networks_secret_test.go`；golden 同步更新。**教训：凡把密钥写进 wg 配置，必须用 wg 自己的解析器或等价的严格 base64 校验兜底。**
-- **跨机 mesh 连不通的第二个真因：同内网却用公网/代理地址互拨（已修：同内网优先内网地址）**：agent 会上报 `ip:port` 公网地址，但在 NAT/代理出口后往往互相不可达——实测本机出口是**云代理 IP**（收不到入站 UDP），NAS 那台**连公网地址都探测不到**（`public_endpoint` 一直为空），于是双方都无法主动建连、隧道永远不握手。修法：agent 用 `net.Interfaces()` 上报本机内网地址（CIDR）与**自己的监听端口**（`local_addresses` / `listen_port`，存 `nodes` 表），控制面随 peer 下发；agent 应用前若发现对端地址落在**本机某个内网网段**内，就把该 peer 的 endpoint 换成 `<对端内网IP>:<对端端口>`（`mesh.PreferLANEndpoints`，结构化 peers 与渲染文本同时改）。实测（dry-run 打印出的真实配置）：三个同内网对端分别写成 `192.168.123.90:51820 / :51830 / :51840`（端口各用对端自己的 ✓），跨网对端与未上报地址的对端**保持原样**。
-  - **采集白名单要收紧**：初版 `LocalPrefixes()` 把宿主机上 10 个 docker 网桥 + 隧道自身 VIP 都收了进来，**8 条配额被吃光、真正的 `192.168.123.90/24` 被挤掉**（真机实测）。现在跳过容器/虚拟接口名前缀（`docker*`/`br-*`/`veth*`/`virbr*`/`tun*`/`tap*`/`tailscale*`）与 **CGNAT `100.64.0.0/10`**（那是 NEILICO 自己的虚拟 IP 段，把它当内网地址去拨必然失败），并排除自己的隧道接口。
+- **跨机 mesh 连不通的第二个真因：同内网却用公网/代理地址互拨（已修：同内网优先内网地址）**：agent 会上报 `ip:port` 公网地址，但在 NAT/代理出口后往往互相不可达——实测本机出口是**云代理 IP**（收不到入站 UDP），NAS 那台**连公网地址都探测不到**（`public_endpoint` 一直为空），于是双方都无法主动建连、隧道永远不握手。修法：agent 用 `net.Interfaces()` 上报本机内网地址（CIDR）与**自己的监听端口**（`local_addresses` / `listen_port`，存 `nodes` 表），控制面随 peer 下发；agent 应用前若发现对端地址落在**本机某个内网网段**内，就把该 peer 的 endpoint 换成 `<对端内网IP>:<对端端口>`（`mesh.PreferLANEndpoints`，结构化 peers 与渲染文本同时改）。实测（dry-run 打印出的真实配置）：三个同内网对端分别写成 `192.168.1.10:51820 / :51830 / :51840`（端口各用对端自己的 ✓），跨网对端与未上报地址的对端**保持原样**。
+  - **采集白名单要收紧**：初版 `LocalPrefixes()` 把宿主机上 10 个 docker 网桥 + 隧道自身 VIP 都收了进来，**8 条配额被吃光、真正的 `192.168.1.10/24` 被挤掉**（真机实测）。现在跳过容器/虚拟接口名前缀（`docker*`/`br-*`/`veth*`/`virbr*`/`tun*`/`tap*`/`tailscale*`）与 **CGNAT `100.64.0.0/10`**（那是 NEILICO 自己的虚拟 IP 段，把它当内网地址去拨必然失败），并排除自己的隧道接口。
   - **上报要能"变化即报"**：只按公网地址变化判断会等满 5 分钟节流窗口；现已把上次上报的内网地址列表存进 state 一起比较（换网络/换网段立刻恢复直连）。
   - 未完成：**跨两台真机的完整握手验证**需要 NAS 侧 agent 更新到新镜像（NAS 现为旧二进制，不上报内网地址）；同宿主跑两个 agent 会争抢同一网络栈（`ip link set ...: Address in use`），**属测试环境伪影，不是产品缺陷**（真实部署一台机器一个 agent）。
 - **🔴 mesh 数据面不通的两个真缺陷（已修 `a4d8412` / `07e956e`）**——修完上面两条后握手成功了，但**一个字节数据都过不去**：
@@ -182,8 +182,8 @@ cd deploy/helm && bash neilico/ci/verify.sh
   - **② 升级 agent 后跳过应用，新增的本地动作永远装不上**：`Reconcile` 在 `AppliedConfigHash` 未变时直接返回，而 `pollOnce` 还有一道更早的短路（`result.Delivery.Version <= identity.AppliedVersion` 就 `return nil`，根本走不到 `Reconcile`）。于是**服务端配置没变时，升级 agent 不会触发应用**——真机踩到：换到带路由修复的镜像后，`wg0` 上依然一条路由都没有。**修复**：把 `mesh.ApplicationSchemaVersion`（本地应用逻辑版本）纳入 `ConfigHash`，并在 state 里记录 `application_schema`，与二进制常量不一致时**强制拉取最新配置并重新应用**，成功应用后写回。**规则：凡改动 applier/本地应用行为，必须把 `ApplicationSchemaVersion` +1**（否则升级不生效）。回归测试 `mesh/hash_schema_test.go` + `cmd/agent/schema_reapply_test.go`。
   - 端到端验证口径（本机侧）：路由出现 `100.64.0.2 scope link`、`ip route get 100.64.0.2` → `dev wg0 src 100.64.0.3`、日志出现 `local application schema changed; re-applying configuration (applied_schema=0 agent_schema=3)`；此时对接 NAS 的包**确实进了隧道**（`transfer` 发送计数从 244B 涨到 1204B），而接收计数不变——因为对端还是旧 agent、没有回程路由。
   - 附带发现的运维要点：**agent 升级后必须能看到"重新应用"的日志**，否则很可能被这两道短路静默跳过（这也是为什么"容器 healthy + 节点 online"完全不能证明数据面可用）。
-- **🌐 NAS 节点（`NAS-E125`, 192.168.123.211）实际打通记录与三个运维坑**（2026-10-04，manager 亲自进场操作）：
-  - **打通结果**（穿隧道的真实流量，非握手计数）：本机 → NAS `ping 100.64.0.2` 1.4ms、`http://100.64.0.2:9100/metrics` HTTP 200；NAS → 本机 `http://100.64.0.3:9100/metrics` HTTP 200、容器内 `ping 100.64.0.3` 1.9ms；双方 `wg show` 握手 1 秒前、收发计数持续增长。四个修复在同一次重建后**同时生效**：日志里能逐条对上 `local application schema changed; re-applying configuration (0 → 3)`、`mesh endpoint preference: 改用内网地址 192.168.123.90:51820`、宿主 `ip route` 出现 `100.64.0.3 scope link`。
+- **🌐 NAS 节点（`nas-1`, 192.168.1.20）实际打通记录与三个运维坑**（2026-10-04，manager 亲自进场操作）：
+  - **打通结果**（穿隧道的真实流量，非握手计数）：本机 → NAS `ping 100.64.0.2` 1.4ms、`http://100.64.0.2:9100/metrics` HTTP 200；NAS → 本机 `http://100.64.0.3:9100/metrics` HTTP 200、容器内 `ping 100.64.0.3` 1.9ms；双方 `wg show` 握手 1 秒前、收发计数持续增长。四个修复在同一次重建后**同时生效**：日志里能逐条对上 `local application schema changed; re-applying configuration (0 → 3)`、`mesh endpoint preference: 改用内网地址 192.168.1.10:51820`、宿主 `ip route` 出现 `100.64.0.3 scope link`。
   - **坑①：`:latest` 标签更新了 ≠ 容器换了镜像**。该机 `docker image inspect ...:latest` 早就是含全部修复的新镜像，但容器跑的是**3 小时前的旧镜像**（compose 没真正重建）。判定口径：比 `docker inspect <ctr> --format '{{.Image}}'` 与 `:latest` 的 ID，以及看 `StartedAt` 有没有变——**"我更新了"必须以容器镜像 ID 变化为准，不能只看 tag/pull 输出**。
   - **坑②：compose 项目名不一致会静默换卷（丢凭据）**。容器标签里的项目名是 `neilco`，而仓库里的 `docker-compose.yml` 顶部写着 `name: neilico-network` → 直接在该目录 `docker compose up` 会按新项目名解析，生成**空卷** `neilico-network_neilico-agent-state`（那次侥幸因容器名冲突失败才没造成损失）。正确做法：`docker compose -p neilco up -d --force-recreate` 显式复用原项目名与原卷（`neilco_neilico-agent-state`）；或把文件里的 `name:` 改成 `neilco`。**凡涉及卷的 compose 操作，动手前先 `docker inspect <ctr> --format '{{range .Mounts}}{{.Name}}{{end}}'` 确认卷名。**
   - **坑③：容器重启会把 wg0 删掉，而旧 agent 因"哈希未变"不再重建它**。agent 优雅退出会 `ip link delete wg0`，重启后若配置哈希/版本判定为"已应用"，旧版 agent 直接跳过应用 → **NAS 上连一个 wg 接口都没有**、`ss -uln` 里也没有 51820 监听（这正是 `ApplicationSchemaVersion` 修复要解决的现象）。诊断顺序：`ip -brief addr show wg0` → `ss -uln | grep 51820` → `docker inspect --format '{{.Config.Image}} {{.Image}}'`。
@@ -193,7 +193,7 @@ cd deploy/helm && bash neilico/ci/verify.sh
   - **公开包的机制（已验证）**：GitHub 规则是**包继承发布它时所用仓库的可见性**——用 `GITHUB_TOKEN` 从**公开仓库**发布 → 包自动 public。用户命名空间下的容器包**无法用 REST API 改可见性**（`PATCH /user/packages/container/<name>` 对私有和已公开的包一律 404，实测含对照包），只能网页 UI 或走"公开仓库发布"。
   - **发布流程**：改 `agent/` 代码 → 同步到公开仓库（`/tmp/public-repo` 的组装方式：`agent/` 全量 + `deploy/agent/Dockerfile` + `control-plane/{go.mod,go.sum,pkg/capabilities,pkg/enrolltoken,testkit}`）→ push 即触发 `.github/workflows/publish-agent.yml` 构建推送（用仓库自带 token，**公开库内不存任何密钥**）。
   - **推私有包（备用）**：`docker tag neilico-agent:local ghcr.io/aceneil/neilico-agent:latest && docker push …`。凭据在 `~/.hermes/.env` 的 `GITHUB_TOKEN`（classic PAT，账号 `aceneil`，scopes `repo, workflow, write:packages, delete:packages`；**无 `delete_repo`，所以删不了仓库**）。**值不要回显**。
-- **HTTP + 局域网 IP 访问时 `navigator.clipboard` 根本不存在（已修）**：浏览器只在**安全上下文**（HTTPS 或 localhost）提供剪贴板 API。本次部署是 `http://192.168.123.90:13000` → `isSecureContext=false`、`navigator.clipboard === undefined`，于是**全应用 5 处复制**（接入命令 / 注册凭据 / 用户 Token / API Token / 敏感值）在真机**全部失效**，而提示还是误导性的「请检查浏览器剪贴板权限」（不是权限问题）。已加 `dashboard/src/utils/clipboard.ts::copyText()`：优先异步剪贴板 API，失败回退 `textarea + document.execCommand('copy')`（HTTP 下可用，但**必须由真实用户手势触发**），两者都失败才提示手动复制。**真机验证**：在真实 origin 上真实点击 → 出现成功提示；再用 CDP 发 Ctrl+V 粘回输入框，内容与页面显示的命令**逐字一致**（471 B）。
+- **HTTP + 局域网 IP 访问时 `navigator.clipboard` 根本不存在（已修）**：浏览器只在**安全上下文**（HTTPS 或 localhost）提供剪贴板 API。本次部署是 `http://192.168.1.10:13000` → `isSecureContext=false`、`navigator.clipboard === undefined`，于是**全应用 5 处复制**（接入命令 / 注册凭据 / 用户 Token / API Token / 敏感值）在真机**全部失效**，而提示还是误导性的「请检查浏览器剪贴板权限」（不是权限问题）。已加 `dashboard/src/utils/clipboard.ts::copyText()`：优先异步剪贴板 API，失败回退 `textarea + document.execCommand('copy')`（HTTP 下可用，但**必须由真实用户手势触发**），两者都失败才提示手动复制。**真机验证**：在真实 origin 上真实点击 → 出现成功提示；再用 CDP 发 Ctrl+V 粘回输入框，内容与页面显示的命令**逐字一致**（471 B）。
 
 - **轮换密码回写 bootstrap env 的「三重约束」（mode 600 + 宿主可读 + 容器可写）**：控制面要把新密码写回宿主 `data/neilico/neilico.env`（`NEILICO_BOOTSTRAP_ENV_FILE=/opt/neilico/bootstrap.env`，compose 以 rw 挂载）。写入用「同目录临时文件 + rename」并固定 mode 600，因此**需要对该文件所在目录有写权限**。容器里控制面默认以 `neilico` 用户运行（uid≠宿主 1000），既写不了目录也会把文件 owner 改掉、破坏宿主 `show-admin-password.sh`。修法：`entrypoint.sh` 启动前用 `stat -c %u` 读该文件属主，**以其 uid 运行控制面**（必要时 `adduser -u <uid>` 补一个运行用户），从而写入成功且 owner/mode 不变；未挂载或属主为 root 时回落 `neilico`。回写失败时**轮换本身仍成功**（DB 为准），响应 `env_file_updated=false` 并只记警告——绝不因权限问题把改密判成失败，也绝不把明文写进日志。新增 `internal/bootstrapenv`（原子写 + 单测）与 `service/account.go`。
 - **给 `users` 加 `token_version` 列必须带 `default`**（AutoMigrate 给存量表加 NOT NULL 列的既有教训）：tag 写成 `not null;default:0`，存量 token 版本 0 与新值一致 → 升级不会把所有人踢下线；改密时 `token_version+1` 才让旧 refresh token 失效（JWT 无状态，靠 claims 里的版本号比对）。

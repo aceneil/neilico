@@ -7,7 +7,7 @@
 要求：Docker Engine 24+、Docker Compose v2、Linux x86_64/arm64。开发机上已占用的宿主端口可按 `.env` 修改。
 
 ```bash
-cd /home/neil/Documents/Projects/neilico/deploy/docker-compose
+cd $HOME/Documents/Projects/neilico/deploy/docker-compose
 cp .env.example .env
 # 使用密码管理器或 secrets manager 生成并替换所有 replace-* 占位符：
 openssl rand -hex 32
