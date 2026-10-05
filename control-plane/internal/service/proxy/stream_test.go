@@ -12,6 +12,11 @@ import (
 	"github.com/google/uuid"
 )
 
+// 注意：本文件的测试【不要】加 t.Parallel()。
+// 它们用「先 listen :0 拿一个空闲端口、关掉、再让转发器监听同一端口」的方式取端口，
+// 并行跑时兄弟测试会抢到同一个端口，导致偶发失败（实测约 1/4 概率）。
+// 保持串行即可把冲突窗口压到可忽略；如将来必须并行，请改成带重试的取端口辅助函数。
+
 func freeTCPPort(t *testing.T) int {
 	t.Helper()
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
@@ -57,7 +62,6 @@ func tcpEchoServer(t *testing.T) (host string, port int, stop func()) {
 }
 
 func TestStreamTCPForwardsTraffic(t *testing.T) {
-	t.Parallel()
 	upstreamHost, upstreamPort, stop := tcpEchoServer(t)
 	defer stop()
 
@@ -107,7 +111,6 @@ func TestStreamTCPForwardsTraffic(t *testing.T) {
 }
 
 func TestStreamTCPWhitelistDeniesUnlistedPeer(t *testing.T) {
-	t.Parallel()
 	upstreamHost, upstreamPort, stop := tcpEchoServer(t)
 	defer stop()
 
@@ -132,7 +135,6 @@ func TestStreamTCPWhitelistDeniesUnlistedPeer(t *testing.T) {
 }
 
 func TestStreamUDPForwardsDatagrams(t *testing.T) {
-	t.Parallel()
 	upstream, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
 	if err != nil {
 		t.Fatalf("启动 UDP echo 失败: %v", err)
@@ -182,7 +184,6 @@ func TestStreamUDPForwardsDatagrams(t *testing.T) {
 }
 
 func TestStreamApplyRemovesDeletedRule(t *testing.T) {
-	t.Parallel()
 	upstreamHost, upstreamPort, stop := tcpEchoServer(t)
 	defer stop()
 
@@ -211,7 +212,6 @@ func TestStreamApplyRemovesDeletedRule(t *testing.T) {
 }
 
 func TestStreamApplyReportsPortConflict(t *testing.T) {
-	t.Parallel()
 	upstreamHost, upstreamPort, stop := tcpEchoServer(t)
 	defer stop()
 
