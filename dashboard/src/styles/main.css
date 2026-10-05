@@ -942,6 +942,19 @@ pre {
   font-size: 11px;
 }
 
+/* 首次注册页 / 账号管理页（复用现有变量，日/夜主题一致，不硬编码颜色） */
+.register-submit {
+  margin-top: 8px;
+}
+
+.account-policy {
+  margin-bottom: 16px;
+}
+
+.account-card form .ant-form-item:last-of-type {
+  margin-bottom: 16px;
+}
+
 @media (min-width: 2560px) {
   :root {
     --ui-font-size: 18px;

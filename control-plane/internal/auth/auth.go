@@ -43,6 +43,8 @@ type Claims struct {
 	TenantID uuid.UUID `json:"tenant_id"`
 	Role     string    `json:"role"`
 	Type     string    `json:"token_type"`
+	// TokenVersion 镜像 User.TokenVersion；refresh 时校验，改密后旧 token 立即失效。
+	TokenVersion int `json:"token_version,omitempty"`
 	jwt.RegisteredClaims
 }
 
@@ -73,10 +75,11 @@ func (m *Manager) IssueRefresh(user models.User) (string, error) {
 func (m *Manager) issue(user models.User, tokenType string, ttl time.Duration) (string, error) {
 	now := time.Now()
 	claims := Claims{
-		UserID:   user.ID,
-		TenantID: user.TenantID,
-		Role:     user.Role,
-		Type:     tokenType,
+		UserID:       user.ID,
+		TenantID:     user.TenantID,
+		Role:         user.Role,
+		Type:         tokenType,
+		TokenVersion: user.TokenVersion,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ID:        uuid.NewString(),
 			Subject:   user.ID.String(),

@@ -38,7 +38,12 @@ scope 不足时还会返回 `detail`；API Token 使用 `insufficient_scope`，J
 | GET | `/healthz` | public | 进程与数据库健康 |
 | GET | `/metrics` | public | Prometheus 指标 |
 | POST | `/api/v1/auth/login` | public | `{email,password}` -> access/refresh token |
-| POST | `/api/v1/auth/refresh` | refresh token | 刷新 token |
+| POST | `/api/v1/auth/refresh` | refresh token | 刷新 token；改密后旧 refresh token（token_version 不匹配）失效 |
+| GET | `/api/v1/setup/status` | public | 初始化状态：`{initialized,registration_open,password_policy}` |
+| POST | `/api/v1/setup/register` | public（仅无账号时） | 创建第一个平台管理员；已有账号返回 `409 already_initialized` |
+| GET | `/api/v1/account` | JWT 会话 | 当前账号信息 + 密码强度策略 |
+| PUT | `/api/v1/account/email` | JWT 会话 | `{current_password,email}` 改登录邮箱；占用返回 409 |
+| POST | `/api/v1/account/password/rotate` | JWT 会话 | `{current_password,new_password}` 轮换密码；旧 refresh token 失效，返回新会话 |
 | GET/POST | `/api/v1/tenants` | platform_admin | 租户列表/创建 |
 | GET/PUT/DELETE | `/api/v1/tenants/{id}` | platform_admin | 租户详情/更新/删除 |
 | GET/POST | `/api/v1/users` | JWT；创建需 admin | 用户列表/创建 |

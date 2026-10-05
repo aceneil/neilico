@@ -39,6 +39,9 @@ export const authStorage = {
     target.setItem(REFRESH_KEY, session.refresh_token)
     target.setItem(USER_KEY, JSON.stringify(session.user))
   },
+  updateUser(user: AuthUser) {
+    storage().setItem(USER_KEY, JSON.stringify(user))
+  },
   clear() {
     localStorage.removeItem(TOKEN_KEY)
     localStorage.removeItem(REFRESH_KEY)

@@ -45,7 +45,16 @@ type Bootstrap struct {
 	AdminEmail    string `yaml:"admin_email"`
 	AdminPassword string `yaml:"admin_password"`
 	DefaultTenant string `yaml:"default_tenant"`
+	// EnvFile 是「首次登入引导」的 env 文件路径。管理员在控制台自助轮换密码（或改邮箱）后，
+	// 新值会**原子回写**该文件的 NEILICO_BOOTSTRAP_ADMIN_PASSWORD / NEILICO_BOOTSTRAP_ADMIN_EMAIL 键，
+	// 从而保持「用 show-admin-password.sh 读同一个键」的查询方式不变。
+	// 单容器部署时由 compose 把宿主 data/neilico/neilico.env 以 rw 方式挂到 /opt/neilico/bootstrap.env。
+	// 为空表示不启用回写（例如本地开发）。
+	EnvFile string `yaml:"env_file"`
 }
+
+// DefaultBootstrapEnvFile 是容器内 bootstrap env 的默认挂载点。
+const DefaultBootstrapEnvFile = "/opt/neilico/bootstrap.env"
 
 type Node struct {
 	HeartbeatTimeout time.Duration `yaml:"heartbeat_timeout"`
@@ -161,7 +170,7 @@ func Default() Config {
 			AccessTTL:  15 * time.Minute,
 			RefreshTTL: 7 * 24 * time.Hour,
 		},
-		Bootstrap: Bootstrap{DefaultTenant: "default"},
+		Bootstrap: Bootstrap{DefaultTenant: "default", EnvFile: DefaultBootstrapEnvFile},
 		Node:      Node{HeartbeatTimeout: 60 * time.Second},
 		ACME: ACME{
 			DirectoryURL:    "https://acme-v02.api.letsencrypt.org/directory",
@@ -256,6 +265,7 @@ func applyEnvironment(cfg *Config) error {
 		{"NEILICO_BOOTSTRAP_ADMIN_EMAIL", &cfg.Bootstrap.AdminEmail},
 		{"NEILICO_BOOTSTRAP_ADMIN_PASSWORD", &cfg.Bootstrap.AdminPassword},
 		{"NEILICO_BOOTSTRAP_DEFAULT_TENANT", &cfg.Bootstrap.DefaultTenant},
+		{"NEILICO_BOOTSTRAP_ENV_FILE", &cfg.Bootstrap.EnvFile},
 		{"NEILICO_LOG_LEVEL", &cfg.Log.Level},
 		{"NEILICO_LOG_FORMAT", &cfg.Log.Format},
 		{"NEILICO_ACME_DIRECTORY_URL", &cfg.ACME.DirectoryURL},

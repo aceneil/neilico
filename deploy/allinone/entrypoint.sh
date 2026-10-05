@@ -147,8 +147,28 @@ export NEILICO_SERVER_PORT="${NEILICO_SERVER_PORT:-8080}"
 export NEILICO_PROXY_LISTEN="${NEILICO_PROXY_LISTEN:-:8081}"
 export NEILICO_ACME_HTTP_PORT="${NEILICO_ACME_HTTP_PORT:-5002}"
 
+# ── 控制面运行用户 ────────────────────────────────────────────────────────
+# 轮换密码后需要把新值原子回写 bootstrap env（宿主挂载、mode 600）。以该文件
+# 属主的身份运行控制面，才能既写回成功、又不改变宿主的 owner/mode（宿主上的
+# show-admin-password.sh 仍可读）。未挂载 / 属主为 root / 无法确定属主时回落到 neilico。
+CONTROL_USER="neilico"
+bootstrap_env_file="${NEILICO_BOOTSTRAP_ENV_FILE:-}"
+if [[ -n "$bootstrap_env_file" && -f "$bootstrap_env_file" ]]; then
+    env_uid="$(stat -c %u "$bootstrap_env_file" 2>/dev/null || true)"
+    if [[ -n "$env_uid" && "$env_uid" != "0" && "$env_uid" != "$(id -u neilico 2>/dev/null || echo '')" ]]; then
+        env_user="$(grep -E "^[^:]*:[^:]*:${env_uid}:" /etc/passwd 2>/dev/null | head -n1 | cut -d: -f1 || true)"
+        if [[ -z "$env_user" ]]; then
+            adduser -S -D -H -u "$env_uid" neilico-env >/dev/null 2>&1 || true
+            env_user="$(grep -E "^[^:]*:[^:]*:${env_uid}:" /etc/passwd 2>/dev/null | head -n1 | cut -d: -f1 || true)"
+        fi
+        if [[ -n "$env_user" ]]; then
+            CONTROL_USER="$env_user"
+        fi
+    fi
+fi
+
 log "starting NEILICO control API and dashboard"
-su-exec neilico /usr/local/bin/neilico-control-api --config /opt/neilico/configs/config.example.yaml &
+su-exec "$CONTROL_USER" /usr/local/bin/neilico-control-api --config /opt/neilico/configs/config.example.yaml &
 APP_PID=$!
 
 while true; do

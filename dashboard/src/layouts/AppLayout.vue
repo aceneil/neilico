@@ -40,7 +40,8 @@ const iconMap: Record<string, unknown> = {
   team: TeamOutlined,
   bell: BellOutlined,
   'file-search': FileSearchOutlined,
-  setting: SettingOutlined
+  setting: SettingOutlined,
+  user: UserOutlined
 }
 
 const menuItems = computed(() => {
@@ -76,6 +77,7 @@ function onMenuClick({ key }: { key: string | number }) {
 
 function onUserMenuClick({ key }: { key: string | number }) {
   if (key === 'logout') logout()
+  if (key === 'account') void router.push('/account')
 }
 </script>
 
@@ -134,6 +136,7 @@ function onUserMenuClick({ key }: { key: string | number }) {
               <a-menu @click="onUserMenuClick">
                 <a-menu-item key="user" disabled>{{ auth.user?.email }}</a-menu-item>
                 <a-menu-divider />
+                <a-menu-item key="account"><UserOutlined /> 账号管理</a-menu-item>
                 <a-menu-item key="logout"><LogoutOutlined /> 退出登录</a-menu-item>
               </a-menu>
             </template>

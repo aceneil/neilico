@@ -30,6 +30,9 @@ bootstrap:
   admin_email: "admin@example.com"
   admin_password: "replace-with-a-strong-password"
   default_tenant: "default"
+  # 首次登入引导 env 文件：轮换密码/改邮箱后原子回写该文件的
+  # NEILICO_BOOTSTRAP_ADMIN_PASSWORD / NEILICO_BOOTSTRAP_ADMIN_EMAIL 键。空=不启用回写。
+  env_file: "/opt/neilico/bootstrap.env"
 node:
   heartbeat_timeout: 60s
 enroll:

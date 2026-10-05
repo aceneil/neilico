@@ -13,6 +13,44 @@ export interface AuthResponse {
   user: AuthUser
 }
 
+export interface PasswordPolicy {
+  min_length: number
+  max_length: number
+  min_classes: number
+  description: string
+}
+
+// 「初始化状态」：registration_open 为真表示系统还没有账号，可走首次注册。
+export interface SetupStatus {
+  initialized: boolean
+  registration_open: boolean
+  password_policy: PasswordPolicy
+}
+
+export interface AccountInfo {
+  id: string
+  tenant_id: string
+  email: string
+  role: Role
+  status: string
+  created_at: string
+}
+
+export interface AccountResponse {
+  account: AccountInfo
+  password_policy: PasswordPolicy
+}
+
+export interface AccountEmailResult {
+  account: AccountInfo
+  env_file_updated: boolean
+}
+
+export interface PasswordRotateResult extends AuthResponse {
+  env_file_updated: boolean
+  notice: string
+}
+
 export interface APIToken {
   id: string
   name: string

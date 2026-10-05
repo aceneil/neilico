@@ -11,6 +11,14 @@ const router = createRouter({
       meta: { public: true, title: '登录' }
     },
     {
+      // 首次登入 = 注册。公开路由，但页面自身会检查 setup/status：
+      // 系统已初始化时不允许再注册（后端也会返回 409）。
+      path: '/register',
+      name: 'register',
+      component: () => import('@/pages/RegisterPage.vue'),
+      meta: { public: true, title: '首次注册' }
+    },
+    {
       path: '/',
       component: () => import('@/layouts/AppLayout.vue'),
       children: [
@@ -91,6 +99,13 @@ const router = createRouter({
           name: 'settings',
           component: () => import('@/pages/settings/SettingsPage.vue'),
           meta: { title: '系统设置', icon: 'setting', roles: ['platform_admin', 'tenant_admin', 'ops', 'readonly'] }
+        },
+        {
+          // 自助账号管理：登录后所有角色都可用（改自己的邮箱/密码）。
+          path: 'account',
+          name: 'account',
+          component: () => import('@/pages/AccountPage.vue'),
+          meta: { title: '账号管理', icon: 'user', roles: ['platform_admin', 'tenant_admin', 'ops', 'readonly'] }
         }
       ]
     },
@@ -106,6 +121,7 @@ router.beforeEach((to) => {
     return { path: '/login', query: { redirect: to.fullPath } }
   }
   if (to.path === '/login' && auth.isAuthenticated) return '/'
+  if (to.path === '/register' && auth.isAuthenticated) return '/'
   return true
 })
 

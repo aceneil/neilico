@@ -51,6 +51,7 @@ NEILICO（Unified Mesh & Proxy Platform）：统一「内网穿透 + Mesh 组网
 | **E2 跨平台连接器 + 能力上报** | ✅ | `4a75dc4` | `install.ps1`（New-Service/sha256/管理员检查/-DryRun）、`install.sh` 增 Darwin/launchd 分支、6 个平台二进制分发、`nodes.capabilities` 如实上报、补上节点详情 VIP；**过程中修掉一个升级崩溃 bug** |
 | **E3 四平台接入界面** | ✅ | `ef57a82` | 设备页「接入设备」两步弹窗（Docker/Linux/macOS/Windows 四页签 + 一键复制 + 倒计时 + 重新生成）、令牌管理（状态/撤销）、列表与详情显示 VIP + 能力徽标 + 原因；命令严格取自接口 `commands.*`。manager 真浏览器 3840×2160 复验通过 |
 | **上线后缺陷修复** | ✅ | `d12230a` `ece5629` `2c3cefb` `ddf34c1` | ①登录表单点击无反应（AntDV `<a-form>` 缺 `:model`）②侧栏/header 深底深字（1.13:1）③页头标题被裁（AntDV `Layout.Header` 的 64px 高/行高盖掉我们的 76px） |
+| **首次登入注册 + 账号管理** | ✅ | （未提交） | `GET /api/v1/setup/status`、`POST /api/v1/setup/register`（无账号可注册，已有账号 409）；`GET /api/v1/account`、`PUT /api/v1/account/email`、`POST /api/v1/account/password/rotate`；轮换后 token_version+1 使旧 refresh token 失效，并把新密码**原子回写** `NEILICO_BOOTSTRAP_ADMIN_PASSWORD`（键不变）；前端 `/register` + `/account`。详见 README「首次登入注册与账号管理」 |
 
 ### 常驻部署（生产用 Docker 目录那份；2026-10-03 改为**单容器**）
 > **仓库内 `deploy/docker-compose/`（6 容器：postgres/redis/nats/control-api/dashboard/relay）仅供历史上的测试栈**（项目名 `neilico-m5`、命名卷、固定端口），**不是现行形态**。
@@ -193,6 +194,9 @@ cd deploy/helm && bash neilico/ci/verify.sh
   - **发布流程**：改 `agent/` 代码 → 同步到公开仓库（`/tmp/public-repo` 的组装方式：`agent/` 全量 + `deploy/agent/Dockerfile` + `control-plane/{go.mod,go.sum,pkg/capabilities,pkg/enrolltoken,testkit}`）→ push 即触发 `.github/workflows/publish-agent.yml` 构建推送（用仓库自带 token，**公开库内不存任何密钥**）。
   - **推私有包（备用）**：`docker tag neilico-agent:local ghcr.io/aceneil/neilico-agent:latest && docker push …`。凭据在 `~/.hermes/.env` 的 `GITHUB_TOKEN`（classic PAT，账号 `aceneil`，scopes `repo, workflow, write:packages, delete:packages`；**无 `delete_repo`，所以删不了仓库**）。**值不要回显**。
 - **HTTP + 局域网 IP 访问时 `navigator.clipboard` 根本不存在（已修）**：浏览器只在**安全上下文**（HTTPS 或 localhost）提供剪贴板 API。本次部署是 `http://192.168.123.90:13000` → `isSecureContext=false`、`navigator.clipboard === undefined`，于是**全应用 5 处复制**（接入命令 / 注册凭据 / 用户 Token / API Token / 敏感值）在真机**全部失效**，而提示还是误导性的「请检查浏览器剪贴板权限」（不是权限问题）。已加 `dashboard/src/utils/clipboard.ts::copyText()`：优先异步剪贴板 API，失败回退 `textarea + document.execCommand('copy')`（HTTP 下可用，但**必须由真实用户手势触发**），两者都失败才提示手动复制。**真机验证**：在真实 origin 上真实点击 → 出现成功提示；再用 CDP 发 Ctrl+V 粘回输入框，内容与页面显示的命令**逐字一致**（471 B）。
+
+- **轮换密码回写 bootstrap env 的「三重约束」（mode 600 + 宿主可读 + 容器可写）**：控制面要把新密码写回宿主 `data/neilico/neilico.env`（`NEILICO_BOOTSTRAP_ENV_FILE=/opt/neilico/bootstrap.env`，compose 以 rw 挂载）。写入用「同目录临时文件 + rename」并固定 mode 600，因此**需要对该文件所在目录有写权限**。容器里控制面默认以 `neilico` 用户运行（uid≠宿主 1000），既写不了目录也会把文件 owner 改掉、破坏宿主 `show-admin-password.sh`。修法：`entrypoint.sh` 启动前用 `stat -c %u` 读该文件属主，**以其 uid 运行控制面**（必要时 `adduser -u <uid>` 补一个运行用户），从而写入成功且 owner/mode 不变；未挂载或属主为 root 时回落 `neilico`。回写失败时**轮换本身仍成功**（DB 为准），响应 `env_file_updated=false` 并只记警告——绝不因权限问题把改密判成失败，也绝不把明文写进日志。新增 `internal/bootstrapenv`（原子写 + 单测）与 `service/account.go`。
+- **给 `users` 加 `token_version` 列必须带 `default`**（AutoMigrate 给存量表加 NOT NULL 列的既有教训）：tag 写成 `not null;default:0`，存量 token 版本 0 与新值一致 → 升级不会把所有人踢下线；改密时 `token_version+1` 才让旧 refresh token 失效（JWT 无状态，靠 claims 里的版本号比对）。
 
 ## 验收方法论教训（本项目实测踩到）
 

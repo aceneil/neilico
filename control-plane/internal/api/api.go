@@ -32,40 +32,42 @@ import (
 const maxRequestBody = 1 << 20
 
 type Server struct {
-	db             *gorm.DB
-	auth           *auth.Manager
-	tenants        *service.TenantService
-	users          *service.UserService
-	nodes          *service.NodeService
-	domains        *service.DomainService
-	certs          *service.CertificateService
-	proxyRules     *service.ProxyRuleService
-	auditLogs      *service.AuditLogService
-	relays         *service.RelayServerService
-	observability  *service.ObservabilityService
-	traffic        *service.TrafficService
-	networks       *service.NetworkService
-	configs        *configservice.Manager
-	pki            *pki.Service
-	apiTokens      *service.APITokenService
-	enrollTokens   *service.NodeEnrollTokenService
-	enrollNodes    *service.NodeEnrollService
-	tokenUsage     *middleware.APITokenUsageTracker
-	rateLimiter    *middleware.Limiter
-	alertEngine    *alertservice.Engine
-	metrics        *metrics.Metrics
-	logger         *slog.Logger
-	version        string
-	proxy          proxy.Provider
-	proxyOpts      ProxyOptions
-	streamRules    *service.StreamRuleService
-	streams        *proxy.StreamForwarder
-	streamMu       sync.Mutex
-	streamProblems map[uuid.UUID]string
-	downloadsDir   string
-	enrollURL      string
-	agentImage     string
-	startedAt      time.Time
+	db               *gorm.DB
+	auth             *auth.Manager
+	tenants          *service.TenantService
+	users            *service.UserService
+	nodes            *service.NodeService
+	domains          *service.DomainService
+	certs            *service.CertificateService
+	proxyRules       *service.ProxyRuleService
+	auditLogs        *service.AuditLogService
+	relays           *service.RelayServerService
+	observability    *service.ObservabilityService
+	traffic          *service.TrafficService
+	networks         *service.NetworkService
+	configs          *configservice.Manager
+	pki              *pki.Service
+	apiTokens        *service.APITokenService
+	enrollTokens     *service.NodeEnrollTokenService
+	enrollNodes      *service.NodeEnrollService
+	tokenUsage       *middleware.APITokenUsageTracker
+	rateLimiter      *middleware.Limiter
+	alertEngine      *alertservice.Engine
+	metrics          *metrics.Metrics
+	logger           *slog.Logger
+	version          string
+	proxy            proxy.Provider
+	proxyOpts        ProxyOptions
+	streamRules      *service.StreamRuleService
+	streams          *proxy.StreamForwarder
+	streamMu         sync.Mutex
+	streamProblems   map[uuid.UUID]string
+	downloadsDir     string
+	enrollURL        string
+	agentImage       string
+	bootstrapEnvFile string
+	defaultTenant    string
+	startedAt        time.Time
 }
 
 // Handler couples the middleware-wrapped HTTP handler with lifecycle controls
@@ -152,37 +154,39 @@ func NewWithProxy(
 	}
 	certificateService.ConfigureACME(opts.ACME, opts.ACMEOptions, promMetrics, configManager, certificateInvalidator, logger)
 	server := &Server{
-		db:             db,
-		auth:           authManager,
-		tenants:        service.NewTenantService(db),
-		users:          service.NewUserService(db),
-		nodes:          nodeService,
-		domains:        service.NewDomainService(db),
-		certs:          certificateService,
-		proxyRules:     service.NewProxyRuleService(db),
-		streamRules:    service.NewStreamRuleService(db, opts.StreamPortMin, opts.StreamPortMax),
-		streams:        proxy.NewStreamForwarder(logger, proxy.StreamForwarderOptions{Observer: promMetrics}),
-		streamProblems: map[uuid.UUID]string{},
-		auditLogs:      service.NewAuditLogService(db),
-		relays:         service.NewRelayServerService(db),
-		observability:  service.NewObservabilityService(db),
-		traffic:        service.NewTrafficService(db),
-		networks:       service.NewNetworkService(db, certificateCrypto),
-		configs:        configManager,
-		pki:            pkiService,
-		apiTokens:      service.NewAPITokenService(db),
-		enrollTokens:   service.NewNodeEnrollTokenService(db, enrollSigningKey(authManager, opts.Enroll.SigningKey)),
-		enrollNodes:    service.NewNodeEnrollService(db, nodeService, enrollSigningKey(authManager, opts.Enroll.SigningKey)),
-		downloadsDir:   opts.Downloads.Dir,
-		enrollURL:      strings.TrimRight(strings.TrimSpace(opts.Enroll.PublicURL), "/"),
-		agentImage:     agentImageOrDefault(opts.Enroll.AgentImage),
-		alertEngine:    alertEngine,
-		metrics:        promMetrics,
-		logger:         logger,
-		version:        version,
-		proxy:          proxyProvider,
-		proxyOpts:      opts,
-		startedAt:      time.Now().UTC(),
+		db:               db,
+		auth:             authManager,
+		tenants:          service.NewTenantService(db),
+		users:            service.NewUserService(db),
+		nodes:            nodeService,
+		domains:          service.NewDomainService(db),
+		certs:            certificateService,
+		proxyRules:       service.NewProxyRuleService(db),
+		streamRules:      service.NewStreamRuleService(db, opts.StreamPortMin, opts.StreamPortMax),
+		streams:          proxy.NewStreamForwarder(logger, proxy.StreamForwarderOptions{Observer: promMetrics}),
+		streamProblems:   map[uuid.UUID]string{},
+		auditLogs:        service.NewAuditLogService(db),
+		relays:           service.NewRelayServerService(db),
+		observability:    service.NewObservabilityService(db),
+		traffic:          service.NewTrafficService(db),
+		networks:         service.NewNetworkService(db, certificateCrypto),
+		configs:          configManager,
+		pki:              pkiService,
+		apiTokens:        service.NewAPITokenService(db),
+		enrollTokens:     service.NewNodeEnrollTokenService(db, enrollSigningKey(authManager, opts.Enroll.SigningKey)),
+		enrollNodes:      service.NewNodeEnrollService(db, nodeService, enrollSigningKey(authManager, opts.Enroll.SigningKey)),
+		downloadsDir:     opts.Downloads.Dir,
+		enrollURL:        strings.TrimRight(strings.TrimSpace(opts.Enroll.PublicURL), "/"),
+		agentImage:       agentImageOrDefault(opts.Enroll.AgentImage),
+		bootstrapEnvFile: strings.TrimSpace(opts.Bootstrap.EnvFile),
+		defaultTenant:    strings.TrimSpace(opts.Bootstrap.DefaultTenant),
+		alertEngine:      alertEngine,
+		metrics:          promMetrics,
+		logger:           logger,
+		version:          version,
+		proxy:            proxyProvider,
+		proxyOpts:        opts,
+		startedAt:        time.Now().UTC(),
 	}
 	server.tokenUsage = middleware.NewAPITokenUsageTracker(db, logger, middleware.DefaultAPITokenUsageInterval)
 	if opts.RateLimit.Enabled && opts.RateLimit.RPS > 0 && opts.RateLimit.Burst > 0 {
@@ -194,6 +198,7 @@ func NewWithProxy(
 	server.registerM4B(mux)
 	server.registerEnroll(mux)
 	server.registerPublicDownloads(mux)
+	server.registerAccount(mux)
 
 	mux.HandleFunc("/healthz", server.handleHealth)
 	mux.Handle("/metrics", promMetrics.Handler())
@@ -318,6 +323,11 @@ func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 	user, err := s.users.Get(r.Context(), claims.UserID, &claims.TenantID)
 	if err != nil || user.Status != "active" {
 		writeError(w, http.StatusUnauthorized, "invalid_token", "valid refresh token required")
+		return
+	}
+	// 密码轮换会 +1 token_version；旧 refresh token 的版本不匹配即失效。
+	if claims.TokenVersion != user.TokenVersion {
+		writeError(w, http.StatusUnauthorized, "invalid_token", "refresh token has been invalidated")
 		return
 	}
 	response, tokenErr := s.tokenResponse(user)

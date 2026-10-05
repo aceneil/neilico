@@ -30,9 +30,18 @@ type ProxyOptions struct {
 	Downloads        DownloadsOptions     `json:"-"`
 	PKI              PKIOptions           `json:"pki"`
 	Dashboard        DashboardOptions     `json:"-"`
+	Bootstrap        BootstrapOptions     `json:"-"`
 	// StreamPortMin/Max 限定「端口转发」可用的监听端口区间，必须与容器发布的端口段一致。
 	StreamPortMin int `json:"-"`
 	StreamPortMax int `json:"-"`
+}
+
+// BootstrapOptions 承载「首次登入引导 / 自助账号」所需配置。
+type BootstrapOptions struct {
+	// EnvFile 是轮换密码后原子回写的 bootstrap env 路径（空 = 不启用回写）。
+	EnvFile string
+	// DefaultTenant 是首次注册时若未指定租户所用的默认租户名。
+	DefaultTenant string
 }
 
 type DashboardOptions struct {

@@ -58,6 +58,41 @@ bash scripts/smoke-acme.sh
 bash scripts/smoke-down.sh --yes
 ```
 
+## 首次登入注册与账号管理
+
+### 首次登入 = 注册
+
+- 登录页提供「首次使用？注册」入口，进入 `/register`。
+- 注册页会先请求 `GET /api/v1/setup/status`：
+  - `registration_open=true`（系统还没有任何账号）→ 可创建**第一个平台管理员**，创建成功即自动登录。
+  - 已初始化（`initialized=true`）→ 页面提示「系统已完成初始化」，只能登录。
+- 后端对「已有账号再注册」一律返回 `409 already_initialized`（`POST /api/v1/setup/register`）。
+- **默认强密码不被弱化**：若 env 里配置了 `NEILICO_BOOTSTRAP_ADMIN_EMAIL` / `NEILICO_BOOTSTRAP_ADMIN_PASSWORD`，首启时仍会用它们种入第一个管理员；只有 env **未配置**管理员凭据时，才需要走上面的注册流程（此时 `bootstrap` 不再让服务启动失败）。
+- **密码强度要求**（注册与轮换一致）：长度 ≥ 16 字符，且包含 大写字母 / 小写字母 / 数字 / 符号 中的至少三类。
+
+### 账号管理
+
+登录后侧栏「账号管理」（右上角用户菜单里也有入口）可自助维护当前账号：
+
+- **修改登录邮箱**：需输入**当前密码**；目标邮箱若已被占用返回 `409 conflict`。
+- **轮换登录密码**：需输入**当前密码** + **新密码** + **确认新密码**；成功后**此前的 refresh token 立即失效**，前端会用响应里的新会话保持登录。
+
+接口（均登录后可用；API Token 不能代替本人操作）：`GET /api/v1/account`、`PUT /api/v1/account/email`、`POST /api/v1/account/password/rotate`。
+
+### 如何查询当前管理员密码（方式保持不变）
+
+密码始终从同一个键读取，轮换后**会自动回写**，查询方法不变：
+
+```bash
+# 唯一的查看入口（值不落文档、不入仓库）
+/home/neil/Documents/Docker/data/neilico/show-admin-password.sh
+```
+
+- 文件：`/home/neil/Documents/Docker/data/neilico/neilico.env`（mode 600）
+- 键：`NEILICO_BOOTSTRAP_ADMIN_PASSWORD`（密码）、`NEILICO_BOOTSTRAP_ADMIN_EMAIL`（邮箱）
+- 在控制台执行「轮换密码 / 修改邮箱」后，控制面会把新值**原子回写**到该 env 文件的同一键（同目录临时文件 + rename、保持 mode 600、只替换目标键、不动其它行），因此 `show-admin-password.sh` 读到的始终是最新值。
+- 容器侧：compose 把该文件以 rw 方式挂载到 `/opt/neilico/bootstrap.env`，并设置 `NEILICO_BOOTSTRAP_ENV_FILE` 指向它（该路径可配置，默认值就是 `/opt/neilico/bootstrap.env`）。
+
 ## 截图
 
 - Dashboard 登录页：`docs/assets/dashboard-login.png`（待补）

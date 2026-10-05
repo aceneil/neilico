@@ -1,6 +1,7 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import { authApi } from '@/api/auth'
+import { setupApi } from '@/api/account'
 import { authStorage } from '@/api/auth-storage'
 import type { AuthResponse, AuthUser, Role } from '@/types/api'
 
@@ -21,6 +22,25 @@ export const useAuthStore = defineStore('auth', () => {
 
   async function login(email: string, password: string, remember = true) {
     applySession(await authApi.login(email, password), remember)
+  }
+
+  // 首次登入 = 注册：创建第一个管理员并直接建立会话。
+  async function register(email: string, password: string) {
+    applySession(await setupApi.register(email, password), true)
+  }
+
+  // 改邮箱后同步本地缓存的用户信息（令牌无需变化）。
+  function applyAccount(next: AuthUser) {
+    user.value = next
+    authStorage.updateUser(next)
+  }
+
+  // 轮换密码：后端返回带新 token_version 的会话，替换本地凭据以保持登录。
+  function applyRotatedSession(session: AuthResponse) {
+    authStorage.updateSession(session)
+    token.value = session.token
+    refreshTokenValue.value = session.refresh_token
+    user.value = session.user
   }
 
   async function refreshSession() {
@@ -46,6 +66,9 @@ export const useAuthStore = defineStore('auth', () => {
     role,
     isAuthenticated,
     login,
+    register,
+    applyAccount,
+    applyRotatedSession,
     logout,
     refreshTokenAction: refreshSession
   }

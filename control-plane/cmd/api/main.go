@@ -159,6 +159,10 @@ func run() error {
 			Burst:   cfg.RateLimit.Burst,
 		},
 		Alerts: alertOptions(cfg),
+		Bootstrap: api.BootstrapOptions{
+			EnvFile:       cfg.Bootstrap.EnvFile,
+			DefaultTenant: cfg.Bootstrap.DefaultTenant,
+		},
 		PKI: api.PKIOptions{
 			Enabled:         cfg.PKI.Enabled,
 			CommonName:      cfg.PKI.CACertName,
@@ -477,6 +481,7 @@ func requireClientCertificate(next http.Handler, mode string, observer *metrics.
 		// and audit middleware below.
 		if r.URL.Path == "/healthz" || r.URL.Path == "/metrics" || r.URL.Path == "/api/v1/pki/ca" ||
 			r.URL.Path == "/api/v1/auth/login" || r.URL.Path == "/api/v1/auth/refresh" ||
+			strings.HasPrefix(r.URL.Path, "/api/v1/setup/") ||
 			r.URL.Path == "/api/v1/nodes/register" ||
 			(r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/mtls")) {
 			next.ServeHTTP(w, r)

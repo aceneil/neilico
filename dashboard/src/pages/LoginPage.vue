@@ -81,7 +81,7 @@ async function submit() {
           </a-form-item>
           <div class="login-options">
             <a-checkbox v-model:checked="form.remember">记住我</a-checkbox>
-            <span>会话凭据仅保存在当前浏览器</span>
+            <a @click="router.push('/register')">首次使用？注册</a>
           </div>
           <a-button
             type="primary"

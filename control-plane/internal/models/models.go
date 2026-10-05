@@ -27,6 +27,9 @@ type User struct {
 	PasswordHash string    `gorm:"type:varchar(255);not null" json:"-"`
 	Role         string    `gorm:"type:varchar(32);not null" json:"role"`
 	Status       string    `gorm:"type:varchar(32);not null;default:active" json:"status"`
+	// TokenVersion 在密码轮换时 +1：JWT 无状态，旧 refresh token 内嵌的版本号与新值
+	// 不一致即被 /auth/refresh 拒绝，做到「改密后旧会话失效」。默认 0 兼容存量 token。
+	TokenVersion int       `gorm:"not null;default:0" json:"-"`
 	CreatedAt    time.Time `gorm:"type:timestamp;not null;index" json:"created_at"`
 
 	Tenant *Tenant `gorm:"foreignKey:TenantID;constraint:OnDelete:RESTRICT,OnUpdate:CASCADE" json:"-"`
