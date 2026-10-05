@@ -22,6 +22,8 @@ type Metrics struct {
 	nodesOnline          prometheus.GaugeFunc
 	proxyRequests        *prometheus.CounterVec
 	proxyRequestsGauge   prometheus.Gauge
+	streamConnections    *prometheus.CounterVec
+	streamBytes          *prometheus.GaugeVec
 	p2pSuccessRate       prometheus.Gauge
 	relayBytes           prometheus.Gauge
 	heartbeatLatency     prometheus.Gauge
@@ -64,6 +66,14 @@ func New(db *gorm.DB) *Metrics {
 		Name: "neilico_proxy_requests",
 		Help: "Requests handled by the NEILICO proxy plane (labelled breakdown is neilico_proxy_requests_total).",
 	})
+	streamConnections := prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "neilico_stream_connections_total",
+		Help: "Total TCP/UDP connections handled by the NEILICO port-forwarding plane.",
+	}, []string{"protocol", "result"})
+	streamBytes := prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "neilico_stream_bytes",
+		Help: "Cumulative bytes forwarded by the port-forwarding plane, per protocol and direction.",
+	}, []string{"protocol", "direction"})
 	p2pSuccessRate := prometheus.NewGauge(prometheus.GaugeOpts{
 		Name: "neilico_p2p_success_rate",
 		Help: "P2P hole-punch success rate from 0 to 1; no collector is connected in V1-R2.",
@@ -141,6 +151,7 @@ func New(db *gorm.DB) *Metrics {
 	proxyProviderUp.WithLabelValues("nps").Set(0)
 	registry.MustRegister(
 		httpRequests, nodesOnline, proxyRequests, proxyRequestsGauge,
+		streamConnections, streamBytes,
 		p2pSuccessRate, relayBytes, heartbeatLatency, alertsFiring,
 		proxyProviderUp, tunnelUp, configVersion, aclDenied, acmeOrders,
 		acmeOrderDuration, certificateExpiry, certificateRenewals, tlsHandshakes,
@@ -153,6 +164,8 @@ func New(db *gorm.DB) *Metrics {
 		nodesOnline:          nodesOnline,
 		proxyRequests:        proxyRequests,
 		proxyRequestsGauge:   proxyRequestsGauge,
+		streamConnections:    streamConnections,
+		streamBytes:          streamBytes,
 		p2pSuccessRate:       p2pSuccessRate,
 		relayBytes:           relayBytes,
 		heartbeatLatency:     heartbeatLatency,
@@ -292,6 +305,16 @@ func (m *Metrics) SetCertificateExpiry(domain string, days float64) {
 
 func (m *Metrics) ObserveCertificateRenewal(result string) {
 	m.certificateRenewals.WithLabelValues(result).Inc()
+}
+
+func (m *Metrics) ObserveStreamConnection(protocol, result string) {
+	m.streamConnections.WithLabelValues(protocol, result).Inc()
+}
+
+// ObserveStreamBytes 写入的是「累计字节数」快照，所以用 Gauge 而不是 Counter（避免重复累加）。
+func (m *Metrics) ObserveStreamBytes(protocol string, in, out int64) {
+	m.streamBytes.WithLabelValues(protocol, "in").Set(float64(in))
+	m.streamBytes.WithLabelValues(protocol, "out").Set(float64(out))
 }
 
 func (m *Metrics) ObserveTLSHandshake(result, listener string) {

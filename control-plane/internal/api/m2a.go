@@ -30,6 +30,9 @@ type ProxyOptions struct {
 	Downloads        DownloadsOptions     `json:"-"`
 	PKI              PKIOptions           `json:"pki"`
 	Dashboard        DashboardOptions     `json:"-"`
+	// StreamPortMin/Max 限定「端口转发」可用的监听端口区间，必须与容器发布的端口段一致。
+	StreamPortMin int `json:"-"`
+	StreamPortMax int `json:"-"`
 }
 
 type DashboardOptions struct {
@@ -77,6 +80,8 @@ func (s *Server) registerM2A(mux *http.ServeMux) {
 	mux.Handle("/api/v1/certificates/", s.authed(http.HandlerFunc(s.handleCertificateItem)))
 	mux.Handle("/api/v1/proxy-rules", s.authed(http.HandlerFunc(s.handleProxyRules)))
 	mux.Handle("/api/v1/proxy-rules/", s.authed(http.HandlerFunc(s.handleProxyRuleItem)))
+	mux.Handle("/api/v1/stream-rules", s.authed(http.HandlerFunc(s.handleStreamRules)))
+	mux.Handle("/api/v1/stream-rules/", s.authed(http.HandlerFunc(s.handleStreamRuleItem)))
 	mux.Handle("/api/v1/proxy/providers", s.authed(http.HandlerFunc(s.handleProxyProviders)))
 	mux.Handle("/api/v1/proxy/render", s.authed(http.HandlerFunc(s.handleProxyRender)))
 	mux.Handle("/api/v1/traffic", s.authed(http.HandlerFunc(s.handleTraffic)))

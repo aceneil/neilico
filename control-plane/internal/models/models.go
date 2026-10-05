@@ -134,6 +134,26 @@ type ProxyRule struct {
 	Domain *Domain `gorm:"foreignKey:DomainID;constraint:OnDelete:RESTRICT,OnUpdate:CASCADE" json:"-"`
 }
 
+// StreamRule 是「端口转发」规则：把宿主上发布出去的一个端口，按协议（tcp/udp）转发到
+// 虚拟内网里的地址与服务。与 ProxyRule（HTTP/HTTPS 反代）并列：
+// 反代管带域名的 HTTP 服务，StreamRule 管任意 TCP/UDP（SSH、数据库、游戏服、DNS 等）。
+//
+// 唯一约束是 (protocol, listen_port)：同一端口号可以同时存在一条 tcp 和一条 udp（如 DNS）。
+type StreamRule struct {
+	ID          uuid.UUID                   `gorm:"type:uuid;primaryKey" json:"id"`
+	TenantID    uuid.UUID                   `gorm:"type:uuid;not null;index" json:"tenant_id"`
+	Name        string                      `gorm:"type:varchar(128);not null" json:"name"`
+	Protocol    string                      `gorm:"type:varchar(8);not null;default:tcp" json:"protocol"`
+	ListenPort  int                         `gorm:"not null;uniqueIndex:idx_stream_protocol_port" json:"listen_port"`
+	TargetType  string                      `gorm:"type:varchar(32);not null" json:"target_type"`
+	Target      string                      `gorm:"type:varchar(255);not null" json:"target"`
+	IPWhitelist datatypes.JSONSlice[string] `gorm:"type:jsonb;not null;default:'[]'" json:"ip_whitelist"`
+	Enabled     bool                        `gorm:"not null;default:true" json:"enabled"`
+	CreatedAt   time.Time                   `gorm:"type:timestamp;not null;index" json:"created_at"`
+
+	Tenant *Tenant `gorm:"foreignKey:TenantID;constraint:OnDelete:RESTRICT,OnUpdate:CASCADE" json:"-"`
+}
+
 type BasicAuth struct {
 	Enabled      bool   `json:"enabled"`
 	Username     string `json:"username,omitempty"`

@@ -329,6 +329,8 @@ func applyEnvironment(cfg *Config) error {
 		{"NEILICO_RATELIMIT_BURST", &cfg.RateLimit.Burst},
 		{"NEILICO_ACME_HTTP_PORT", &cfg.ACME.HTTPPort},
 		{"NEILICO_ACME_RENEW_BEFORE_DAYS", &cfg.ACME.RenewBeforeDays},
+		{"NEILICO_STREAM_PORT_MIN", &cfg.Proxy.StreamPortMin},
+		{"NEILICO_STREAM_PORT_MAX", &cfg.Proxy.StreamPortMax},
 	} {
 		value, ok := os.LookupEnv(item.key)
 		if !ok {
@@ -521,4 +523,7 @@ type Proxy struct {
 	Listen  string   `yaml:"listen"`
 	TLS     ProxyTLS `yaml:"tls"`
 	NPS     ProxyNPS `yaml:"nps"`
+	// StreamPortMin/Max 限定「端口转发」可用的监听端口区间，必须与容器发布的端口段一致。
+	StreamPortMin int `yaml:"stream_port_min"`
+	StreamPortMax int `yaml:"stream_port_max"`
 }

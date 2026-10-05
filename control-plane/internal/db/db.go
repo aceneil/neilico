@@ -55,6 +55,7 @@ func AutoMigrate(handle *gorm.DB) error {
 		&models.Certificate{},
 		&models.Domain{},
 		&models.ProxyRule{},
+		&models.StreamRule{},
 		&models.Node{},
 		&models.VirtualNetwork{},
 		&models.NetworkMember{},

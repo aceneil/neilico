@@ -124,6 +124,32 @@ export interface EnrollTokenCreateResult {
   created_at?: string
 }
 
+export interface StreamRule {
+  id: string
+  tenant_id: string
+  name: string
+  protocol: 'tcp' | 'udp'
+  listen_port: number
+  target_type: 'node' | 'virtual_ip' | 'internal_ip'
+  target: string
+  ip_whitelist: string[]
+  enabled: boolean
+  created_at: string
+}
+
+// 端口转发规则 + 转发引擎的运行时状态（连接数、累计流量、错误原因）。
+export interface StreamRuleView extends StreamRule {
+  status: 'running' | 'pending' | 'error' | 'disabled' | string
+  last_error?: string
+  active_connections: number
+  bytes_in: number
+  bytes_out: number
+}
+
+export interface StreamRuleList extends Paged<StreamRuleView> {
+  port_range: { min: number; max: number }
+}
+
 export interface Paged<T> {
   items: T[]
   total: number

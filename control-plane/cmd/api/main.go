@@ -120,9 +120,11 @@ func run() error {
 		CACertFile:   cfg.ACME.CACertFile,
 	}, acmeTransport)
 	handler := api.NewWithProxy(handle, manager, nodeService, promMetrics, logger, version, proxyProvider, api.ProxyOptions{
-		Enabled: cfg.Proxy.Enabled,
-		Kind:    cfg.Proxy.Kind,
-		Listen:  cfg.Proxy.Listen,
+		Enabled:       cfg.Proxy.Enabled,
+		Kind:          cfg.Proxy.Kind,
+		Listen:        cfg.Proxy.Listen,
+		StreamPortMin: cfg.Proxy.StreamPortMin,
+		StreamPortMax: cfg.Proxy.StreamPortMax,
 		TLS: api.ProxyTLSOptions{
 			Enabled:    cfg.Proxy.TLS.Enabled,
 			Listen:     cfg.Proxy.TLS.Listen,
@@ -180,6 +182,8 @@ func run() error {
 		go challengeStore.RunCleanup(ctx, time.Minute)
 	}
 	serverHandler := http.Handler(handler)
+	// 启动时把「端口转发」规则装载进转发引擎（保存即时生效在 API 层负责）。
+	handler.ReconcileStreams(ctx)
 	serverTLSConfig, err := apiServerTLSConfig(cfg, handler, promMetrics)
 	if err != nil {
 		return err

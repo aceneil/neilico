@@ -206,3 +206,26 @@ cd deploy/helm && bash neilico/ci/verify.sh
 ## V1-S 传输安全记录
 
 内置 CA、API TLS/mTLS、代理 HTTPS/HSTS/HTTPS 上游、NPS crypt/compress、WireGuard PSK 已实现；默认值保持关闭或 http。端到端加密仅 WireGuard 保证，relay 未实现，NPS crypt 不是端到端 AEAD，`internal_ip` 上游仍可能明文。
+
+## 端口转发（Stream：任意 TCP/UDP 的地址:端口打通）— 2026-10-05 交付
+
+- **定位**：与域名反代并列的第二条通路。反代管 **HTTP/HTTPS**；端口转发管 **任意 TCP/UDP**（SSH、数据库、游戏服、DNS）。只发布显式配置的那一个端口，**不暴露整个虚拟网络**（这是用户明确要求的形态，参考 Nginx Proxy Manager 的 Streams）。
+- **代码落点**：`models.StreamRule`（(protocol, listen_port) 唯一）→ `validation/stream.go` → **`service/proxy/stream.go`（转发引擎：TCP 半关闭语义 + UDP 会话表/空闲回收 + 来源白名单 + 连接/字节统计）** → `service/stream_rules.go`（CRUD + node→虚拟IP 解析）→ `api/streams.go`（CRUD + `ReconcileStreams`）→ 前端 `pages/streams/StreamsPage.vue`（导航由路由 meta 自动生成）。
+- **"保存即生效"**：规则变更后在 API 层直接 `ReconcileStreams`（不像节点配置那样等轮询），单条规则启动失败（端口被占等）只影响它自己，状态与原因在列表里直接展示。
+- **端口发布模型（关键约束）**：监听器在容器内，**端口必须在 compose 里发布出去**，否则"运行中却不可达"。compose 里 `NEILICO_STREAM_PORT_MIN/MAX` 与 `ports` 的段**必须一致**；本机 userland-proxy 开启，每个发布端口多一个 docker-proxy 进程（约 2MiB），故默认 20 个，加宽要成对改。默认段 `20000-20019`。
+- **取舍记录**：TCP 转发用 `countingWriter` 包一层来做**实时**字节统计，代价是失去 `io.Copy` 的 splice 零拷贝快路径。判断依据：入口带宽受公网链路限制，用户态拷贝的数 GB/s 远高于链路带宽，可观测性更值钱；若将来更看重裸吞吐，改回原始 `io.Copy` 并把统计挪到连接结束即可（代码里有注释）。
+
+## 反代性能修复（2026-10-05）
+
+- **症状**：自研内置反代压测只有 **2.5k RPS**，而 nginx 同条件 9.3k；并发 200 时 p99 1.16s、失败 146 次。**关键判据：压测期间容器 CPU 仅 8.8%** → 不是算力/语言上限，是卡在等待。
+- **根因**：`ServeHTTP` 里**每请求新建 `httputil.ReverseProxy`** → 上游连接池退化成 `http.DefaultTransport` 的 `MaxIdleConnsPerHost=2` → 并发下几乎每请求重新建连。
+- **修复**：按规则缓存 ReverseProxy（Reload 时 epoch 失效）+ 共享调优连接池（`MaxIdleConnsPerHost=512`）+ Director 改为从 `req` 自身取 Host/Proto（复用实例不能闭包捕获请求级数据）。结果 **7.8k RPS、p99 90ms、失败 0**；去掉客户端跨容器那跳 NAT 后 **9.6k，已超 nginx 8.8k**；p99 仍略逊（67ms vs 52ms）。
+- **对比基架已入库**：`scripts/bench/`（server/client/nginx conf/README 含实测基线表）。**注意对比必须注明网络路径**：nginx 走 host 网络、控制面容器是 bridge，客户端跨容器时每请求多一跳 NAT。
+- **结论**：为性能引入 nginx **不必要**（内存也省不下什么：nginx 常驻约 10MiB、每千连接约 10MiB；NPM 那套大头是 Node UI 而非 nginx）。要 HTTP/3 / 静态大文件 / 十万级并发时，再按 NPM 路子加可选 provider（`kind=nginx`，provider 抽象已就位）。
+
+## 新增验收/操作教训
+
+- **改 agent 配置快照的字段，必须同时更新 config 包 golden 并跑该包测试**：Mesh「同内网直连」轮次给 peer 加了 `listen_port`，`internal/service/config/testdata/node-config.golden.json` 没同步 → `TestNodeConfigSnapshotGoldenAndDeterministic` **静默失败**了很久（该轮之后没跑全量）。修法：`UPDATE_GOLDEN=1 go test -run TestNodeConfigSnapshotGoldenAndDeterministic ./internal/service/config/`（测试自带机制）。**判定"是不是我改坏的"用 `git stash` 对照跑**，别猜。
+- **`pkill -f /tmp/xxx` 会匹配到自己的命令行**（命令行里含该字符串）→ 自己的 shell 被 SIGTERM 打断，后续命令全不执行。用 `pkill -x <进程名>`（按精确进程名）或 `pkill -f '^/path$'`。
+- **容器内跑 Go 二进制前先 `CGO_ENABLED=0` 静态编译**：动态链接的二进制在 alpine 里报 `exec: no such file or directory`（缺 glibc 加载器），看着像丢文件，其实是链接方式。
+- **多行测试失败信息（`t.Fatalf`）会被统一缩进**：想从输出里提取 JSON 做逐字节比对会被缩进骗到——优先用测试自带的 golden 更新开关，而不是手工解析输出。

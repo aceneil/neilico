@@ -15,6 +15,7 @@ import {
   MenuUnfoldOutlined,
   SafetyCertificateOutlined,
   SettingOutlined,
+  SwapOutlined,
   TeamOutlined,
   UserOutlined
 } from '@ant-design/icons-vue'
@@ -31,6 +32,7 @@ const iconMap: Record<string, unknown> = {
   dashboard: DashboardOutlined,
   cluster: ClusterOutlined,
   global: GlobalOutlined,
+  swap: SwapOutlined,
   'safety-certificate': SafetyCertificateOutlined,
   lock: LockOutlined,
   key: KeyOutlined,

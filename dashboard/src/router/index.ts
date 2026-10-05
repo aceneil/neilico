@@ -39,6 +39,12 @@ const router = createRouter({
           meta: { title: '域名与代理', icon: 'global', roles: ['platform_admin', 'tenant_admin', 'ops', 'readonly'] }
         },
         {
+          path: 'streams',
+          name: 'streams',
+          component: () => import('@/pages/streams/StreamsPage.vue'),
+          meta: { title: '端口转发', icon: 'swap', roles: ['platform_admin', 'tenant_admin', 'ops', 'readonly'] }
+        },
+        {
           path: 'certificates',
           name: 'certificates',
           component: () => import('@/pages/certificates/CertificatesPage.vue'),
