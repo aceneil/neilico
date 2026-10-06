@@ -1,9 +1,11 @@
 <script setup lang="ts">
+// 「TLS 证书」标签内容组件（由 CertificatesPage 抽取而来，并并入原 DomainsPage
+// 「证书」标签的手动 PEM 导入能力）。页面外壳由 DomainsPage.vue 提供。
 import { computed, onBeforeUnmount, reactive, ref } from 'vue'
-import dayjs from 'dayjs'
 import {
   DeleteOutlined,
   FilterOutlined,
+  ImportOutlined,
   PlusOutlined,
   ReloadOutlined,
   SafetyCertificateOutlined,
@@ -12,19 +14,24 @@ import {
 } from '@ant-design/icons-vue'
 import { message, Modal } from 'ant-design-vue'
 import DataState from '@/components/DataState.vue'
-import PageHeader from '@/components/PageHeader.vue'
 import { certificatesApi } from '@/api/certificates'
 import { apiErrorMessage } from '@/api/http'
 import { useAuthStore } from '@/stores/auth'
-import { canManageCertificates } from '@/utils/permissions'
+import { canManageCertificates, canManageProxy } from '@/utils/permissions'
 import { daysUntil, formatTime, remainingDaysLabel } from '@/utils/format'
 import type { Certificate } from '@/types/api'
 
 const POLL_INTERVAL_MS = 2_000
 const POLL_TIMEOUT_MS = 120_000
 
+const emit = defineEmits<{ count: [value: number] }>()
+
 const auth = useAuthStore()
+// 签发 / 续期 / 撤销 / 删除：沿用 CertificatesPage 原权限。
 const canWrite = computed(() => canManageCertificates(auth.role))
+// 手动 PEM 导入：沿用原 DomainsPage「证书」标签的权限（可写角色即可）。
+const canImport = computed(() => canManageProxy(auth.role))
+
 const loading = ref(false)
 const error = ref('')
 const certificates = ref<Certificate[]>([])
@@ -36,6 +43,9 @@ const filtersCollapsed = ref(false)
 const createOpen = ref(false)
 const creating = ref(false)
 const createForm = reactive({ domain: '' })
+const importOpen = ref(false)
+const importing = ref(false)
+const importForm = reactive({ cert_pem: '', key_pem: '' })
 const polling = reactive<Record<string, boolean>>({})
 const pollControllers = new Map<string, AbortController>()
 
@@ -45,13 +55,6 @@ const statusMeta: Record<string, { label: string; color: string }> = {
   failed: { label: '失败', color: 'error' },
   revoked: { label: '已撤销', color: 'default' }
 }
-
-const statusOptions = computed(() => [
-  { value: 'pending', label: '签发中' },
-  { value: 'active', label: '有效' },
-  { value: 'failed', label: '失败' },
-  { value: 'revoked', label: '已撤销' }
-])
 
 function remainingClass(certificate: Certificate): string {
   const days = daysUntil(certificate.expires_at)
@@ -72,6 +75,7 @@ async function load() {
     })
     certificates.value = result.items
     total.value = result.total
+    emit('count', result.total)
     result.items.filter((item) => item.status === 'pending').forEach(startPolling)
   } catch (cause) {
     error.value = apiErrorMessage(cause)
@@ -141,6 +145,29 @@ async function createCertificate() {
   }
 }
 
+async function importCertificate() {
+  if (
+    !importForm.cert_pem.includes('BEGIN CERTIFICATE') ||
+    !importForm.key_pem.includes('PRIVATE KEY')
+  ) {
+    message.warning('请粘贴完整的证书 PEM 与私钥 PEM')
+    return
+  }
+  importing.value = true
+  try {
+    await certificatesApi.import({ cert_pem: importForm.cert_pem, key_pem: importForm.key_pem })
+    message.success('证书已导入')
+    importOpen.value = false
+    importForm.cert_pem = ''
+    importForm.key_pem = ''
+    await load()
+  } catch (cause) {
+    message.error(apiErrorMessage(cause))
+  } finally {
+    importing.value = false
+  }
+}
+
 async function renew(certificate: Certificate) {
   try {
     await certificatesApi.renew(certificate.id)
@@ -186,18 +213,19 @@ onBeforeUnmount(() => {
 })
 
 void load()
+
+defineExpose({ reload: load })
 </script>
 
 <template>
-  <div class="page-container list-page">
-    <PageHeader title="TLS 证书" subtitle="ACME 自动签发、续期、撤销与失败追踪">
-      <template #actions>
-        <a-button @click="load"><ReloadOutlined /> 刷新</a-button>
-        <a-button v-if="canWrite" type="primary" @click="createOpen = true">
-          <PlusOutlined /> 新增 ACME 证书
-        </a-button>
-      </template>
-    </PageHeader>
+  <div class="tab-panel certificates-panel">
+    <div class="tab-actions">
+      <a-button @click="load"><ReloadOutlined /> 刷新</a-button>
+      <a-button v-if="canImport" @click="importOpen = true"><ImportOutlined /> 导入证书</a-button>
+      <a-button v-if="canWrite" type="primary" @click="createOpen = true">
+        <PlusOutlined /> 新增 ACME 证书
+      </a-button>
+    </div>
 
     <section class="panel list-panel">
       <div class="filter-bar" :class="{ 'filter-bar--collapsed': filtersCollapsed }">
@@ -229,7 +257,7 @@ void load()
           row-key="id"
           size="middle"
           :pagination="{ current: page, pageSize, total, showSizeChanger: true }"
-          :scroll="{ x: 1260, y: 'calc(100vh - 370px)' }"
+          :scroll="{ x: 1260, y: 'calc(100vh - 455px)' }"
           @change="(pagination: any) => { page = pagination.current || 1; pageSize = pagination.pageSize || 12; load() }"
         >
           <a-table-column title="域名" data-index="domain" :width="240" fixed="left">
@@ -318,5 +346,50 @@ void load()
         </a-form-item>
       </a-form>
     </a-modal>
+
+    <a-modal
+      v-model:open="importOpen"
+      title="导入 TLS 证书"
+      width="720px"
+      :confirm-loading="importing"
+      ok-text="导入"
+      cancel-text="取消"
+      @ok="importCertificate"
+    >
+      <a-alert
+        type="warning"
+        show-icon
+        message="私钥仅用于本次导入"
+        description="提交后列表不会回显 key_pem；请在受信任的浏览器会话中操作。"
+        class="form-alert"
+      />
+      <a-form layout="vertical">
+        <a-form-item label="证书 PEM" required>
+          <a-textarea v-model:value="importForm.cert_pem" :rows="8" placeholder="-----BEGIN CERTIFICATE-----" />
+        </a-form-item>
+        <a-form-item label="私钥 PEM" required>
+          <a-textarea
+            v-model:value="importForm.key_pem"
+            :rows="8"
+            class="private-key-input"
+            aria-label="私钥 PEM（输入时始终打码）"
+            placeholder="粘贴 PEM，输入内容始终打码"
+          />
+        </a-form-item>
+      </a-form>
+    </a-modal>
   </div>
 </template>
+
+<style scoped>
+.tab-panel {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.tab-actions {
+  min-height: 32px;
+}
+</style>

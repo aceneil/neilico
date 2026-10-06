@@ -47,16 +47,18 @@ const router = createRouter({
           meta: { title: '域名与代理', icon: 'global', roles: ['platform_admin', 'tenant_admin', 'ops', 'readonly'] }
         },
         {
+          // 已并入「域名与代理」页（/domains?tab=streams），保留路由做深链兼容，从侧栏隐藏。
           path: 'streams',
           name: 'streams',
-          component: () => import('@/pages/streams/StreamsPage.vue'),
-          meta: { title: '端口转发', icon: 'swap', roles: ['platform_admin', 'tenant_admin', 'ops', 'readonly'] }
+          redirect: { path: '/domains', query: { tab: 'streams' } },
+          meta: { title: '端口转发', icon: 'swap', roles: ['platform_admin', 'tenant_admin', 'ops', 'readonly'], hidden: true }
         },
         {
+          // 已并入「域名与代理」页（/domains?tab=certificates），保留路由做深链兼容，从侧栏隐藏。
           path: 'certificates',
           name: 'certificates',
-          component: () => import('@/pages/certificates/CertificatesPage.vue'),
-          meta: { title: 'TLS 证书', icon: 'safety-certificate', roles: ['platform_admin', 'tenant_admin', 'ops', 'readonly'] }
+          redirect: { path: '/domains', query: { tab: 'certificates' } },
+          meta: { title: 'TLS 证书', icon: 'safety-certificate', roles: ['platform_admin', 'tenant_admin', 'ops', 'readonly'], hidden: true }
         },
         {
           path: 'pki',

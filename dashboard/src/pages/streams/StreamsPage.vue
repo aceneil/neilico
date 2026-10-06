@@ -1,4 +1,7 @@
 <script setup lang="ts">
+// 「端口转发」标签内容组件（由 StreamsPage 抽取而来）。
+// 页面外壳（PageHeader / 顶层标签）由 DomainsPage.vue 提供，本组件只负责
+// 端口转发自身的表格、表单与权限逻辑，可被当作标签内容直接渲染。
 import { computed, reactive, ref } from 'vue'
 import {
   ApiOutlined,
@@ -10,7 +13,6 @@ import {
 } from '@ant-design/icons-vue'
 import { message, Modal } from 'ant-design-vue'
 import DataState from '@/components/DataState.vue'
-import PageHeader from '@/components/PageHeader.vue'
 import { streamsApi, type StreamRuleInput } from '@/api/streams'
 import { apiErrorMessage } from '@/api/http'
 import { copyText } from '@/utils/clipboard'
@@ -20,6 +22,8 @@ import { useAuthStore } from '@/stores/auth'
 import type { StreamRuleView } from '@/types/api'
 
 type TargetType = 'node' | 'virtual_ip' | 'internal_ip'
+
+const emit = defineEmits<{ count: [value: number] }>()
 
 const auth = useAuthStore()
 const canWrite = computed(() => canManageProxy(auth.role))
@@ -80,6 +84,7 @@ async function load() {
     if (result.port_range?.min) {
       portRange.value = result.port_range
     }
+    emit('count', rules.value.length)
   } catch (cause) {
     error.value = apiErrorMessage(cause)
   } finally {
@@ -195,21 +200,18 @@ async function copyAddress(rule: StreamRuleView) {
 }
 
 void load()
+
+defineExpose({ reload: load })
 </script>
 
 <template>
-  <div class="page-container list-page">
-    <PageHeader
-      title="端口转发"
-      subtitle="把虚拟内网里的一个地址与端口，通过本机发布的端口打通（TCP/UDP）；不暴露整个虚拟网络"
-    >
-      <template #actions>
-        <a-button @click="load"><ReloadOutlined /> 刷新</a-button>
-        <a-button v-if="canWrite" type="primary" @click="openCreate">
-          <PlusOutlined /> 新建转发
-        </a-button>
-      </template>
-    </PageHeader>
+  <div class="tab-panel streams-panel">
+    <div class="tab-actions">
+      <a-button @click="load"><ReloadOutlined /> 刷新</a-button>
+      <a-button v-if="canWrite" type="primary" @click="openCreate">
+        <PlusOutlined /> 新建转发
+      </a-button>
+    </div>
 
     <a-alert type="info" show-icon class="streams-hint">
       <template #message>
@@ -233,7 +235,7 @@ void load()
           :pagination="false"
           row-key="id"
           size="middle"
-          :scroll="{ x: 'max-content' }"
+          :scroll="{ x: 'max-content', y: 'calc(100vh - 470px)' }"
         >
           <template #bodyCell="{ column, record }">
             <template v-if="column.key === 'name'">
@@ -364,8 +366,15 @@ void load()
 </template>
 
 <style scoped>
+.tab-panel {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  gap: 12px;
+}
+
 .streams-hint {
-  margin-bottom: 12px;
+  margin-bottom: 0;
 }
 
 .stream-name {
