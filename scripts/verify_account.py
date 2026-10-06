@@ -6,8 +6,11 @@ import json
 import os
 import subprocess
 
-BASE = "http://192.168.123.90:13000"
-ENVF = "/home/neil/Documents/Docker/data/neilico/neilico.env"
+BASE = os.environ.get("NEILICO_BASE_URL", "http://192.168.1.10:13000")
+ENVF = os.environ.get("NEILICO_ENV_FILE",
+                     os.path.expanduser("~/Documents/Docker/data/neilico/neilico.env"))
+HELPER = os.environ.get("NEILICO_PASSWORD_HELPER",
+                        os.path.expanduser("~/Documents/Docker/data/neilico/show-admin-password.sh"))
 
 
 def sh(*args):
@@ -72,7 +75,7 @@ def main():
         same = fp(envv("NEILICO_BOOTSTRAP_ADMIN_PASSWORD")) == fp(original)
         print(f"  最终：原密码可登录 {'✓' if ok else '✗'} | env 指纹 {'一致 ✓' if same else '不一致 ✗'}")
 
-    print("  helper 可读:", "✓" if sh("bash", "/home/neil/Documents/Docker/data/neilico/show-admin-password.sh") else "✗")
+    print("  helper 可读:", "✓" if sh("bash", HELPER) else "✗")
 
     token = login(original, email) or ""
     raw = sh("curl", "-s", BASE + "/api/v1/stream-rules", "-H", "Authorization: Bearer " + token)
