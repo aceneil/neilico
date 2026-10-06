@@ -304,7 +304,12 @@ func (l *streamListener) handleTCP(client *net.TCPConn) {
 	upstream, err := net.DialTimeout("tcp", l.rule.Address(), l.f.dialTimeout)
 	if err != nil {
 		l.observe("failed")
-		l.recordError(err)
+		// 单次连接拨号失败【不等于】规则本身坏了：监听器仍在正常accept，
+		// 只是目标此刻不可达（如对端离线）。只记 last_error，状态保持 running，
+		// 否则 UI 会误报「错误」。
+		l.lastError = err.Error()
+		l.f.logger.Warn("stream connection failed", "rule_id", l.rule.ID,
+			"listen_port", l.rule.ListenPort, "target", l.rule.Address(), "error", err)
 		client.Close()
 		return
 	}

@@ -124,8 +124,27 @@ func writeAtomic(path string, content []byte) error {
 		return fmt.Errorf("close temp bootstrap env file: %w", err)
 	}
 	if err := os.Rename(tempName, path); err != nil {
+		// 目标可能是【单文件 bind mount】（docker -v <宿主文件>:<容器文件>）：
+		// rename 到挂载点必然 EBUSY（实测：device or resource busy）。
+		// 退化为「就地重写」——保持目标文件 inode/属主/mode 不变，只替换内容。
+		content, readErr := os.ReadFile(tempName)
+		if readErr != nil {
+			cleanup()
+			return fmt.Errorf("replace bootstrap env file: %w", err)
+		}
+		target, openErr := os.OpenFile(path, os.O_WRONLY|os.O_TRUNC, 0o600)
+		if openErr != nil {
+			cleanup()
+			return fmt.Errorf("replace bootstrap env file: %w (in-place open: %v)", err, openErr)
+		}
+		_, writeErr := target.Write(content)
+		syncErr := target.Sync()
+		closeErr := target.Close()
 		cleanup()
-		return fmt.Errorf("replace bootstrap env file: %w", err)
+		if writeErr != nil || syncErr != nil || closeErr != nil {
+			return fmt.Errorf("replace bootstrap env file: %w (in-place write: %v/%v/%v)", err, writeErr, syncErr, closeErr)
+		}
+		return nil
 	}
 	// rename 成功后临时文件已不存在，避免误删目标。
 	tempName = ""
