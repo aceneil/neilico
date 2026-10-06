@@ -244,6 +244,14 @@ cd deploy/helm && bash neilico/ci/verify.sh
 - **事故与恢复**：一次真机验收把线上管理员密码轮换成随机临时值、回写与恢复同时失败（当时策略没放开）→ 原密码登不上且临时密码从未落盘。恢复手法：用仓库自己的 `auth.HashPassword` 算出 env 原密码的 bcrypt 哈希 → `docker exec -i neilico psql` 直接更新 `users.password_hash`（**SQL 经 stdin，明文不进命令行**）→ 登录 200 恢复。**教训：改凭据的真机验收必须带 try/finally 兜底，且先用指纹比对确认能恢复再动手。**
 - **复验脚本入库**：`scripts/verify_account.py`（轮换→校验回写→改回原值；全程只用 sha256 前 10 位指纹比对；带兜底恢复；绝不回显明文）。
 
+## 域名反代 = NPM 式「代理主机」单步模型（2026-10-07 真机验收）
+
+- **从「两步两表」改为 NPM Proxy Host 形态**：一张表单（域名 + 转发地址 + 转发端口，+ http/https 默认 http）**一次提交**即完成「域名 → 地址:端口」绑定；一行 = 一个主机，可单行编辑/删除。
+- **新后端接口（增量扩展，旧接口签名不动）**：`POST /api/v1/proxy-hosts`（**一个事务**内建 domain + 默认 rule，返回 `domain_id` + `rule_id`；非法目标 400 且 **domain 不落盘**；重名 409）、`GET /api/v1/proxy-hosts`（域名 + 默认规则 join 成行，`{items,total,page,page_size}`）、`PUT /api/v1/proxy-hosts/:id`（`:id` = 域名 id，可同时改域名与目标）、`DELETE /api/v1/proxy-hosts/:id`（204，事务内**先删该域名全部规则再删域名** = 级联清理）。实现：`internal/service/proxy_hosts.go` 把**同一个事务句柄**注入既有 `DomainService`/`ProxyRuleService` 复用校验与落盘（不重写业务逻辑）。
+- **前端照 NPM 原样（砍掉多余）**：页头「代理主机」+「搜索主机…」+ 绿色「添加代理主机」；表格 5 列 = **源**（域名 + 小字创建时间 + 状态圆点）/ **目的地**（`scheme://host:port`）/ **SSL**（无证书「仅 HTTP」，有则证书域名）/ **访问**（「公共」或「受限」）/ **状态**（● 在线 / ○ 离线）+ 操作（编辑/删除）。**已删除**：域名表·规则表双表与内层 segmented、高级/自定义开关、类型文字、提交前预览块、说明性提示段。目标类型**静默推断**（虚拟 IP 走 Mesh / 内网物理 IP / 节点 UUID）仍全支持，「从设备选择」下拉保留。保留页内三标签与 `/streams`、`/certificates` 重定向。
+- **真机验收（我亲跑，不采信子代理自报）**：`gofmt -l` 空 / `go test ./internal/api` ok / `vue-tsc --noEmit` exit=0 / `npm run build` ok；部署后 bundle **`index-BBgbzfmE.js`**。`POST` 一次提交 **201**（同时返回 domain_id + rule_id）→ 立刻 `curl -H 'Host: <域名>'` 反代入口 **HTTP 200**（1833B = NAS 上 agent 指标，证明域名 → 虚拟地址:端口经 Mesh 可达）；`GET` 列表含该行（目的地 `http://100.64.0.2:9100`）；`PUT` 改物理地址 → 200 → 改后 curl 200（控制面页面）；`DELETE` → 204 → 删后 curl **404**（级联清规则）；旧接口 `POST /api/v1/domains` 仍 201（向后兼容）。
+- **坑（SQLite + GORM 事务）**：事务内若用服务根连接（`s.db`）而不是传入的 `tx` 去读，在 SQLite 共享缓存下会与写事务**互锁挂死** —— 读助手必须接收 `tx`。
+
 ## 域名与代理 NPM 化 + 侧栏三合一（2026-10-06 真机验收）
 
 - **代理规则表单改 NPM 风格**（参考 Nginx Proxy Manager：Forward Hostname/IP + Forward Port）：两框「转发地址」+「转发端口」，客户端**自动推断 target_type** —— UUID 且匹配节点 → `node`；命中当前虚拟网络成员的虚拟 IP → `virtual_ip`；其余合法 IP → `internal_ip`；界面明文标示含义（「虚拟地址（走 Mesh 隧道）」/「物理地址（内网直连）」/「节点（自动跟随其虚拟 IP）」）。含「从设备选择」下拉（选节点自动填 UUID + 端口）、「高级/自定义」双向切换不丢内容、提交前实时预览 `target`+`target_type`、具体校验（端口 1–65535 / IPv4 / UUID 不存在 / 非 IP 非 UUID）。**API 契约未变**（`target_type` + `target=host:port`，后端 0 改动）；列表新增「转发目标（地址:端口 + 类型标签）」列。
