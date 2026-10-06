@@ -244,6 +244,24 @@ cd deploy/helm && bash neilico/ci/verify.sh
 - **事故与恢复**：一次真机验收把线上管理员密码轮换成随机临时值、回写与恢复同时失败（当时策略没放开）→ 原密码登不上且临时密码从未落盘。恢复手法：用仓库自己的 `auth.HashPassword` 算出 env 原密码的 bcrypt 哈希 → `docker exec -i neilico psql` 直接更新 `users.password_hash`（**SQL 经 stdin，明文不进命令行**）→ 登录 200 恢复。**教训：改凭据的真机验收必须带 try/finally 兜底，且先用指纹比对确认能恢复再动手。**
 - **复验脚本入库**：`scripts/verify_account.py`（轮换→校验回写→改回原值；全程只用 sha256 前 10 位指纹比对；带兜底恢复；绝不回显明文）。
 
+## Mesh 全线不通的完整因果链与修复（2026-10-06，真机验收）
+
+**现象**：界面显示两台设备 `online` + `mesh=ready`，但宿主无 `wg0`、虚拟 IP 全不可达、端口转发 000。
+
+**因果链（逐层实测确认，别再只看 UI ✗）**
+1. **agent 能力探测判错**：`tunnel` 只看外部客户端二进制是否存在 → 明明能建内核 WireGuard 接口（容器内 `ip link add type wireguard` 实测成功）却被自己的门禁挡住 → **不去应用 mesh 配置**。
+2. **UI 掩盖故障**：capabilities 里 `mesh=ready` 与 `tunnel=unavailable` 自相矛盾，而前端只展示 `mesh`；"在线"只是**心跳**（走局域网 HTTP，与隧道无关），`last_seen` 也只存 DB 不展示。
+3. **容器重启后永不重建**：recreate 会清空 netns（wg0 消失），但 agent 因 `state.json` 的 `applied_version` 未变而跳过重建（pollOnce 的 304 短路 + Reconcile 的哈希比对）—— 所以"重启 agent"治不了它 ✗。
+
+**修复（三处，均有单测）**
+- **能力探测按真实能力判定**：`Probes.CanCreateInterface` 真建再删一次性接口（探测动作与 applier 动作完全一致），失败才 `unavailable` 且把**底层真实错误**写进 reason；门禁改用 `MeshApplicable()`（mesh+tunnel+subnet 全 ready 才应用）。
+- **视图诚信**：节点视图以 `tunnel` 为准（`EffectiveMesh` 取更悲观者），暴露 `effective_mesh` / `capabilities_note` / `heartbeat_stale` / `last_seen`（超心跳阈值标"陈旧"，绝不绿）。
+- **本地实物校对（drift 检测）**：`agent/internal/mesh/probe.go` 在启动与每轮配置轮询前校验三项——wg0 存在、对端 peer 配置一致、对端 AllowedIPs→wg0 路由存在；声称已应用但实物缺失 → **无条件重应用**并打 `local mesh state drift detected; re-applying`（带缺失项）。`ApplicationSchemaVersion` 3→4；`state.json` 新增 `applied_peers`（仅公钥 + AllowedIPs，**无任何密钥**）。
+
+**终局验收（真机双向）**：`ping 100.64.0.2/0.3` 双向通 ✓；`100.64.0.2:9100` → 200 ✓；NAS → `100.64.0.3:9100` → 200 ✓；**端口转发 `http://192.168.123.90:20000/metrics` → HTTP 200（内容是 NAS 上 agent 的指标）✓**。
+
+**部署注意**：NAS 出网受限 → 用 `docker save | gzip | ssh 'gunzip | docker load'` 送镜像；重建必须 `docker compose -p neilco up -d --force-recreate`（显式复用原项目名，否则换空卷丢凭据 ✗）。**换 agent 镜像时两端都要换**（只换一端 → 单向不通 ✓）。
+
 ## Mesh 起不来的根因：agent 能力探测把 tunnel 判错（2026-10-06）
 
 - **症状链**：agent 日志 `mesh=ready subnet_routes=ready tunnel=unavailable` + `WARN 能力不可用 capability=tunnel reason=未检测到可用的隧道/代理客户端` → agent 自认隧道不可用 → 不应用 mesh 配置 → 宿主上**永远没有 wg0** → 虚拟 IP `100.64.0.x` 全不通 → 端口转发也打不通。
