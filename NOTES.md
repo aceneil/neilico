@@ -244,6 +244,13 @@ cd deploy/helm && bash neilico/ci/verify.sh
 - **事故与恢复**：一次真机验收把线上管理员密码轮换成随机临时值、回写与恢复同时失败（当时策略没放开）→ 原密码登不上且临时密码从未落盘。恢复手法：用仓库自己的 `auth.HashPassword` 算出 env 原密码的 bcrypt 哈希 → `docker exec -i neilico psql` 直接更新 `users.password_hash`（**SQL 经 stdin，明文不进命令行**）→ 登录 200 恢复。**教训：改凭据的真机验收必须带 try/finally 兜底，且先用指纹比对确认能恢复再动手。**
 - **复验脚本入库**：`scripts/verify_account.py`（轮换→校验回写→改回原值；全程只用 sha256 前 10 位指纹比对；带兜底恢复；绝不回显明文）。
 
+## 域名与代理 NPM 化 + 侧栏三合一（2026-10-06 真机验收）
+
+- **代理规则表单改 NPM 风格**（参考 Nginx Proxy Manager：Forward Hostname/IP + Forward Port）：两框「转发地址」+「转发端口」，客户端**自动推断 target_type** —— UUID 且匹配节点 → `node`；命中当前虚拟网络成员的虚拟 IP → `virtual_ip`；其余合法 IP → `internal_ip`；界面明文标示含义（「虚拟地址（走 Mesh 隧道）」/「物理地址（内网直连）」/「节点（自动跟随其虚拟 IP）」）。含「从设备选择」下拉（选节点自动填 UUID + 端口）、「高级/自定义」双向切换不丢内容、提交前实时预览 `target`+`target_type`、具体校验（端口 1–65535 / IPv4 / UUID 不存在 / 非 IP 非 UUID）。**API 契约未变**（`target_type` + `target=host:port`，后端 0 改动）；列表新增「转发目标（地址:端口 + 类型标签）」列。
+- **侧栏三合一**：原三项「域名与代理 / 端口转发 / TLS 证书」→ 只留一项「域名与代理」（`/domains`）。页内 `a-tabs` 三标签：域名反代（DomainsPage 自身 + 内层 segmented）、端口转发（StreamsPage 抽成可嵌入组件）、TLS 证书（CertificatesPage 同上，并入原域名页的手动 PEM 导入）。面板常驻、切换只隐藏不销毁，URL 随标签同步。**旧深链兼容**：`/streams`、`/certificates` 保留但 `meta.hidden: true`，重定向到 `/domains?tab=streams` / `?tab=certificates`。
+- **验收（我亲跑，非采信自报）**：`vue-tsc --noEmit` exit=0；`npm run build` 成功；改动仅前端 4 文件、control-plane 0 文件；部署后线上 bundle **`index-C2OcPe3H.js`**。真机浏览器实测 `/streams` 未登录落点 = `/login?redirect=/domains?tab=streams`（**证明重定向生效**）；产物 chunk 实测含 `域名反代`/`转发地址`/`转发端口`/`从设备选择`/`虚拟地址`/`物理地址`。真机两条绑定：`vip2.demo.local` → `100.64.0.2:9100` 建规则 201 → 请求 **HTTP 200**（1830B，NAS 上 agent 指标）；`lan2.demo.local` → `192.168.123.90:13000` 建规则 201 → **HTTP 200**（454B，控制面页面）；演示域名已清理。
+- 权限仍按原 `meta.roles`；TLS 标签的「导入证书」沿用 `canManageProxy`（后端本就限 admin → ops 仍 403），签发/续期/撤销/删除走 `canManageCertificates`。
+
 ## Mesh 全线不通的完整因果链与修复（2026-10-06，真机验收）
 
 **现象**：界面显示两台设备 `online` + `mesh=ready`，但宿主无 `wg0`、虚拟 IP 全不可达、端口转发 000。
