@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"log/slog"
 	"strings"
 	"testing"
 
@@ -139,6 +140,143 @@ func seededStatePath(t *testing.T) string {
 	path := t.TempDir() + "/state.json"
 	seedState(t, path)
 	return path
+}
+
+// fakeProbe 是可注入的漂移探测器假实现，避免单测依赖 root 权限或真实内核网络。
+type fakeProbe struct {
+	missing []string
+	err     error
+	calls   int
+	last    Config
+}
+
+func (p *fakeProbe) Missing(_ context.Context, config Config) ([]string, error) {
+	p.calls++
+	p.last = config
+	return p.missing, p.err
+}
+
+// 状态校对的核心回归：配置未变、但本地实物已漂移（容器重启清空 netns → wg0 消失）时，
+// 必须无条件强制重新应用，绝不能因版本号/哈希未变而短路。同时保留"实物完好即跳过"的优化。
+func TestReconcileReappliesOnLocalDriftDespiteUnchangedHash(t *testing.T) {
+	statePath := seededStatePath(t)
+	applier := &countingApplier{}
+	routes := &countingRoutes{}
+	var logs bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logs, nil))
+	probe := &fakeProbe{}
+	reconciler := NewReconciler(ReconcilerOptions{
+		StatePath:  statePath,
+		Applier:    applier,
+		Routes:     routes,
+		Probe:      probe,
+		Logger:     logger,
+		Interface:  "wg0",
+		MTU:        1420,
+		ListenPort: 51820,
+	})
+	delivery := client.Delivery{Version: 1, Node: client.NodeIdentity{ID: "node"}, WireGuardConfig: "[Interface]\nPrivateKey = x\n"}
+	if err := reconciler.Reconcile(context.Background(), delivery); err != nil {
+		t.Fatal(err)
+	}
+	if applier.calls != 1 {
+		t.Fatalf("首次应用调用次数 = %d，期望 1", applier.calls)
+	}
+
+	// ② 配置未变、本地实物完好（探测器报告无缺失）→ 不得重建。
+	delivery.Version = 2
+	if err := reconciler.Reconcile(context.Background(), delivery); err != nil {
+		t.Fatal(err)
+	}
+	if applier.calls != 1 {
+		t.Fatalf("实物完好时不应重新应用：调用次数 = %d", applier.calls)
+	}
+
+	// ① 配置未变，但本地实物缺失（如容器重启后 wg0 消失）→ 必须强制重新应用。
+	probe.missing = []string{"interface wg0 missing"}
+	delivery.Version = 3
+	if err := reconciler.Reconcile(context.Background(), delivery); err != nil {
+		t.Fatal(err)
+	}
+	if applier.calls != 2 {
+		t.Fatalf("检测到漂移时必须重新应用：调用次数 = %d，期望 2", applier.calls)
+	}
+	if !strings.Contains(logs.String(), "local mesh state drift detected; re-applying") {
+		t.Fatalf("漂移重应用必须打 INFO 日志，实际日志：\n%s", logs.String())
+	}
+	if !strings.Contains(logs.String(), "interface wg0 missing") {
+		t.Fatalf("漂移日志必须带上缺失项，实际日志：\n%s", logs.String())
+	}
+
+	// ③ 配置发生变化 → 仍然重新应用（与漂移无关的常规路径）。
+	probe.missing = nil
+	delivery.WireGuardConfig += "\n[Peer]\nPublicKey = y\n"
+	delivery.Version = 4
+	if err := reconciler.Reconcile(context.Background(), delivery); err != nil {
+		t.Fatal(err)
+	}
+	if applier.calls != 3 {
+		t.Fatalf("配置变化时必须重新应用：调用次数 = %d，期望 3", applier.calls)
+	}
+}
+
+// 探测本身报错（工具缺失等）不应被当成漂移，避免误判引发反复重建。
+func TestReconcileProbeErrorDoesNotForceReapply(t *testing.T) {
+	statePath := seededStatePath(t)
+	applier := &countingApplier{}
+	probe := &fakeProbe{err: errors.New("wg tool missing")}
+	reconciler := NewReconciler(ReconcilerOptions{StatePath: statePath, Applier: applier, Routes: &countingRoutes{}, Probe: probe, Interface: "wg0"})
+	delivery := client.Delivery{Version: 1, Node: client.NodeIdentity{ID: "node"}, WireGuardConfig: "[Interface]\nPrivateKey = x\n"}
+	if err := reconciler.Reconcile(context.Background(), delivery); err != nil {
+		t.Fatal(err)
+	}
+	delivery.Version = 2
+	if err := reconciler.Reconcile(context.Background(), delivery); err != nil {
+		t.Fatal(err)
+	}
+	if applier.calls != 1 {
+		t.Fatalf("探测失败时不应强制重建：调用次数 = %d", applier.calls)
+	}
+}
+
+// LocalDrift：只有 state 声称"已应用"时才校对；接口缺失即报告漂移。
+func TestLocalDriftReportsMissingInterfaceOnlyWhenClaimedApplied(t *testing.T) {
+	statePath := seededStatePath(t)
+	probe := &fakeProbe{}
+	reconciler := NewReconciler(ReconcilerOptions{StatePath: statePath, Probe: probe, Interface: "wg0"})
+
+	// 从未应用过：不检测。
+	missing, err := reconciler.LocalDrift(context.Background())
+	if err != nil || len(missing) != 0 {
+		t.Fatalf("未声称应用时不应报告漂移：missing=%v err=%v", missing, err)
+	}
+	if probe.calls != 0 {
+		t.Fatalf("未声称应用时不应调用探测器：calls=%d", probe.calls)
+	}
+
+	// state 声称已应用 + 本地接口缺失 → 报告漂移。
+	stored, _, err := state.Load(statePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored.AppliedVersion = 1155
+	stored.ApplicationSchema = ApplicationSchemaVersion
+	stored.AppliedConfigHash = "deadbeef"
+	stored.AppliedPeers = []state.AppliedPeer{{PublicKey: "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB=", AllowedIPs: []string{"100.64.0.3/32"}}}
+	if err := state.Save(statePath, stored); err != nil {
+		t.Fatal(err)
+	}
+	probe.missing = []string{"interface wg0 missing"}
+	missing, err = reconciler.LocalDrift(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(missing) == 0 {
+		t.Fatal("state 声称已应用但接口缺失时必须报告漂移")
+	}
+	if len(probe.last.Peers) != 1 || probe.last.Peers[0].PublicKey != stored.AppliedPeers[0].PublicKey {
+		t.Fatalf("校对必须带上落盘的期望对端：%#v", probe.last.Peers)
+	}
 }
 
 type recordingExecutor struct {

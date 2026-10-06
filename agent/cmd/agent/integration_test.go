@@ -224,14 +224,14 @@ func Test304SkipsApplierAndVersionUpdateAppliesOnce(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := pollOnce(context.Background(), identity, api, reconciler, metrics, logger); err != nil {
+	if err := pollOnce(context.Background(), identity, api, reconciler, metrics, logger, false); err != nil {
 		t.Fatalf("first poll: %v", err)
 	}
 	if got := applier.calls.Load(); got != 1 {
 		t.Fatalf("first poll applier calls = %d", got)
 	}
 	identity, _, _ = state.Load(statePath)
-	if err := pollOnce(context.Background(), identity, api, reconciler, metrics, logger); err != nil {
+	if err := pollOnce(context.Background(), identity, api, reconciler, metrics, logger, false); err != nil {
 		t.Fatalf("304 poll: %v", err)
 	}
 	if got := applier.calls.Load(); got != 1 {
@@ -243,7 +243,7 @@ func Test304SkipsApplierAndVersionUpdateAppliesOnce(t *testing.T) {
 		"enabled": true,
 	}, nil)
 	identity, _, _ = state.Load(statePath)
-	if err := pollOnce(context.Background(), identity, api, reconciler, metrics, logger); err != nil {
+	if err := pollOnce(context.Background(), identity, api, reconciler, metrics, logger, false); err != nil {
 		t.Fatalf("updated poll: %v", err)
 	}
 	if got := applier.calls.Load(); got != 2 {

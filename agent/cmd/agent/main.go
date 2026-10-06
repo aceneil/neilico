@@ -109,6 +109,7 @@ func run(args []string, stdout, stderr io.Writer) error {
 		StatePath:       cfg.StatePath,
 		Applier:         applier,
 		Routes:          routeManager,
+		Probe:           mesh.NewSystemProbe(executor),
 		Metrics:         metrics,
 		Logger:          logger,
 		Output:          stdout,
@@ -421,7 +422,18 @@ func runConfigLoop(ctx context.Context, cfg config.Config, identity state.State,
 		} else if exists {
 			identity = current
 		}
-		err = pollOnce(ctx, identity, apiClient, reconciler, observer, logger)
+		// 每轮（含启动）先校对本地实物：容器被 recreate 后 netns 会被清空
+		// （wg0 与对端路由消失），而 state.json 仍声称"已应用"。检测到漂移就必须
+		// 无条件强制重新应用，不得因版本号/哈希未变而短路——否则 Mesh 永远起不来
+		// （真机实测：重启两端 agent 也无效，走的都是这条短路）。
+		forceReapply := false
+		if missing, driftErr := reconciler.LocalDrift(ctx); driftErr != nil {
+			logger.Warn("local mesh state drift probe failed", "error", driftErr)
+		} else if len(missing) > 0 {
+			logger.Info("local mesh state drift detected; re-applying", "missing", strings.Join(missing, "; "))
+			forceReapply = true
+		}
+		err = pollOnce(ctx, identity, apiClient, reconciler, observer, logger, forceReapply)
 		if err != nil {
 			timer.Reset(backoff.Next())
 			continue
@@ -438,7 +450,7 @@ func needsSchemaReapply(appliedSchema int) bool {
 	return appliedSchema != mesh.ApplicationSchemaVersion
 }
 
-func pollOnce(ctx context.Context, identity state.State, apiClient *client.Client, reconciler *mesh.Reconciler, observer *agentmetrics.Metrics, logger *slog.Logger) error {
+func pollOnce(ctx context.Context, identity state.State, apiClient *client.Client, reconciler *mesh.Reconciler, observer *agentmetrics.Metrics, logger *slog.Logger, forceReapply bool) error {
 	schemaChanged := needsSchemaReapply(identity.ApplicationSchema)
 	result, err := apiClient.Config(ctx, identity.NodeID, identity.AppliedVersion)
 	if err != nil {
@@ -446,8 +458,10 @@ func pollOnce(ctx context.Context, identity state.State, apiClient *client.Clien
 		logger.Warn("configuration pull failed", "error", err)
 		return err
 	}
-	if schemaChanged {
-		// 需要最新快照（NotModified 时响应里没有 delivery），拿到后交给 Reconcile
+	if schemaChanged || forceReapply {
+		// 需要最新快照（NotModified 时响应里没有 delivery），拿到后交给 Reconcile。
+		// forceReapply 来自本地状态校对（LocalDrift）：容器重启清空 netns 后，
+		// 服务端版本号没变（首拉得到 304），但本地实物已缺失，必须绕过短路重新应用。
 		latest, latestErr := apiClient.Config(ctx, identity.NodeID, 0)
 		if latestErr != nil {
 			observer.ConfigPull("failure")
@@ -460,8 +474,13 @@ func pollOnce(ctx context.Context, identity state.State, apiClient *client.Clien
 			observer.ConfigPull("not_modified")
 			return nil
 		}
-		logger.Info("local application schema changed; re-applying configuration",
-			"applied_schema", identity.ApplicationSchema, "agent_schema", mesh.ApplicationSchemaVersion)
+		if forceReapply {
+			logger.Info("local mesh state drift detected; re-applying configuration",
+				"applied_version", identity.AppliedVersion)
+		} else {
+			logger.Info("local application schema changed; re-applying configuration",
+				"applied_schema", identity.ApplicationSchema, "agent_schema", mesh.ApplicationSchemaVersion)
+		}
 	} else if result.NotModified {
 		observer.ConfigPull("not_modified")
 		return nil

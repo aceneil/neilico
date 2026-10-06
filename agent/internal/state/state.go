@@ -30,6 +30,20 @@ type State struct {
 	// agent 升级后该值会与二进制里的常量不一致 → 必须重新拉取并应用配置，
 	// 否则升级带来的本地动作（例如新增对端路由）永远装不上（真机踩到）。
 	ApplicationSchema int `json:"application_schema,omitempty"`
+	// AppliedPeers 是上次成功应用时各对端的期望配置（公钥 + AllowedIPs，仅公开信息）。
+	//
+	// 为什么留在 state 里：容器被 recreate 后 netns 会被清空（wg0 与对端路由凭空消失），
+	// 而 applied_version / applied_config_hash 都原封不动。要让 agent 在**不联网**的情况下
+	// 也能自证"本地实物还在不在"，就必须把"期望的本地状态"落盘，供启动时的漂移校对比对
+	// （见 mesh.SystemProbe / Reconciler.LocalDrift）。
+	AppliedPeers []AppliedPeer `json:"applied_peers,omitempty"`
+}
+
+// AppliedPeer 是一次成功应用时记录的单个对端期望配置，仅含公开字段，
+// 不含任何密钥（公钥本身是公开的）。
+type AppliedPeer struct {
+	PublicKey  string   `json:"public_key"`
+	AllowedIPs []string `json:"allowed_ips,omitempty"`
 }
 
 func Load(path string) (State, bool, error) {
