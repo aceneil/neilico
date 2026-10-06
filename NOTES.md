@@ -258,7 +258,7 @@ cd deploy/helm && bash neilico/ci/verify.sh
 - **视图诚信**：节点视图以 `tunnel` 为准（`EffectiveMesh` 取更悲观者），暴露 `effective_mesh` / `capabilities_note` / `heartbeat_stale` / `last_seen`（超心跳阈值标"陈旧"，绝不绿）。
 - **本地实物校对（drift 检测）**：`agent/internal/mesh/probe.go` 在启动与每轮配置轮询前校验三项——wg0 存在、对端 peer 配置一致、对端 AllowedIPs→wg0 路由存在；声称已应用但实物缺失 → **无条件重应用**并打 `local mesh state drift detected; re-applying`（带缺失项）。`ApplicationSchemaVersion` 3→4；`state.json` 新增 `applied_peers`（仅公钥 + AllowedIPs，**无任何密钥**）。
 
-**终局验收（真机双向）**：`ping 100.64.0.2/0.3` 双向通 ✓；`100.64.0.2:9100` → 200 ✓；NAS → `100.64.0.3:9100` → 200 ✓；**端口转发 `http://192.168.123.90:20000/metrics` → HTTP 200（内容是 NAS 上 agent 的指标）✓**。
+**终局验收（真机双向）**：`ping 100.64.0.2/0.3` 双向通 ✓；`100.64.0.2:9100` → 200 ✓；NAS → `100.64.0.3:9100` → 200 ✓；**端口转发 `http://192.168.1.10:20000/metrics` → HTTP 200（内容是 NAS 上 agent 的指标）✓**。
 
 **部署注意**：NAS 出网受限 → 用 `docker save | gzip | ssh 'gunzip | docker load'` 送镜像；重建必须 `docker compose -p neilco up -d --force-recreate`（显式复用原项目名，否则换空卷丢凭据 ✗）。**换 agent 镜像时两端都要换**（只换一端 → 单向不通 ✓）。
 
