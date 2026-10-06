@@ -233,3 +233,13 @@ cd deploy/helm && bash neilico/ci/verify.sh
 - **`pkill -f /tmp/xxx` 会匹配到自己的命令行**（命令行里含该字符串）→ 自己的 shell 被 SIGTERM 打断，后续命令全不执行。用 `pkill -x <进程名>`（按精确进程名）或 `pkill -f '^/path$'`。
 - **容器内跑 Go 二进制前先 `CGO_ENABLED=0` 静态编译**：动态链接的二进制在 alpine 里报 `exec: no such file or directory`（缺 glibc 加载器），看着像丢文件，其实是链接方式。
 - **多行测试失败信息（`t.Fatalf`）会被统一缩进**：想从输出里提取 JSON 做逐字节比对会被缩进骗到——优先用测试自带的 golden 更新开关，而不是手工解析输出。
+
+## 首次注册 + 账号管理 交付与三处坑（2026-10-06）
+
+- **功能**：`GET /api/v1/setup/status`、`POST /api/v1/setup/register`（无账号时可建首个管理员，已有则 409 already_initialized）、登入后 `GET /api/v1/account`、`PUT /api/v1/account/email`、`POST /api/v1/account/password/rotate`（均校验当前密码；改密码 `token_version+1` 使旧 refresh token 失效；均写审计）。轮换/改邮箱成功后把新值**回写** bootstrap env（`NEILICO_BOOTSTRAP_ENV_FILE`，容器里由 compose 挂载）的 `NEILICO_BOOTSTRAP_ADMIN_PASSWORD` / `_EMAIL` 键 —— **查询方式因此保持不变**（`show-admin-password.sh` 仍读同一键）。
+- **坑①：单文件 bind mount 上 `rename` 必然 EBUSY**。`docker -v <宿主文件>:<容器文件>` 之后目标是个挂载点，`os.Rename` 到它报 `device or resource busy` → "临时文件 + rename"的原子回写在**这种挂载形态下永远不可能成功**。修法：rename 失败时**退化为就地重写**（`O_WRONLY|O_TRUNC` + write + sync，保留 inode/属主/mode）。另外还要把目标**目录**交给控制面运行用户（entrypoint `chown`），否则连临时文件都建不出来（`permission denied`）。
+- **坑②：密码策略把自己 env 里的默认密码挡在门外**。默认是 64 位十六进制（仅数字+小写=2 类），策略要求"≥3 类字符"→ 想轮换回默认密码返回 **400**。修法：策略放开为「**≥16 字符 且（≥3 类 或 长度≥32）**」。
+- **坑③：单次连接拨号失败 ≠ 规则坏了**。曾把整条端口转发规则标成 `error`（UI 误报"错误"），但监听器其实一直正常 accept、只是目标此刻不可达。改为只记 `last_error`、状态保持 `running`。诊断口径：规则 `last_error="dial tcp …: i/o timeout"` + 宿主直连目标 `000` = **环境不可达**（如 NAS 侧 wg0 掉了），不是规则配置问题。
+- **操作教训：`{ … } > log` 分组里混 heredoc 会被截断**（报 `here-document … delimited by end-of-file` / `unexpected end of file`）。要跑复杂脚本就**落成文件再执行**，别塞进分组 + heredoc。
+- **事故与恢复**：一次真机验收把线上管理员密码轮换成随机临时值、回写与恢复同时失败（当时策略没放开）→ 原密码登不上且临时密码从未落盘。恢复手法：用仓库自己的 `auth.HashPassword` 算出 env 原密码的 bcrypt 哈希 → `docker exec -i neilico psql` 直接更新 `users.password_hash`（**SQL 经 stdin，明文不进命令行**）→ 登录 200 恢复。**教训：改凭据的真机验收必须带 try/finally 兜底，且先用指纹比对确认能恢复再动手。**
+- **复验脚本入库**：`scripts/verify_account.py`（轮换→校验回写→改回原值；全程只用 sha256 前 10 位指纹比对；带兜底恢复；绝不回显明文）。
