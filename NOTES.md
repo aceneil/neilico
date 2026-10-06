@@ -281,3 +281,13 @@ cd deploy/helm && bash neilico/ci/verify.sh
 - **问题**：控制面 DB 里同一 `capabilities` 对象可自相矛盾（`mesh=ready` 但 `tunnel=unavailable`），而前端只看 `mesh`，于是显示成绿色就绪把故障盖住；且「在线」只有心跳状态、没有时效依据。
 - **修法**：`pkg/capabilities` 新增 `EffectiveMesh()`（取 mesh 与 tunnel 中**更悲观者**，tunnel 是权威信号）、`Contradictory()`、`Note()`、`MeshApplicable()`；`models.Node` 增 `effective_mesh`/`capabilities_note`/`heartbeat_stale`（`gorm:"-"`，读取边界由 `attachMembership` 计算）→ 节点 API 一并返回（`last_seen` 本就在返回里）。前端 `NodesPage.vue` 状态列以有效状态为准（tunnel 不可用**绝不显示绿色**）、`最后心跳` 列展示 `last_seen` 并在超时标「陈旧」，详情抽屉给出矛盾说明。
 - **口径**：`heartbeat_stale` = `last_seen` 超过服务端心跳超时时间（与节点清扫器同一判据 `IsHeartbeatExpired`）。
+
+## 域名反代改 NPM 式「代理主机」单步模型（2026-10-07）
+
+- **形态**：域名反代的默认视图从「域名表 + 规则表两步」改为 Nginx Proxy Manager 式**一张代理主机列表 + 一张添加表单**。列表**只要 5 列**：源（域名 + 小字「创建时间: YYYY-MM-DD」+ 状态圆点）、目的地（`scheme://host:port`）、SSL（有证书显证书域名，否则「仅 HTTP」）、访问（默认「公共」，有白名单/Basic/JWT 时「受限」）、状态（● 在线 / ○ 离线）；行内编辑、删除（二次确认，级联清规则）。页头标题「代理主机」+ 搜索框（按域名或目的地过滤）+ 绿色「添加代理主机」（用 `--accent-success` 主题变量，不软编内联色）。
+- **表单**：域名 + 转发地址 + 转发端口（+ scheme http/https，默认 http）。一次提交即在同一事务里同时建 `Domain` 与默认 `ProxyRule`（path `/`），失败整体回滚不留半成品。**目标类型自动推断保留但静默**：不显示类型文字、无高级/自定义开关、无提交预览块；「从设备选择」下拉可选。三种目标（虚拟 IP 走 Mesh / 内网物理 IP / 节点 UUID）全支持，复用 `validation.Target`。
+- **砍掉**：原「域名表 / 规则表」双表 + 内层 segmented 高级视图、高级/自定义开关及所有说明性提示块。**保留**：页内三标签（域名反代 / 端口转发 / TLS 证书）与旧路由 `/streams`、`/certificates` 的深链重定向。
+- **后端（增量，不动旧端点）**：新增 `ProxyHostService`（`internal/service/proxy_hosts.go`，把同一事务句柄注入既有的 `DomainService`/`ProxyRuleService` 复用其校验与落盘）与 `POST/GET/PUT/DELETE /api/v1/proxy-hosts`（GET 为域名+默认规则 join 的列表；`:id` = 域名 id；DELETE 先落盘配置版本再事务内先删规则后删域名，规避 `ProxyRule→Domain` 的 RESTRICT 外键 500）。旧的 `/api/v1/domains`、`/api/v1/proxy-rules` 保持兼容。
+- **前线抽公共实现**：`composables/useForwardTarget.ts`（地址/端口 + 静默推断 + 校验 + 必填判定）与 `components/ProxyTargetFields.vue`（从设备选择 + 两框），表单一处实现。
+- **验收（亲跑）**：`gofmt -l .` 空；`go build ./...`/`go vet ./...`/`go test ./...` 全绿；新接口集成测试 `TestProxyHostsSingleStepFlow`（一次提交同建 domain+rule、非法目标整笔回滚不落盘、域名冲突 409 不新增规则、三种目标、单行编辑改名改目标、删除级联清规则、跨租户 404/列表不泄漏）与 `TestProxyHostsBackwardCompatibleAndAdoptsLegacyDomain`（旧流程仍可用、无规则旧域名被单行编辑时补建默认规则）均 PASS；前端 `npx vue-tsc --noEmit` exit=0、`npm run build` 成功，产物含新文案且已不含「高级 / 自定义」「代理规则（」等被砍文案。**未部署**。
+

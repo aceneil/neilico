@@ -89,6 +89,8 @@ func (s *Server) registerM2A(mux *http.ServeMux) {
 	mux.Handle("/api/v1/certificates/", s.authed(http.HandlerFunc(s.handleCertificateItem)))
 	mux.Handle("/api/v1/proxy-rules", s.authed(http.HandlerFunc(s.handleProxyRules)))
 	mux.Handle("/api/v1/proxy-rules/", s.authed(http.HandlerFunc(s.handleProxyRuleItem)))
+	mux.Handle("/api/v1/proxy-hosts", s.authed(http.HandlerFunc(s.handleProxyHosts)))
+	mux.Handle("/api/v1/proxy-hosts/", s.authed(http.HandlerFunc(s.handleProxyHostItem)))
 	mux.Handle("/api/v1/stream-rules", s.authed(http.HandlerFunc(s.handleStreamRules)))
 	mux.Handle("/api/v1/stream-rules/", s.authed(http.HandlerFunc(s.handleStreamRuleItem)))
 	mux.Handle("/api/v1/proxy/providers", s.authed(http.HandlerFunc(s.handleProxyProviders)))
@@ -423,6 +425,134 @@ func (s *Server) handleProxyRuleItem(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err := s.bumpTenantNodes(r.Context(), item.TenantID, "proxy rule removed"); err != nil {
+			s.serviceError(w, err)
+			return
+		}
+		s.reloadProxy(r)
+		w.WriteHeader(http.StatusNoContent)
+	default:
+		s.methodNotAllowed(w, http.MethodGet, http.MethodPut, http.MethodDelete)
+	}
+}
+
+func (s *Server) handleProxyHosts(w http.ResponseWriter, r *http.Request) {
+	principal, ok := middleware.PrincipalFromContext(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "valid access token required")
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		page, pageSize, err := pagination(r)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+			return
+		}
+		result, err := s.proxyHosts.List(r.Context(), s.userScope(principal), page, pageSize)
+		if err != nil {
+			s.serviceError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, result)
+	case http.MethodPost:
+		if !canManageProxy(r.Context(), principal) {
+			writeError(w, http.StatusForbidden, "forbidden", "insufficient role")
+			return
+		}
+		var input service.ProxyHostInput
+		if !s.decodeRequest(w, r, &input) {
+			return
+		}
+		// 单步提交：一次请求内在同一事务里建域名 + 默认规则。
+		host, err := s.proxyHosts.Create(r.Context(), principal.TenantID, input)
+		if err != nil {
+			s.serviceError(w, err)
+			return
+		}
+		if err := s.bumpTenantNodes(r.Context(), host.TenantID, "proxy host created"); err != nil {
+			s.serviceError(w, err)
+			return
+		}
+		if host.RuleID != nil {
+			if _, err := s.configs.BumpForProxy(r.Context(), *host.RuleID, "proxy host created"); err != nil {
+				s.serviceError(w, err)
+				return
+			}
+		}
+		s.reloadProxy(r)
+		writeJSON(w, http.StatusCreated, host)
+	default:
+		s.methodNotAllowed(w, http.MethodGet, http.MethodPost)
+	}
+}
+
+func (s *Server) handleProxyHostItem(w http.ResponseWriter, r *http.Request) {
+	principal, ok := middleware.PrincipalFromContext(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "valid access token required")
+		return
+	}
+	id, err := parseID(strings.TrimPrefix(r.URL.Path, "/api/v1/proxy-hosts/"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "proxy host ID must be a UUID")
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		host, err := s.proxyHosts.Get(r.Context(), id, s.userScope(principal))
+		if err != nil {
+			s.serviceError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, host)
+	case http.MethodPut:
+		if !canManageProxy(r.Context(), principal) {
+			writeError(w, http.StatusForbidden, "forbidden", "insufficient role")
+			return
+		}
+		var input service.ProxyHostInput
+		if !s.decodeRequest(w, r, &input) {
+			return
+		}
+		host, err := s.proxyHosts.Update(r.Context(), id, s.userScope(principal), input)
+		if err != nil {
+			s.serviceError(w, err)
+			return
+		}
+		if err := s.bumpTenantNodes(r.Context(), host.TenantID, "proxy host updated"); err != nil {
+			s.serviceError(w, err)
+			return
+		}
+		if host.RuleID != nil {
+			if _, err := s.configs.BumpForProxy(r.Context(), *host.RuleID, "proxy host updated"); err != nil {
+				s.serviceError(w, err)
+				return
+			}
+		}
+		s.reloadProxy(r)
+		writeJSON(w, http.StatusOK, host)
+	case http.MethodDelete:
+		if !canManageProxy(r.Context(), principal) {
+			writeError(w, http.StatusForbidden, "forbidden", "insufficient role")
+			return
+		}
+		// 先落盘各规则的配置版本（BumpForProxy 需要规则仍在库中），再级联删除。
+		tenantID, ruleIDs, err := s.proxyHosts.RulesForHost(r.Context(), id, s.userScope(principal))
+		if err != nil {
+			s.serviceError(w, err)
+			return
+		}
+		for _, ruleID := range ruleIDs {
+			if _, err := s.configs.BumpForProxy(r.Context(), ruleID, "proxy host removed"); err != nil {
+				s.serviceError(w, err)
+				return
+			}
+		}
+		if err := s.proxyHosts.Delete(r.Context(), id, s.userScope(principal)); err != nil {
+			s.serviceError(w, err)
+			return
+		}
+		if err := s.bumpTenantNodes(r.Context(), tenantID, "proxy host removed"); err != nil {
 			s.serviceError(w, err)
 			return
 		}

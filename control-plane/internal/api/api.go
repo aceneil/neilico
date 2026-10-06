@@ -40,6 +40,7 @@ type Server struct {
 	domains          *service.DomainService
 	certs            *service.CertificateService
 	proxyRules       *service.ProxyRuleService
+	proxyHosts       *service.ProxyHostService
 	auditLogs        *service.AuditLogService
 	relays           *service.RelayServerService
 	observability    *service.ObservabilityService
@@ -162,6 +163,7 @@ func NewWithProxy(
 		domains:          service.NewDomainService(db),
 		certs:            certificateService,
 		proxyRules:       service.NewProxyRuleService(db),
+		proxyHosts:       service.NewProxyHostService(db),
 		streamRules:      service.NewStreamRuleService(db, opts.StreamPortMin, opts.StreamPortMax),
 		streams:          proxy.NewStreamForwarder(logger, proxy.StreamForwarderOptions{Observer: promMetrics}),
 		streamProblems:   map[uuid.UUID]string{},

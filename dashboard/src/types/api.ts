@@ -387,6 +387,44 @@ export interface ProxyRule {
   created_at: string
 }
 
+// 「代理主机」= 一行一个域名 + 它的默认代理规则（NPM 风格单步模型）。
+// rule_id 为空表示该域名尚未绑定任何代理规则。
+export interface ProxyHost {
+  id: string
+  domain_id: string
+  tenant_id: string
+  domain: string
+  cert_id?: string | null
+  status: string
+  rule_id?: string | null
+  path: string
+  target_type: 'internal_ip' | 'virtual_ip' | 'node' | string
+  target: string
+  upstream_scheme: 'http' | 'https' | string
+  upstream_ca_file?: string
+  upstream_insecure_skip_verify: boolean
+  access_control: AccessControl
+  enabled: boolean
+  rule_count: number
+  created_at: string
+}
+
+export interface ProxyHostInput {
+  domain: string
+  cert_id?: string | null
+  status?: string
+  path?: string
+  target_type: string
+  target: string
+  upstream_scheme?: 'http' | 'https'
+  upstream_ca_file?: string
+  upstream_insecure_skip_verify?: boolean
+  access_control: AccessControl
+  enabled?: boolean
+}
+
+export type ProxyHostList = Paged<ProxyHost>
+
 export interface TrafficLog {
   id: string
   tenant_id: string

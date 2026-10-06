@@ -17,6 +17,8 @@
   --page-bg: #f3f6f9;
   --shadow: 0 8px 24px rgba(19, 33, 54, 0.07);
   --scrollbar: #aeb9c7;
+  /* 语义色：与 ConfigProvider 的 colorSuccess 对齐，供「添加代理主机」等强调按钮使用（不软编内联色）。 */
+  --accent-success: #22a06b;
 }
 
 [data-theme='dark'] {
