@@ -120,6 +120,49 @@ function capabilityReason(node: Node): string {
   return capabilitiesFor(node).reason?.trim() || '未提供原因'
 }
 
+type MeshStatus = { label: string; badge: 'success' | 'warning' | 'error' | 'default' }
+
+const meshStatusMeta: Record<string, MeshStatus> = {
+  ready: { label: 'Mesh 就绪', badge: 'success' },
+  degraded: { label: 'Mesh 降级', badge: 'warning' },
+  unavailable: { label: 'Mesh 不可用', badge: 'error' }
+}
+
+// 有效 Mesh 状态以 tunnel 为权威信号：服务端已按「更悲观者」算出 effective_mesh；
+// 这里再做一次兜底，保证 tunnel 不可用时【绝不】显示绿色就绪（不再让 mesh=ready 掩盖故障）。
+function effectiveMesh(node: Node): string {
+  if (node.effective_mesh) return node.effective_mesh
+  const capabilities = capabilitiesFor(node)
+  if (capabilities.tunnel && capabilities.tunnel !== 'ready') return capabilities.tunnel
+  return capabilities.mesh || 'unavailable'
+}
+
+function meshStatus(node: Node): MeshStatus {
+  return meshStatusMeta[effectiveMesh(node)] || meshStatusMeta.unavailable
+}
+
+// 心跳是否已超时（服务端按 last_seen 与心跳超时时间推算）。
+function isStale(node: Node): boolean {
+  return node.heartbeat_stale === true
+}
+
+// 状态列：能力故障优先于心跳时效——tunnel 不可用时绝不显示绿色就绪。
+function nodeStatus(node: Node): MeshStatus {
+  const mesh = meshStatus(node)
+  if (mesh.badge !== 'success') return mesh
+  if (isStale(node) || node.status !== 'online') return { label: '离线', badge: 'default' }
+  return mesh
+}
+
+function statusTooltip(node: Node): string {
+  const mesh = meshStatus(node)
+  const parts = [`有效状态：${nodeStatus(node).label}`, `有效 Mesh：${mesh.label}（以 tunnel 为准）`]
+  parts.push(`能力原因：${capabilityReason(node)}`)
+  if (node.capabilities_note) parts.push(node.capabilities_note)
+  parts.push(isStale(node) ? `心跳已超时，超过心跳超时时间即判为陈旧（最后心跳 ${formatTime(node.last_seen)}）` : `最后心跳 ${formatTime(node.last_seen)}`)
+  return parts.join('\n')
+}
+
 async function load(options: { silent?: boolean } = {}) {
   const silent = options.silent === true
   if (!silent) {
@@ -432,9 +475,11 @@ void load()
               <div class="node-name"><DesktopOutlined /><strong>{{ record.name }}</strong></div>
             </template>
           </a-table-column>
-          <a-table-column title="状态" data-index="status" :width="100">
+          <a-table-column title="状态" data-index="status" :width="130">
             <template #default="{ record }">
-              <a-badge :status="record.status === 'online' ? 'success' : 'default'" :text="record.status === 'online' ? '在线' : '离线'" />
+              <a-tooltip :title="statusTooltip(record)">
+                <a-badge :status="nodeStatus(record).badge" :text="nodeStatus(record).label" />
+              </a-tooltip>
             </template>
           </a-table-column>
           <a-table-column title="虚拟 IP" data-index="virtual_ip" :width="145">
@@ -469,8 +514,19 @@ void load()
               <span v-else>—</span>
             </template>
           </a-table-column>
-          <a-table-column title="最后心跳" :width="185">
-            <template #default="{ record }">{{ formatTime(record.last_seen) }}</template>
+          <a-table-column title="最后心跳" :width="210">
+            <template #header>
+              <a-tooltip title="以 last_seen 为时效依据：超过心跳超时时间未上报即标为「陈旧」，陈旧的节点其「在线」不再可信">
+                <span>最后心跳</span>
+              </a-tooltip>
+            </template>
+            <template #default="{ record }">
+              <span class="last-seen">
+                {{ formatTime(record.last_seen) }}
+                <a-tag v-if="isStale(record)" color="warning">陈旧</a-tag>
+                <a-tag v-else-if="record.status === 'online'" color="green">在线</a-tag>
+              </span>
+            </template>
           </a-table-column>
           <a-table-column title="操作" :width="145" fixed="right">
             <template #default="{ record }">
@@ -508,7 +564,16 @@ void load()
         <a-descriptions bordered :column="1" size="small">
           <a-descriptions-item label="节点 ID">{{ selectedNode.id }}</a-descriptions-item>
           <a-descriptions-item label="状态">
-            <a-badge :status="selectedNode.status === 'online' ? 'success' : 'default'" :text="selectedNode.status" />
+            <a-badge :status="nodeStatus(selectedNode).badge" :text="nodeStatus(selectedNode).label" />
+            <span v-if="isStale(selectedNode)" class="detail-muted">（心跳已超时，在线状态不可信）</span>
+          </a-descriptions-item>
+          <a-descriptions-item label="有效 Mesh 状态">
+            <a-badge :status="meshStatus(selectedNode).badge" :text="meshStatus(selectedNode).label" />
+            <span class="detail-muted">以 tunnel 为准</span>
+          </a-descriptions-item>
+          <a-descriptions-item label="最后心跳">
+            {{ formatTime(selectedNode.last_seen) }}
+            <a-tag v-if="isStale(selectedNode)" color="warning">陈旧</a-tag>
           </a-descriptions-item>
           <a-descriptions-item label="WireGuard 虚拟 IP">{{ selectedNode.virtual_ip || '—' }}</a-descriptions-item>
           <a-descriptions-item v-if="selectedNode.network_id" label="所属网络 ID">
@@ -527,6 +592,9 @@ void load()
                 </a-tag>
               </a-space>
               <div class="capability-reason">原因：{{ capabilityReason(selectedNode) }}</div>
+              <div v-if="selectedNode.capabilities_note" class="capability-note">
+                {{ selectedNode.capabilities_note }}
+              </div>
             </div>
           </a-descriptions-item>
           <a-descriptions-item label="公网端点">{{ selectedNode.public_endpoint || '—' }}</a-descriptions-item>

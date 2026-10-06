@@ -79,9 +79,9 @@ func run(args []string, stdout, stderr io.Writer) error {
 	capabilityReport := agentcapabilities.Detect()
 	logCapabilities(capabilityReport, logger)
 	metrics := agentmetrics.New()
-	metrics.SetDryRun(*dryRun || !capabilityReport.MeshReady() || capabilityReport.SubnetRoutes != "ready")
+	metrics.SetDryRun(shouldDryRun(*dryRun, capabilityReport))
 	if metrics.DryRun() {
-		logger.Info("network application running in dry-run; no system writes will be executed", "requested", *dryRun, "cap_net_admin", hasNetAdmin())
+		logger.Info("network application running in dry-run; no system writes will be executed", "requested", *dryRun, "cap_net_admin", hasNetAdmin(), "reason", capabilityReport.Reason)
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -605,6 +605,16 @@ func hasNetAdmin() bool {
 func capabilitySnapshot() *capabilities.Capabilities {
 	reported := agentcapabilities.Detect()
 	return &reported
+}
+
+// shouldDryRun 决定是否只演练、不落盘网络配置。
+//
+// 除了显式的 --dry-run，只要任一承载 mesh 的能力未就绪就必须 dry-run：
+// tunnel 由 Detect() 的真实建接口探测得出（见 agent/internal/capabilities），
+// 它是应用 mesh 配置的门禁——tunnel 不可用即不应用，避免建不出 wg0 却反复重试，
+// 也避免在能力自相矛盾时误判「就绪」而写入半截配置。
+func shouldDryRun(requested bool, reported capabilities.Capabilities) bool {
+	return requested || !reported.MeshApplicable()
 }
 
 func logCapabilities(reported capabilities.Capabilities, logger *slog.Logger) {

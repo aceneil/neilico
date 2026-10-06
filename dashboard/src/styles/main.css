@@ -1729,6 +1729,26 @@ pre {
   overflow-wrap: anywhere;
 }
 
+.capability-note {
+  margin-top: 5px;
+  color: var(--warning);
+  font-size: 12px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.last-seen {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.detail-muted {
+  margin-left: 6px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
 @media (max-width: 1439px) {
   .app-sider {
     width: 220px !important;

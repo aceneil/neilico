@@ -243,3 +243,16 @@ cd deploy/helm && bash neilico/ci/verify.sh
 - **操作教训：`{ … } > log` 分组里混 heredoc 会被截断**（报 `here-document … delimited by end-of-file` / `unexpected end of file`）。要跑复杂脚本就**落成文件再执行**，别塞进分组 + heredoc。
 - **事故与恢复**：一次真机验收把线上管理员密码轮换成随机临时值、回写与恢复同时失败（当时策略没放开）→ 原密码登不上且临时密码从未落盘。恢复手法：用仓库自己的 `auth.HashPassword` 算出 env 原密码的 bcrypt 哈希 → `docker exec -i neilico psql` 直接更新 `users.password_hash`（**SQL 经 stdin，明文不进命令行**）→ 登录 200 恢复。**教训：改凭据的真机验收必须带 try/finally 兜底，且先用指纹比对确认能恢复再动手。**
 - **复验脚本入库**：`scripts/verify_account.py`（轮换→校验回写→改回原值；全程只用 sha256 前 10 位指纹比对；带兜底恢复；绝不回显明文）。
+
+## Mesh 起不来的根因：agent 能力探测把 tunnel 判错（2026-10-06）
+
+- **症状链**：agent 日志 `mesh=ready subnet_routes=ready tunnel=unavailable` + `WARN 能力不可用 capability=tunnel reason=未检测到可用的隧道/代理客户端` → agent 自认隧道不可用 → 不应用 mesh 配置 → 宿主上**永远没有 wg0** → 虚拟 IP `100.64.0.x` 全不通 → 端口转发也打不通。
+- **根因**：`agent/internal/capabilities/detect.go` 把 `tunnel` 建立在「外部隧道/代理客户端二进制（`neilico-tunnel`/`npc`）是否存在」上。可 mesh 隧道是 agent **自己用内核 WireGuard 建接口**（`ip link add … type wireguard`），与那个二进制毫无关系。现场明明 `CapAdd=[CAP_NET_ADMIN]`、`/dev/net/tun` 存在、`ip link add dev wgtest type wireguard && ip link del wgtest` 成功——探测结论却是「没装客户端」，**self-report 与真实能力相反**，还一路传到控制面把故障掩盖。
+- **修法**：`tunnel` 改由**真实、可回滚的探测**决定（`Probes.CanCreateInterface`，Linux 默认 = 创建再删除一次性接口 `neilico-p<pid>`）；失败时把**底层真实错误**写进 reason。没有接线真实探测时才退回静态判断（内核 WG 组件 + CAP_NET_ADMIN + /dev/net/tun）或外部客户端兼容信号。**门禁**同步：`shouldDryRun()` 用 `Capabilities.MeshApplicable()`（三项全 ready 才应用），tunnel 不可用即 dry-run——探测准了，门禁自然放行。
+- **取舍**：探测放在 `Detect()`（启动 + 每次心跳），因此每个心跳周期会建/删一个一次性接口。内核 WG 建接口是毫秒级、且与 applier 的实际动作完全一致（applier 也要求 `ip link add type wireguard`，不会出现「探测过但应用挂」的错配）。若日后心跳过于频繁想省这两次 netlink，应改为缓存探测结果 + 应用前强制刷新，而不是退回静态判断。
+
+## 节点视图不再用 mesh=ready 掩盖 tunnel 故障（2026-10-06）
+
+- **问题**：控制面 DB 里同一 `capabilities` 对象可自相矛盾（`mesh=ready` 但 `tunnel=unavailable`），而前端只看 `mesh`，于是显示成绿色就绪把故障盖住；且「在线」只有心跳状态、没有时效依据。
+- **修法**：`pkg/capabilities` 新增 `EffectiveMesh()`（取 mesh 与 tunnel 中**更悲观者**，tunnel 是权威信号）、`Contradictory()`、`Note()`、`MeshApplicable()`；`models.Node` 增 `effective_mesh`/`capabilities_note`/`heartbeat_stale`（`gorm:"-"`，读取边界由 `attachMembership` 计算）→ 节点 API 一并返回（`last_seen` 本就在返回里）。前端 `NodesPage.vue` 状态列以有效状态为准（tunnel 不可用**绝不显示绿色**）、`最后心跳` 列展示 `last_seen` 并在超时标「陈旧」，详情抽屉给出矛盾说明。
+- **口径**：`heartbeat_stale` = `last_seen` 超过服务端心跳超时时间（与节点清扫器同一判据 `IsHeartbeatExpired`）。

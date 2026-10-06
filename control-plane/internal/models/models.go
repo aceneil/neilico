@@ -60,6 +60,13 @@ type Node struct {
 	CreatedAt      time.Time                                     `gorm:"type:timestamp;not null;index" json:"created_at"`
 	NetworkID      *uuid.UUID                                    `gorm:"-" json:"network_id,omitempty"`
 
+	// 以下为读取边界计算出的展示字段，不落库（gorm:"-"）：
+	// 有效 Mesh 状态以 tunnel 为权威信号，避免 mesh=ready 掩盖隧道故障；
+	// HeartbeatStale 让「在线/离线」有 last_seen 的时效依据（超过心跳超时即陈旧）。
+	EffectiveMesh    string `gorm:"-" json:"effective_mesh"`
+	CapabilitiesNote string `gorm:"-" json:"capabilities_note,omitempty"`
+	HeartbeatStale   bool   `gorm:"-" json:"heartbeat_stale"`
+
 	Tenant *Tenant `gorm:"foreignKey:TenantID;constraint:OnDelete:RESTRICT,OnUpdate:CASCADE" json:"-"`
 }
 

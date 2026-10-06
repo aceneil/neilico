@@ -100,6 +100,12 @@ export interface Node {
   tags: string[]
   created_at: string
   capabilities?: NodeCapabilities
+  /** 服务端算出的「有效 Mesh 状态」：以 tunnel 为权威信号，tunnel 不可用即 unavailable。 */
+  effective_mesh?: 'ready' | 'degraded' | 'unavailable' | string
+  /** 能力自相矛盾（如 mesh=ready 但 tunnel=unavailable）时的说明；无异常为空。 */
+  capabilities_note?: string
+  /** last_seen 是否已超过心跳超时时间（true 表示「在线」不再可信）。 */
+  heartbeat_stale?: boolean
 }
 
 export interface NodeCapabilities {

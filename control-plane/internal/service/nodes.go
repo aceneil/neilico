@@ -469,8 +469,16 @@ func (s *NodeService) attachMembership(ctx context.Context, nodes ...*models.Nod
 	}
 	// 老数据（AutoMigrate 用 default '{}' 补出的列）里 capabilities 是空对象；
 	// 在读取边界补成明确状态，避免界面/接口把它显示成空白。
+	// 同时算出「有效 Mesh 状态」与心跳时效：有效状态以 tunnel 为权威信号
+	// （tunnel 不可用 → Mesh 不可用），并对自相矛盾的 capabilities 取更悲观者，
+	// 绝不让 mesh=ready 把隧道故障掩盖成绿色就绪。
+	now := time.Now().UTC()
 	for _, node := range nodes {
-		node.Capabilities = datatypes.NewJSONType(node.Capabilities.Data().Normalize())
+		caps := node.Capabilities.Data().Normalize()
+		node.Capabilities = datatypes.NewJSONType(caps)
+		node.EffectiveMesh = caps.EffectiveMesh()
+		node.CapabilitiesNote = caps.Note()
+		node.HeartbeatStale = IsHeartbeatExpired(node.LastSeen, s.timeout, now)
 	}
 	for _, node := range nodes {
 		membership, ok := byNode[node.ID]
