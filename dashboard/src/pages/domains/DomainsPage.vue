@@ -165,8 +165,43 @@ function dateOnly(value?: string): string {
   return value ? value.slice(0, 10) : '—'
 }
 
-function destination(host: ProxyHost): string {
-  return host.rule_id ? `${host.upstream_scheme || 'http'}://${host.target}` : ''
+// 「目的地」列解析：以「物理地址/真实地址」为默认心智。
+// node 类型把节点 UUID 解析成该设备当前虚拟 IP（虚拟 IP → 节点映射来自已加载的节点/网络成员），
+// 主文本展示 scheme://虚拟IP:端口，设备名作灰字提示，UUID 只降为 tooltip；internal_ip / virtual_ip 原样展示。
+interface DestinationView {
+  address: string
+  nodeName?: string
+  tooltip?: string
+}
+
+function resolveDestination(host: ProxyHost): DestinationView {
+  const scheme = host.upstream_scheme || 'http'
+  const raw = host.target || ''
+  if (host.target_type !== 'node') return { address: `${scheme}://${raw}` }
+  const index = raw.lastIndexOf(':')
+  const uuid = index < 0 ? raw : raw.slice(0, index)
+  const port = index < 0 ? '' : raw.slice(index + 1)
+  const node = nodes.value.find((item) => item.id.toLowerCase() === uuid.toLowerCase())
+  const ip = node?.virtual_ip || ''
+  // 虚拟 IP 未分配时退回 UUID，避免主文本为空；tooltip 始终给出可对照的节点 UUID。
+  return {
+    address: `${scheme}://${ip || uuid}${port ? `:${port}` : ''}`,
+    nodeName: node?.name,
+    tooltip: `节点 UUID：${uuid}`
+  }
+}
+
+// 预先算好每行的展示视图（仅已绑定的主机），列表渲染与搜索复用同一份结果。
+const destinationViews = computed<Map<string, DestinationView>>(() => {
+  const map = new Map<string, DestinationView>()
+  for (const host of hosts.value) {
+    if (host.rule_id) map.set(host.id, resolveDestination(host))
+  }
+  return map
+})
+
+function hostDestination(host: ProxyHost): DestinationView {
+  return destinationViews.value.get(host.id) || { address: '' }
 }
 
 function certName(host: ProxyHost): string {
@@ -189,9 +224,11 @@ function hostOnline(host: ProxyHost): boolean {
 const filteredHosts = computed(() => {
   const query = hostSearch.value.trim().toLowerCase()
   if (!query) return hosts.value
-  return hosts.value.filter(
-    (host) => host.domain.toLowerCase().includes(query) || destination(host).toLowerCase().includes(query)
-  )
+  return hosts.value.filter((host) => {
+    if (host.domain.toLowerCase().includes(query)) return true
+    const view = hostDestination(host)
+    return view.address.toLowerCase().includes(query) || (view.nodeName || '').toLowerCase().includes(query)
+  })
 })
 
 const canSubmitHost = computed(() => Boolean(hostForm.domain.trim()) && hostTarget.targetReady.value)
@@ -324,7 +361,20 @@ void load()
             </a-table-column>
             <a-table-column title="目的地" :width="260">
               <template #default="{ record }">
-                <code v-if="record.rule_id" class="code-ellipsis">{{ destination(record) }}</code>
+                <template v-if="record.rule_id">
+                  <!-- node 类型：主文本是解析后的真实地址，设备名灰字提示，UUID 收进 tooltip。 -->
+                  <a-tooltip v-if="hostDestination(record).tooltip" :title="hostDestination(record).tooltip">
+                    <span class="dest-cell">
+                      <code class="code-ellipsis">{{ hostDestination(record).address }}</code>
+                      <small v-if="hostDestination(record).nodeName" class="dest-node-hint">
+                        → {{ hostDestination(record).nodeName }}
+                      </small>
+                    </span>
+                  </a-tooltip>
+                  <span v-else class="dest-cell">
+                    <code class="code-ellipsis">{{ hostDestination(record).address }}</code>
+                  </span>
+                </template>
                 <span v-else class="muted">未绑定</span>
               </template>
             </a-table-column>
@@ -456,6 +506,18 @@ void load()
 }
 
 .host-created {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+/* 「目的地」列：真实地址为主文本，设备名灰字提示（node 类型）。 */
+.dest-cell {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.dest-node-hint {
   color: var(--text-secondary);
   font-size: 12px;
 }

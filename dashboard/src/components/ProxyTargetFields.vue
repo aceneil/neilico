@@ -1,11 +1,13 @@
 <script setup lang="ts">
 // 「代理主机」表单的转发目标三件套：从设备选择（可选）+ 转发地址 + 转发端口。
 // 目标类型由 useForwardTarget 静默推断，界面不展示类型文案。
+// 心智引导：默认按「内网物理地址」直填；仅在需要跟随设备移动时才用「选择设备」。
 import type { ForwardTargetController } from '@/composables/useForwardTarget'
 
 const props = defineProps<{ controller: ForwardTargetController }>()
 
-const { form, pickerNodeId, nodeOptions, addressError, portError, filterNode, onPickNode } = props.controller
+const { form, pickerNodeId, nodeOptions, hostInference, addressError, portError, filterNode, onPickNode } =
+  props.controller
 </script>
 
 <template>
@@ -17,7 +19,7 @@ const { form, pickerNodeId, nodeOptions, addressError, portError, filterNode, on
         show-search
         allow-clear
         :filter-option="filterNode"
-        placeholder="可选：选择节点自动填入 UUID"
+        placeholder="点此选择设备，自动填入节点"
         @change="onPickNode"
       />
     </a-form-item>
@@ -28,7 +30,12 @@ const { form, pickerNodeId, nodeOptions, addressError, portError, filterNode, on
         :validate-status="addressError ? 'error' : ''"
         :help="addressError"
       >
-        <a-input v-model:value="form.targetHost" placeholder="100.64.0.2 或 节点 UUID" />
+        <a-input v-model:value="form.targetHost" placeholder="如 192.168.1.50（内网服务）" />
+        <!-- 选中设备后提示会自动解析；否则给出三种可用形式的极简引导。二选一，不叠加。 -->
+        <div v-if="hostInference.node" class="target-hint target-hint--picked">
+          将自动使用该设备当前虚拟 IP（{{ hostInference.node.virtual_ip || '未分配' }}）
+        </div>
+        <div v-else class="target-hint">内网 IP 直连 · 100.64.x.y 走 Mesh · 点「选择设备」自动填节点</div>
       </a-form-item>
       <a-form-item
         label="转发端口"
@@ -41,3 +48,13 @@ const { form, pickerNodeId, nodeOptions, addressError, portError, filterNode, on
     </div>
   </div>
 </template>
+
+<style scoped>
+/* 一行极简引导/提示：跟随主题语义色，日/夜一致，字号沿用既有小字规格。 */
+.target-hint {
+  margin-top: 4px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+</style>
