@@ -533,3 +533,56 @@ export interface ConfigVersion {
   summary?: unknown
   created_at: string
 }
+
+// 「远程桌面」：自建 RustDesk 服务器的接入参数与设备视图。
+// 后端只下发公钥（public_key），private key 永不出现在任何响应里。
+export interface RemoteDesktopConfig {
+  enabled: boolean
+  id_server: string
+  relay_server: string
+  public_key: string
+  /** 服务器参数是否就绪（公钥文件可读且非空）。false 时 UI 显示「服务器未就绪」。 */
+  available: boolean
+  hint: string
+  ports: number[]
+}
+
+export interface RemoteDesktopDevice {
+  id: string
+  name: string
+  status: string
+  virtual_ip?: string | null
+  last_seen?: string | null
+  heartbeat_stale: boolean
+  platform: string
+  os: string
+  arch: string
+  /** 该设备上报的 RustDesk ID（未上报为空）。 */
+  rustdesk_id: string
+  rustdesk_hint: string
+  /** rustdesk://<id>；无 ID 时为空串。 */
+  connect_url: string
+  /** 可一键复制的连接参数文本（含服务器与公钥）。 */
+  connection_params: string
+}
+
+export interface RemoteDesktopDeviceList {
+  items: RemoteDesktopDevice[]
+  total: number
+}
+
+export interface RemoteDesktopPortStatus {
+  port: number
+  target: string
+  reachable: boolean
+  error?: string
+}
+
+export interface RemoteDesktopStatus {
+  id_server_host: string
+  relay_server_host: string
+  ports: RemoteDesktopPortStatus[]
+  reachable: boolean
+  checked_at: string
+}
+

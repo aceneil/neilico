@@ -8,6 +8,7 @@
 - 📚 API 文档：[docs/API.md](docs/API.md)
 - 🧑‍💻 用户指南：[docs/USER_GUIDE.md](docs/USER_GUIDE.md)
 - 🛠️ 运维手册：[docs/OPS.md](docs/OPS.md)
+- 🖥️ 远程桌面（自建 RustDesk）：[docs/REMOTE_DESKTOP.md](docs/REMOTE_DESKTOP.md)
 
 ## 三个平面
 

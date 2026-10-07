@@ -48,6 +48,17 @@ ratelimit:
   rps: 20
   burst: 40
 
+# 「远程桌面」：自建 RustDesk 服务器（hbbs 信令 + hbbr 中继）的接入参数。
+# 控制面只读取 public_key_file 指向的**公钥**（id_ed25519.pub），绝不下发私钥。
+# 所有值均可用环境变量覆盖：NEILICO_RD_ENABLED / NEILICO_RD_ID_SERVER /
+# NEILICO_RD_RELAY_SERVER / NEILICO_RD_PUBLIC_KEY_FILE / NEILICO_RD_PORTS。
+remote_desktop:
+  enabled: true
+  id_server: "192.168.123.90"        # hbbs 信令服务器（host 或 host:port）
+  relay_server: "192.168.123.90"     # hbbr 中继服务器（host 或 host:port）
+  public_key_file: "/home/neil/Documents/Docker/data/rustdesk/id_ed25519.pub"
+  ports: [21115, 21116, 21117, 21118, 21119]
+
 log:
   level: info
   format: json

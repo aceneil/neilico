@@ -6,6 +6,7 @@ import {
   BellOutlined,
   ClusterOutlined,
   DashboardOutlined,
+  DesktopOutlined,
   FileSearchOutlined,
   GlobalOutlined,
   KeyOutlined,
@@ -31,6 +32,7 @@ const preferences = usePreferencesStore()
 const iconMap: Record<string, unknown> = {
   dashboard: DashboardOutlined,
   cluster: ClusterOutlined,
+  desktop: DesktopOutlined,
   global: GlobalOutlined,
   swap: SwapOutlined,
   'safety-certificate': SafetyCertificateOutlined,

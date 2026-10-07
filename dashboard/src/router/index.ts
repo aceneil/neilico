@@ -41,6 +41,12 @@ const router = createRouter({
           meta: { title: '设备管理', icon: 'cluster', roles: ['platform_admin', 'tenant_admin', 'ops', 'readonly'] }
         },
         {
+          path: 'remote-desktop',
+          name: 'remote-desktop',
+          component: () => import('@/pages/remote-desktop/RemoteDesktopPage.vue'),
+          meta: { title: '远程桌面', icon: 'desktop', roles: ['platform_admin', 'tenant_admin', 'ops', 'readonly'] }
+        },
+        {
           path: 'domains',
           name: 'domains',
           component: () => import('@/pages/domains/DomainsPage.vue'),

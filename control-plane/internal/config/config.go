@@ -124,6 +124,28 @@ type PKI struct {
 	RenewBeforeDays int      `yaml:"renew_before_days"`
 }
 
+// RemoteDesktop 承载「远程桌面」能力：自建 RustDesk 服务器（hbbs 信令 + hbbr 中继）的接入参数。
+// 控制面**只读取并下发公钥**（id_ed25519.pub），绝不下发/读取私钥；实际值均可由
+// 环境变量（NEILICO_RD_*）或 YAML 覆盖，便于与 P1 的部署参数对接。
+type RemoteDesktop struct {
+	Enabled       bool   `yaml:"enabled"`
+	IDServer      string `yaml:"id_server"`
+	RelayServer   string `yaml:"relay_server"`
+	PublicKeyFile string `yaml:"public_key_file"`
+	Ports         []int  `yaml:"ports"`
+}
+
+// 远程桌面默认值：ID/中继服务器指向部署 rustdesk-server 的本机内网地址；
+// 公钥文件指向 rustdesk-server 生成的 id_ed25519.pub（**只读公钥文件**）。
+const (
+	DefaultRemoteDesktopServer        = "192.168.123.90"
+	DefaultRemoteDesktopPublicKeyFile = "/home/neil/Documents/Docker/data/rustdesk/id_ed25519.pub"
+)
+
+// defaultRemoteDesktopPorts 是 rustdesk-server 默认使用的端口集合
+// （21115/21116/21118/21119 属 hbbs，21117 属 hbbr）。
+var defaultRemoteDesktopPorts = []int{21115, 21116, 21117, 21118, 21119}
+
 type Config struct {
 	Server    Server    `yaml:"server"`
 	PKI       PKI       `yaml:"pki"`
@@ -138,6 +160,8 @@ type Config struct {
 	Downloads Downloads `yaml:"downloads"`
 	RateLimit RateLimit `yaml:"ratelimit"`
 	Log       Log       `yaml:"log"`
+	// RemoteDesktop 是「远程桌面」（自建 RustDesk 服务器）的接入参数。
+	RemoteDesktop RemoteDesktop `yaml:"remote_desktop"`
 }
 
 func Default() Config {
@@ -217,6 +241,13 @@ func Default() Config {
 		Downloads: Downloads{Dir: "/usr/local/share/neilico/downloads"},
 		RateLimit: RateLimit{Enabled: true, RPS: 20, Burst: 40},
 		Log:       Log{Level: "info", Format: "json"},
+		RemoteDesktop: RemoteDesktop{
+			Enabled:       true,
+			IDServer:      DefaultRemoteDesktopServer,
+			RelayServer:   DefaultRemoteDesktopServer,
+			PublicKeyFile: DefaultRemoteDesktopPublicKeyFile,
+			Ports:         append([]int(nil), defaultRemoteDesktopPorts...),
+		},
 	}
 }
 
@@ -282,6 +313,9 @@ func applyEnvironment(cfg *Config) error {
 		{"NEILICO_NPS_PID_FILE", &cfg.Proxy.NPS.PIDFile},
 		{"NEILICO_NPS_RELOAD_STRATEGY", &cfg.Proxy.NPS.ReloadStrategy},
 		{"NEILICO_ALERTS_WEBHOOK_URL", &cfg.Alerts.WebhookURL},
+		{"NEILICO_RD_ID_SERVER", &cfg.RemoteDesktop.IDServer},
+		{"NEILICO_RD_RELAY_SERVER", &cfg.RemoteDesktop.RelayServer},
+		{"NEILICO_RD_PUBLIC_KEY_FILE", &cfg.RemoteDesktop.PublicKeyFile},
 	}
 	if value, ok := os.LookupEnv("NEILICO_PKI_SERVER_HOSTS"); ok {
 		cfg.PKI.ServerHosts = nil
@@ -290,6 +324,13 @@ func applyEnvironment(cfg *Config) error {
 				cfg.PKI.ServerHosts = append(cfg.PKI.ServerHosts, host)
 			}
 		}
+	}
+	if value, ok := os.LookupEnv("NEILICO_RD_PORTS"); ok {
+		ports, err := parsePortList(value)
+		if err != nil {
+			return fmt.Errorf("NEILICO_RD_PORTS must be a comma-separated list of ports: %w", err)
+		}
+		cfg.RemoteDesktop.Ports = ports
 	}
 	for _, item := range stringOverrides {
 		if value, ok := os.LookupEnv(item.key); ok {
@@ -319,6 +360,7 @@ func applyEnvironment(cfg *Config) error {
 		{"NEILICO_PROXY_TLS_REDIRECT_HTTP", &cfg.Proxy.TLS.RedirectHTTP},
 		{"NEILICO_PROXY_NPS_CRYPT", &cfg.Proxy.NPS.Crypt},
 		{"NEILICO_PROXY_NPS_COMPRESS", &cfg.Proxy.NPS.Compress},
+		{"NEILICO_RD_ENABLED", &cfg.RemoteDesktop.Enabled},
 	} {
 		value, ok := os.LookupEnv(item.key)
 		if !ok {
@@ -507,7 +549,60 @@ func (c Config) Validate() error {
 	if c.Proxy.NPS.ReloadStrategy != "signal" && c.Proxy.NPS.ReloadStrategy != "file" {
 		return fmt.Errorf("proxy.nps.reload_strategy must be signal or file")
 	}
+	if err := validateRemoteDesktopEndpoint("id_server", c.RemoteDesktop.IDServer); err != nil {
+		return err
+	}
+	if err := validateRemoteDesktopEndpoint("relay_server", c.RemoteDesktop.RelayServer); err != nil {
+		return err
+	}
+	if len(c.RemoteDesktop.Ports) == 0 {
+		return fmt.Errorf("remote_desktop.ports must not be empty")
+	}
+	for _, port := range c.RemoteDesktop.Ports {
+		if port < 1 || port > 65535 {
+			return fmt.Errorf("remote_desktop.ports entries must be between 1 and 65535")
+		}
+	}
 	return nil
+}
+
+// validateRemoteDesktopEndpoint 校验「远程桌面」的服务器地址：允许 host 或 host:port 两种写法。
+func validateRemoteDesktopEndpoint(name, value string) error {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return fmt.Errorf("remote_desktop.%s is required", name)
+	}
+	if len(trimmed) > 255 {
+		return fmt.Errorf("remote_desktop.%s must not exceed 255 characters", name)
+	}
+	if strings.ContainsAny(trimmed, " 	\r\n") {
+		return fmt.Errorf("remote_desktop.%s must not contain whitespace", name)
+	}
+	return nil
+}
+
+// parsePortList 解析 NEILICO_RD_PORTS 这类逗号分隔的端口列表。
+func parsePortList(value string) ([]int, error) {
+	fields := strings.Split(value, ",")
+	ports := make([]int, 0, len(fields))
+	for _, field := range fields {
+		field = strings.TrimSpace(field)
+		if field == "" {
+			continue
+		}
+		port, err := strconv.Atoi(field)
+		if err != nil {
+			return nil, fmt.Errorf("invalid port %q", field)
+		}
+		if port < 1 || port > 65535 {
+			return nil, fmt.Errorf("port %d out of range", port)
+		}
+		ports = append(ports, port)
+	}
+	if len(ports) == 0 {
+		return nil, fmt.Errorf("no ports provided")
+	}
+	return ports, nil
 }
 
 type ProxyTLS struct {

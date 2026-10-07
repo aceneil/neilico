@@ -31,6 +31,7 @@ type ProxyOptions struct {
 	PKI              PKIOptions           `json:"pki"`
 	Dashboard        DashboardOptions     `json:"-"`
 	Bootstrap        BootstrapOptions     `json:"-"`
+	RemoteDesktop    RemoteDesktopOptions `json:"remote_desktop"`
 	// StreamPortMin/Max 限定「端口转发」可用的监听端口区间，必须与容器发布的端口段一致。
 	StreamPortMin int `json:"-"`
 	StreamPortMax int `json:"-"`

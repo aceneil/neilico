@@ -63,6 +63,7 @@ type Server struct {
 	streams          *proxy.StreamForwarder
 	streamMu         sync.Mutex
 	streamProblems   map[uuid.UUID]string
+	remoteDesktop    *service.RemoteDesktopService
 	downloadsDir     string
 	enrollURL        string
 	agentImage       string
@@ -155,18 +156,25 @@ func NewWithProxy(
 	}
 	certificateService.ConfigureACME(opts.ACME, opts.ACMEOptions, promMetrics, configManager, certificateInvalidator, logger)
 	server := &Server{
-		db:               db,
-		auth:             authManager,
-		tenants:          service.NewTenantService(db),
-		users:            service.NewUserService(db),
-		nodes:            nodeService,
-		domains:          service.NewDomainService(db),
-		certs:            certificateService,
-		proxyRules:       service.NewProxyRuleService(db),
-		proxyHosts:       service.NewProxyHostService(db),
-		streamRules:      service.NewStreamRuleService(db, opts.StreamPortMin, opts.StreamPortMax),
-		streams:          proxy.NewStreamForwarder(logger, proxy.StreamForwarderOptions{Observer: promMetrics}),
-		streamProblems:   map[uuid.UUID]string{},
+		db:             db,
+		auth:           authManager,
+		tenants:        service.NewTenantService(db),
+		users:          service.NewUserService(db),
+		nodes:          nodeService,
+		domains:        service.NewDomainService(db),
+		certs:          certificateService,
+		proxyRules:     service.NewProxyRuleService(db),
+		proxyHosts:     service.NewProxyHostService(db),
+		streamRules:    service.NewStreamRuleService(db, opts.StreamPortMin, opts.StreamPortMax),
+		streams:        proxy.NewStreamForwarder(logger, proxy.StreamForwarderOptions{Observer: promMetrics}),
+		streamProblems: map[uuid.UUID]string{},
+		remoteDesktop: service.NewRemoteDesktopService(service.RemoteDesktopOptions{
+			Enabled:       opts.RemoteDesktop.Enabled,
+			IDServer:      opts.RemoteDesktop.IDServer,
+			RelayServer:   opts.RemoteDesktop.RelayServer,
+			PublicKeyFile: opts.RemoteDesktop.PublicKeyFile,
+			Ports:         opts.RemoteDesktop.Ports,
+		}),
 		auditLogs:        service.NewAuditLogService(db),
 		relays:           service.NewRelayServerService(db),
 		observability:    service.NewObservabilityService(db),
@@ -201,6 +209,7 @@ func NewWithProxy(
 	server.registerEnroll(mux)
 	server.registerPublicDownloads(mux)
 	server.registerAccount(mux)
+	server.registerRemoteDesktop(mux)
 
 	mux.HandleFunc("/healthz", server.handleHealth)
 	mux.Handle("/metrics", promMetrics.Handler())

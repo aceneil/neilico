@@ -43,6 +43,11 @@ export function canManageRelayServers(role: Role | null): boolean {
   return role === 'platform_admin' || role === 'tenant_admin'
 }
 
+// 「远程桌面」的服务器参数是全局基础设施，只有平台管理员可改；其余角色只读。
+export function canManageRemoteDesktop(role: Role | null): boolean {
+  return role === 'platform_admin'
+}
+
 export function canEvaluateAlerts(role: Role | null): boolean {
   return role === 'platform_admin' || role === 'tenant_admin' || role === 'ops'
 }

@@ -171,6 +171,13 @@ func run() error {
 			NodeCertDays:    cfg.PKI.NodeCertDays,
 			RenewBeforeDays: cfg.PKI.RenewBeforeDays,
 		},
+		RemoteDesktop: api.RemoteDesktopOptions{
+			Enabled:       cfg.RemoteDesktop.Enabled,
+			IDServer:      cfg.RemoteDesktop.IDServer,
+			RelayServer:   cfg.RemoteDesktop.RelayServer,
+			PublicKeyFile: cfg.RemoteDesktop.PublicKeyFile,
+			Ports:         cfg.RemoteDesktop.Ports,
+		},
 	})
 	if cfg.Downloads.Dir == "" {
 		logger.Warn("agent downloads are disabled: downloads.dir is empty, /downloads/* will return 404")

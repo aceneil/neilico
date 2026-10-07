@@ -118,6 +118,7 @@ NEILICO（Unified Mesh & Proxy Platform）：统一「内网穿透 + Mesh 组网
 - API Token scope：`nodes/networks/proxy/certs/tokens/alerts` 的 read/write + `admin`；API Token 严格按自身 scopes 且不能创建更大 scopes 的子 Token。JWT 维持 RBAC，映射表见 `internal/auth/scopes.go` 与 `docs/API.md`。
 - 限流 `ratelimit.enabled/rps/burst`（默认 true/20/40）按 API Token ID 或 JWT user 使用并发安全内存令牌桶；healthz/metrics/ACME challenge 豁免。
 - `target_type=node` 的反代目标是 `<node UUID>:<port>`，节点虚拟 IP 来自 network member；M5 冒烟用临时 echo 容器挂到该 VIP 验证 Host 反代。
+- 「远程桌面」（自建 RustDesk）：`GET/PUT /api/v1/remote-desktop/config`、`GET /devices`、`GET /status`（`PUT` 仅 `platform_admin`）。**控制面只读公钥** `NEILICO_RD_PUBLIC_KEY_FILE`（默认 `.../rustdesk/id_ed25519.pub`），接口只返回 `public_key`，私钥任何路径都不读不回显；公钥缺失时返回 `available:false` + `hint`，不报 500。参数 `NEILICO_RD_ID_SERVER/RELAY_SERVER/PORTS` 可覆盖；`PUT` 改动**仅进程内生效**（未落库）。设备的 RustDesk ID 目前靠节点 tag `rustdesk:<id>`；页面见 `dashboard/src/pages/remote-desktop/`，文档 `docs/REMOTE_DESKTOP.md`。
 
 ## 常用命令
 ```bash
