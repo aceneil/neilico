@@ -135,11 +135,13 @@ type RemoteDesktop struct {
 	Ports         []int  `yaml:"ports"`
 }
 
-// 远程桌面默认值：ID/中继服务器指向部署 rustdesk-server 的本机内网地址；
-// 公钥文件指向 rustdesk-server 生成的 id_ed25519.pub（**只读公钥文件**）。
+// 远程桌面默认值：**一律留空** —— 服务器地址与公钥路径都不硬编码进源码/仓库，
+// 由部署机通过运行时环境变量（NEILICO_RD_ID_SERVER / NEILICO_RD_RELAY_SERVER /
+// NEILICO_RD_PUBLIC_KEY_FILE）或 YAML remote_desktop 段下发。未配置时接口返回
+// available=false 并在 hint 里说明「未配置服务器地址」，而不是让控制面启动失败。
 const (
-	DefaultRemoteDesktopServer        = "192.168.123.90"
-	DefaultRemoteDesktopPublicKeyFile = "/home/neil/Documents/Docker/data/rustdesk/id_ed25519.pub"
+	DefaultRemoteDesktopServer        = ""
+	DefaultRemoteDesktopPublicKeyFile = ""
 )
 
 // defaultRemoteDesktopPorts 是 rustdesk-server 默认使用的端口集合
@@ -569,8 +571,10 @@ func (c Config) Validate() error {
 // validateRemoteDesktopEndpoint 校验「远程桌面」的服务器地址：允许 host 或 host:port 两种写法。
 func validateRemoteDesktopEndpoint(name, value string) error {
 	trimmed := strings.TrimSpace(value)
+	// 允许留空：未配置时由接口以 available=false + hint 如实反馈（见 service 层），
+	// 而不是让控制面因缺少默认值而启动失败。非空时仍做长度/空白校验。
 	if trimmed == "" {
-		return fmt.Errorf("remote_desktop.%s is required", name)
+		return nil
 	}
 	if len(trimmed) > 255 {
 		return fmt.Errorf("remote_desktop.%s must not exceed 255 characters", name)

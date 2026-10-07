@@ -156,20 +156,28 @@ func (s *RemoteDesktopService) Config(ctx context.Context) RemoteDesktopConfig {
 	s.mu.RUnlock()
 
 	publicKey, err := readPublicKeyFile(publicKeyFile)
+	keyReady := err == nil && publicKey != ""
+	serverReady := strings.TrimSpace(idServer) != ""
+
 	cfg := RemoteDesktopConfig{
 		Enabled:     enabled,
 		IDServer:    idServer,
 		RelayServer: relayServer,
 		PublicKey:   publicKey,
-		Available:   err == nil && publicKey != "",
+		Available:   keyReady && serverReady,
 		Ports:       ports,
 	}
-	if cfg.Available {
-		cfg.Hint = fmt.Sprintf("服务器已就绪：在 RustDesk 客户端「ID/中继服务器」填入 %s，并把上方公钥填入「Key」。", idServer)
-	} else {
+	switch {
+	case !serverReady:
+		// 未配置服务器地址：不报错，只如实给出原因。
+		cfg.PublicKey = ""
+		cfg.Hint = "服务器未就绪：未配置服务器地址。请用环境变量 NEILICO_RD_ID_SERVER / NEILICO_RD_RELAY_SERVER（或 YAML remote_desktop.id_server / relay_server）配置自建 rustdesk-server 的地址。"
+	case !keyReady:
 		// 公钥未就绪（P1 尚未完成部署）：不报错，只如实给出原因。
 		cfg.PublicKey = ""
 		cfg.Hint = fmt.Sprintf("服务器未就绪：未能读取公钥文件（%s）。请先完成 rustdesk-server 部署，或用环境变量 NEILICO_RD_PUBLIC_KEY_FILE 指向正确的公钥。", publicKeyFile)
+	default:
+		cfg.Hint = fmt.Sprintf("服务器已就绪：在 RustDesk 客户端「ID/中继服务器」填入 %s，并把上方公钥填入「Key」。", idServer)
 	}
 	return cfg
 }

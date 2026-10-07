@@ -33,9 +33,9 @@ NEILICO 的「远程桌面」能力：控制面下发**自建 RustDesk 服务器
 | 变量 | 默认值 | 含义 |
 | :--- | :--- | :--- |
 | `NEILICO_RD_ENABLED` | `true` | 是否启用远程桌面能力 |
-| `NEILICO_RD_ID_SERVER` | `192.168.123.90` | hbbs 信令服务器（`host` 或 `host:port`） |
-| `NEILICO_RD_RELAY_SERVER` | `192.168.123.90` | hbbr 中继服务器（`host` 或 `host:port`） |
-| `NEILICO_RD_PUBLIC_KEY_FILE` | `/home/neil/Documents/Docker/data/rustdesk/id_ed25519.pub` | **公钥**文件路径（`id_ed25519.pub`） |
+| `NEILICO_RD_ID_SERVER` | （留空，由部署机下发） | hbbs 信令服务器（`host` 或 `host:port`）；示例 `192.168.1.10` |
+| `NEILICO_RD_RELAY_SERVER` | （留空，由部署机下发） | hbbr 中继服务器（`host` 或 `host:port`）；示例 `your-server.example.com` |
+| `NEILICO_RD_PUBLIC_KEY_FILE` | （留空，由部署机下发） | **公钥**文件路径（`id_ed25519.pub`）；示例 `$HOME/Documents/Docker/data/rustdesk/id_ed25519.pub` |
 | `NEILICO_RD_PORTS` | `21115,21116,21117,21118,21119` | 需要暴露/探活的端口列表 |
 
 YAML 形态见 `control-plane/configs/config.example.yaml` 的 `remote_desktop:` 段；
@@ -66,11 +66,11 @@ YAML 形态见 `control-plane/configs/config.example.yaml` 的 `remote_desktop:`
 ```json
 {
   "enabled": true,
-  "id_server": "192.168.123.90",
-  "relay_server": "192.168.123.90",
+  "id_server": "192.168.1.10",
+  "relay_server": "your-server.example.com",
   "public_key": "<id_ed25519.pub 的内容>",
   "available": true,
-  "hint": "服务器已就绪：在 RustDesk 客户端「ID/中继服务器」填入 192.168.123.90，并把上方公钥填入「Key」。",
+  "hint": "服务器已就绪：在 RustDesk 客户端「ID/中继服务器」填入 192.168.1.10，并把上方公钥填入「Key」。",
   "ports": [21115, 21116, 21117, 21118, 21119]
 }
 ```
@@ -110,8 +110,9 @@ curl -fsS http://<host>:13000/api/v1/remote-desktop/status  -H "Authorization: B
   - `.../data/rustdesk/id_ed25519.pub`（**公钥，客户端与 NEILICO 使用**）
 - NEILICO 控制面**只读** `id_ed25519.pub`（默认 `NEILICO_RD_PUBLIC_KEY_FILE`），把它通过
   `GET /config` 下发给客户端填写到「Key」。
-- 服务器地址默认取本机内网 IP（`192.168.123.90`），端口 `21116`（hbbs）/`21117`（hbbr）。三者都可由
-  `NEILICO_RD_*` 覆盖，以便与 P1 实际部署保持一致。
+- 服务器地址**不硬编码进仓库**：代码默认留空，由部署机用 `NEILICO_RD_ID_SERVER` /
+  `NEILICO_RD_RELAY_SERVER` 下发（示例 `192.168.1.10` / `your-server.example.com`），端口 `21116`（hbbs）/
+  `21117`（hbbr）。未配置时接口返回 `available:false` 并在 `hint` 里说明「未配置服务器地址」。
 - **不要**把私钥文件挂载给控制面；`NEILICO_RD_PUBLIC_KEY_FILE` 只应指向 `.pub`。
 
 ## 安全说明（务必如实理解）

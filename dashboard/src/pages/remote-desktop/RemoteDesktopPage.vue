@@ -342,10 +342,10 @@ void load()
     >
       <a-form layout="vertical">
         <a-form-item label="ID 服务器" required>
-          <a-input v-model:value="form.id_server" placeholder="192.168.123.90（host 或 host:port）" />
+          <a-input v-model:value="form.id_server" placeholder="192.168.1.10（host 或 host:port）" />
         </a-form-item>
         <a-form-item label="中继服务器" required>
-          <a-input v-model:value="form.relay_server" placeholder="192.168.123.90（host 或 host:port）" />
+          <a-input v-model:value="form.relay_server" placeholder="192.168.1.10（host 或 host:port）" />
         </a-form-item>
         <a-form-item label="启用远程桌面">
           <a-switch v-model:checked="form.enabled" />

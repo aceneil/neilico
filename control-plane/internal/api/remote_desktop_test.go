@@ -26,8 +26,8 @@ func newRemoteDesktopApp(t *testing.T, publicKeyFile string) testApp {
 		Listen:  "127.0.0.1:0",
 		RemoteDesktop: api.RemoteDesktopOptions{
 			Enabled:       true,
-			IDServer:      "192.168.123.90",
-			RelayServer:   "192.168.123.90",
+			IDServer:      "192.0.2.1",
+			RelayServer:   "192.0.2.1",
 			PublicKeyFile: publicKeyFile,
 			Ports:         []int{21115, 21116, 21117, 21118, 21119},
 		},
@@ -62,7 +62,7 @@ func TestRemoteDesktopConfigRequiresAuthentication(t *testing.T) {
 	if len(cfg.Ports) != 5 {
 		t.Fatalf("ports = %#v, want the five rustdesk-server ports", cfg.Ports)
 	}
-	if cfg.IDServer != "192.168.123.90" || cfg.RelayServer != "192.168.123.90" {
+	if cfg.IDServer != "192.0.2.1" || cfg.RelayServer != "192.0.2.1" {
 		t.Fatalf("unexpected server params: %#v", cfg)
 	}
 }
@@ -145,7 +145,7 @@ func TestRemoteDesktopUpdateRequiresPlatformAdmin(t *testing.T) {
 	requireStatus(t, status, http.StatusOK)
 	var cfg service.RemoteDesktopConfig
 	decodeResponse(t, body, &cfg)
-	if cfg.IDServer != "192.168.123.90" {
+	if cfg.IDServer != "192.0.2.1" {
 		t.Fatalf("config changed by a non-admin: %#v", cfg)
 	}
 }
@@ -226,7 +226,7 @@ func TestRemoteDesktopDevicesIncludeConnectionParams(t *testing.T) {
 	if !strings.Contains(reporting.ConnectionParams, testRemoteDesktopPublicKey) {
 		t.Fatalf("connection params missing public key: %q", reporting.ConnectionParams)
 	}
-	if !strings.Contains(reporting.ConnectionParams, "192.168.123.90") {
+	if !strings.Contains(reporting.ConnectionParams, "192.0.2.1") {
 		t.Fatalf("connection params missing server: %q", reporting.ConnectionParams)
 	}
 
