@@ -52,7 +52,8 @@ YAML 形态见 `control-plane/configs/config.example.yaml` 的 `remote_desktop:`
 
 ## 接口
 
-全部需要登录；`PUT` 仅平台管理员（`platform_admin`）。
+全部需要登录；`config` 的 `PUT` 仅平台管理员（`platform_admin`）；设备授权 `PATCH` 允许
+`platform_admin` / `tenant_admin`。
 
 | 方法 | 路径 | 权限 | 说明 |
 | :--- | :--- | :--- | :--- |
@@ -60,6 +61,8 @@ YAML 形态见 `control-plane/configs/config.example.yaml` 的 `remote_desktop:`
 | `PUT` | `/api/v1/remote-desktop/config` | 仅 `platform_admin` | 改 `id_server` / `relay_server` / `enabled`，写审计 |
 | `GET` | `/api/v1/remote-desktop/devices` | 登录可读 | 设备列表 + 每台的 `rustdesk_hint` / 连接参数文本 |
 | `GET` | `/api/v1/remote-desktop/status` | 登录可读 | 对 `21115/21116/21117` 做纯 TCP 探活（1s 超时，总预算 3s） |
+| `GET` | `/api/v1/remote-desktop/device-policies` | 登录可读（限自身租户） | 每台设备的授权状态；未建过策略的节点返回默认值 |
+| `PATCH` | `/api/v1/remote-desktop/device-policies/{node_id}` | `platform_admin` / `tenant_admin` | 局部更新授权开关，写审计 `remote_desktop.policy.update` |
 
 `GET /config` 响应示例：
 
@@ -90,6 +93,73 @@ curl -fsS http://<host>:13000/api/v1/remote-desktop/status  -H "Authorization: B
 公钥文件缺失/不可读时，接口**不报 500**：返回 `available:false`、`public_key:""`，并在 `hint` 里给出
 原因。Dashboard 顶部卡片显示黄色「服务器未就绪」提示。完成 P1 部署或改对
 `NEILICO_RD_PUBLIC_KEY_FILE` 后即变绿。
+
+## 设备授权策略（device-policies）
+
+面向公网的产品**默认拒绝**：`remote_control_allowed` 默认 `false`（opt-in），未建过策略的节点也按
+默认值返回。策略**真实持久化**在 `remote_desktop_device_policies` 表（AutoMigrate 建表）。
+
+`GET /device-policies` 响应形状（`items` / `total` 与 `/devices` 一致）：
+
+```json
+{
+  "items": [
+    {
+      "node_id": "uuid",
+      "remote_control_allowed": false,
+      "tunnel_mode": "auto",
+      "isolated_tunnel": { "enabled": false, "stream_rule_id": null },
+      "mesh": { "joined": true, "network_id": "uuid", "virtual_ip": "10.42.0.7" },
+      "readonly": { "subnet_routes": "ready" }
+    }
+  ],
+  "total": 1
+}
+```
+
+字段语义：
+
+| 字段 | 取值 | 说明 |
+| :--- | :--- | :--- |
+| `remote_control_allowed` | `bool`（默认 `false`） | 被控方授权开关。为 `false` 时 NEILICO 客户端不得对其发起连接 |
+| `tunnel_mode` | `auto` / `direct` / `relay` | 直连（走 Mesh 虚拟 IP）/ 中继（hbbr）/ 自动；默认 `auto` |
+| `isolated_tunnel.enabled` | `bool` | 单独隧道；复用现有 **StreamRule**（不另造转发引擎），`stream_rule_id` 指向那条规则 |
+| `mesh.joined` / `mesh.network_id` / `mesh.virtual_ip` | `bool` / `uuid\|null` / `string\|null` | Mesh 成员身份，**读自现有 `NetworkMember`**（不新造数据源） |
+| `readonly.subnet_routes` | `ready` / `degraded` / `unavailable` | 只读；由现有 `SubnetRoute` 派生（有启用→ready，全禁用→degraded，无→unavailable） |
+
+`PATCH /device-policies/{node_id}` 是**局部更新**（只改传入字段）：
+
+```json
+{ "remote_control_allowed": false }
+{ "tunnel_mode": "direct" }
+{ "isolated_tunnel_enabled": true }
+{ "mesh_joined": true }
+```
+
+- `isolated_tunnel_enabled=true`：在已发布的端口转发区间内自动分配端口，用现有 StreamRule 能力建一条
+  `<node_id>:21118`（RustDesk 直连端口）的 tcp 转发规则；`false` 则删除该规则。设备必须已分配虚拟 IP，否则 `400`。
+- `mesh_joined=true`：复用现有虚拟网络成员能力加入；租户只有一个网络时自动选中，多个网络需带
+  `mesh_network_id`，没有网络则 `400`。`false` 则退出（移除成员关系）。
+- 权限：`platform_admin` / `tenant_admin` 可改；其它角色 `403`；节点不存在 `404`；非法枚举 `400`。
+- 写审计：`action = remote_desktop.policy.update`，`detail` 记录改了哪些字段。
+
+```bash
+curl -fsS http://<host>:13000/api/v1/remote-desktop/device-policies -H "Authorization: Bearer ***"
+curl -fsS -X PATCH http://<host>:13000/api/v1/remote-desktop/device-policies/<node_id> \
+  -H "Authorization: Bearer ***" -H 'Content-Type: application/json' \
+  -d '{"remote_control_allowed": true, "tunnel_mode": "direct"}'
+```
+
+### 限制（务必如实理解）
+
+- 本轮交付的是 **NEILICO 侧的策略开关**：它决定「对我们的客户端与用户可见性」是否允许被远程，并在
+  Dashboard / 桌面客户端上如实呈现；**它本身不是 RustDesk 内核层的硬拦截**。也就是说，在 RustDesk
+  **内核接入（`rust-core`）阶段**落地之前，一个绕过 NEILICO 客户端、直接用 RustDesk 客户端 + 同一把公钥
+  的连接仍可能建立——控制面目前无法在内核层强制阻断。
+- 因此：`remote_control_allowed=false` 应理解为「NEILICO 客户端会拒绝发起、界面显示为不可远程」，
+  **不是**「网络层已强制阻断」。内核级强制拦截作为后续 `rust-core` 阶段交付物，不在本轮。
+- 单独隧道复用 StreamRule，转发目标为该节点的虚拟 IP；Mesh 身份复用 NetworkMember——两者都不是新造的
+  独立数据源，行为与「端口转发」「虚拟网络」页保持一致。
 
 ## 设备与 RustDesk ID
 
@@ -131,7 +201,9 @@ curl -fsS http://<host>:13000/api/v1/remote-desktop/status  -H "Authorization: B
 
 ## 遗留 / 未做（如实列出）
 
-- **配置持久化**：`PUT /config` 的改动**只在当前控制面进程内生效**（重启回落到 `NEILICO_RD_*` / YAML）。
-  需要长期固化请用环境变量；本轮未引入新表/迁移。
-- **Flutter 客户端**未做（本轮仅控制面 + Dashboard）。
+- **`/config` 覆盖仍是内存态**：`PUT /config` 的改动只在当前控制面进程内生效（重启回落到
+  `NEILICO_RD_*` / YAML）；需要长期固化请用环境变量。设备授权策略（`device-policies`）**不是**这种情况，
+  它是真持久化的（新表 `remote_desktop_device_policies`）。
+- **RustDesk 内核层的硬拦截未做**：`remote_control_allowed=false` 目前是 NEILICO 侧策略，
+  RustDesk 内核级强制阻断要等内核接入（`rust-core`）阶段，见上文「限制」。
 - **RustDesk ID 原生上报**未做：目前靠节点标签 `rustdesk:<id>`，待客户端接入后改为原生字段。

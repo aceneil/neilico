@@ -586,3 +586,43 @@ export interface RemoteDesktopStatus {
   checked_at: string
 }
 
+// 每台设备的能力授权状态（后端权威）。对应
+// GET /api/v1/remote-desktop/device-policies 与 PATCH 的元素。
+export type RemoteDesktopTunnelMode = 'auto' | 'direct' | 'relay'
+
+export interface RemoteDesktopIsolatedTunnel {
+  enabled: boolean
+  stream_rule_id: string | null
+}
+
+export interface RemoteDesktopMeshMembership {
+  joined: boolean
+  network_id: string | null
+  virtual_ip: string | null
+}
+
+export interface RemoteDesktopDevicePolicy {
+  node_id: string
+  /** 被控方授权开关；false 时任何客户端都不得对其发起连接。默认 false（opt-in）。 */
+  remote_control_allowed: boolean
+  tunnel_mode: RemoteDesktopTunnelMode
+  isolated_tunnel: RemoteDesktopIsolatedTunnel
+  mesh: RemoteDesktopMeshMembership
+  /** 只读展示：ready / degraded / unavailable。 */
+  readonly: { subnet_routes: string }
+}
+
+export interface RemoteDesktopDevicePolicyList {
+  items: RemoteDesktopDevicePolicy[]
+  total: number
+}
+
+/** PATCH 局部更新请求体：只带被改动的字段。 */
+export interface RemoteDesktopDevicePolicyPatch {
+  remote_control_allowed?: boolean
+  tunnel_mode?: RemoteDesktopTunnelMode
+  isolated_tunnel_enabled?: boolean
+  mesh_joined?: boolean
+  mesh_network_id?: string
+}
+

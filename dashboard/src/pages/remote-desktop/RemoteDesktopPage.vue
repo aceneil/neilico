@@ -19,15 +19,23 @@ import { message } from 'ant-design-vue'
 import DataState from '@/components/DataState.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import { remoteDesktopApi, type RemoteDesktopConfigInput } from '@/api/remote-desktop'
-import { apiErrorMessage } from '@/api/http'
+import { apiErrorStatus, apiErrorMessage } from '@/api/http'
 import { copyText } from '@/utils/clipboard'
 import { formatTime } from '@/utils/format'
-import { canManageRemoteDesktop } from '@/utils/permissions'
+import { canManageRemoteDesktop, canManageRemoteDesktopPolicies } from '@/utils/permissions'
 import { useAuthStore } from '@/stores/auth'
-import type { RemoteDesktopConfig, RemoteDesktopDevice, RemoteDesktopStatus } from '@/types/api'
+import type {
+  RemoteDesktopConfig,
+  RemoteDesktopDevice,
+  RemoteDesktopDevicePolicy,
+  RemoteDesktopDevicePolicyPatch,
+  RemoteDesktopStatus,
+  RemoteDesktopTunnelMode
+} from '@/types/api'
 
 const auth = useAuthStore()
 const canWrite = computed(() => canManageRemoteDesktop(auth.role))
+const canWritePolicies = computed(() => canManageRemoteDesktopPolicies(auth.role))
 
 const config = ref<RemoteDesktopConfig | null>(null)
 const devices = ref<RemoteDesktopDevice[]>([])
@@ -36,6 +44,18 @@ const loading = ref(false)
 const probing = ref(false)
 const saving = ref(false)
 const error = ref('')
+
+// 每台设备的授权状态（后端权威）。接口未就绪时 policyReady=false，开关一律置灰。
+const policies = ref<Record<string, RemoteDesktopDevicePolicy>>({})
+const policyReady = ref(false)
+const policyError = ref('')
+const policySaving = ref('')
+
+const tunnelModeOptions: { value: RemoteDesktopTunnelMode; label: string }[] = [
+  { value: 'auto', label: '自动' },
+  { value: 'direct', label: '直连' },
+  { value: 'relay', label: '中继' }
+]
 
 const editOpen = ref(false)
 const form = reactive({ id_server: '', relay_server: '', enabled: true })
@@ -78,14 +98,99 @@ async function load() {
   loading.value = true
   error.value = ''
   try {
-    const [cfg, list] = await Promise.all([remoteDesktopApi.config(), remoteDesktopApi.devices()])
+    const [cfg, list, policyList] = await Promise.all([
+      remoteDesktopApi.config(),
+      remoteDesktopApi.devices(),
+      // 授权接口独立降级：失败时保持全部开关置灰并给出原因，绝不本地编造状态。
+      remoteDesktopApi.devicePolicies().catch((cause) => {
+        policyReady.value = false
+        policyError.value = apiErrorMessage(cause)
+        return null
+      })
+    ])
     config.value = cfg
     devices.value = list.items
+    if (policyList) {
+      const map: Record<string, RemoteDesktopDevicePolicy> = {}
+      for (const policy of policyList.items) map[policy.node_id] = policy
+      policies.value = map
+      policyReady.value = true
+      policyError.value = ''
+    }
   } catch (cause) {
     error.value = apiErrorMessage(cause)
   } finally {
     loading.value = false
   }
+}
+
+// 授权状态以后端为准；缺条目时给一个默认视图仅用于渲染（控件仍会因 hasPolicy=false 置灰）。
+function policyFor(device: RemoteDesktopDevice): RemoteDesktopDevicePolicy {
+  return (
+    policies.value[device.id] ?? {
+      node_id: device.id,
+      remote_control_allowed: false,
+      tunnel_mode: 'auto',
+      isolated_tunnel: { enabled: false, stream_rule_id: null },
+      mesh: { joined: false, network_id: null, virtual_ip: device.virtual_ip ?? null },
+      readonly: { subnet_routes: 'unavailable' }
+    }
+  )
+}
+
+function hasPolicy(device: RemoteDesktopDevice): boolean {
+  return Boolean(policies.value[device.id])
+}
+
+// 可编辑 = 是 admin 且授权接口就绪且拿到了该设备的条目。
+function policyEditable(device: RemoteDesktopDevice): boolean {
+  return canWritePolicies.value && policyReady.value && hasPolicy(device)
+}
+
+function meshBlocked(device: RemoteDesktopDevice): boolean {
+  const policy = policies.value[device.id]
+  if (!policy) return true
+  // 未加入且后端没给出可加入的网络 → 置灰（与客户端一致：没有可加入的虚拟网络）。
+  return !policy.mesh.joined && !policy.mesh.network_id
+}
+
+function meshTitle(device: RemoteDesktopDevice): string {
+  if (meshBlocked(device) && policyEditable(device)) return '未加入任何虚拟网络，先创建虚拟网络再加入'
+  return '加入 / 退出虚拟网络，参与 Mesh 直连'
+}
+
+async function applyPolicy(device: RemoteDesktopDevice, patch: RemoteDesktopDevicePolicyPatch) {
+  if (!policyEditable(device)) return
+  policySaving.value = device.id
+  try {
+    const updated = await remoteDesktopApi.updatePolicy(device.id, patch)
+    policies.value = { ...policies.value, [updated.node_id]: updated }
+    message.success('设备授权已更新')
+  } catch (cause) {
+    // 401/403/409/422 已由 http 拦截器统一提示，这里只补其余状态，避免重复弹窗。
+    const status = apiErrorStatus(cause)
+    if (!status || ![401, 403, 409, 422].includes(status)) {
+      message.error(apiErrorMessage(cause))
+    }
+  } finally {
+    policySaving.value = ''
+  }
+}
+
+function onRemoteControl(device: RemoteDesktopDevice, value: boolean | string | number) {
+  void applyPolicy(device, { remote_control_allowed: Boolean(value) })
+}
+
+function onTunnelMode(device: RemoteDesktopDevice, value: RemoteDesktopTunnelMode) {
+  void applyPolicy(device, { tunnel_mode: value })
+}
+
+function onIsolatedTunnel(device: RemoteDesktopDevice, value: boolean | string | number) {
+  void applyPolicy(device, { isolated_tunnel_enabled: Boolean(value) })
+}
+
+function onMeshJoined(device: RemoteDesktopDevice, value: boolean | string | number) {
+  void applyPolicy(device, { mesh_joined: Boolean(value) })
 }
 
 async function probe() {
@@ -315,12 +420,81 @@ void load()
                   <dd>{{ device.rustdesk_id || '未上报' }}</dd>
                 </div>
               </dl>
+
+              <!-- 设备授权开关：可被远程 / 隧道模式 / 单独隧道 / Mesh。普通用户只读。 -->
+              <div class="device-card__policy">
+                <div class="policy-row">
+                  <span class="policy-row__label">可被远程</span>
+                  <a-switch
+                    size="small"
+                    :checked="policyFor(device).remote_control_allowed"
+                    :disabled="!policyEditable(device)"
+                    :loading="policySaving === device.id"
+                    @change="(checked: boolean | string | number) => onRemoteControl(device, checked)"
+                  />
+                </div>
+                <div class="policy-row">
+                  <span class="policy-row__label">隧道模式</span>
+                  <a-radio-group
+                    size="small"
+                    button-style="solid"
+                    :value="policyFor(device).tunnel_mode"
+                    :disabled="!policyEditable(device)"
+                    @change="(event: { target: { value: RemoteDesktopTunnelMode } }) => onTunnelMode(device, event.target.value)"
+                  >
+                    <a-radio-button v-for="option in tunnelModeOptions" :key="option.value" :value="option.value">
+                      {{ option.label }}
+                    </a-radio-button>
+                  </a-radio-group>
+                </div>
+                <div class="policy-row">
+                  <span class="policy-row__label">单独隧道</span>
+                  <a-tooltip :title="device.virtual_ip ? '复用端口转发规则为该设备单独开一条隧道' : '设备未分配虚拟 IP，无法建立单独隧道'">
+                    <a-switch
+                      size="small"
+                      :checked="policyFor(device).isolated_tunnel.enabled"
+                      :disabled="!policyEditable(device) || !device.virtual_ip"
+                      :loading="policySaving === device.id"
+                      @change="(checked: boolean | string | number) => onIsolatedTunnel(device, checked)"
+                    />
+                  </a-tooltip>
+                </div>
+                <div class="policy-row">
+                  <span class="policy-row__label">Mesh 加入</span>
+                  <a-tooltip :title="meshTitle(device)">
+                    <a-switch
+                      size="small"
+                      :checked="policyFor(device).mesh.joined"
+                      :disabled="!policyEditable(device) || meshBlocked(device)"
+                      :loading="policySaving === device.id"
+                      @change="(checked: boolean | string | number) => onMeshJoined(device, checked)"
+                    />
+                  </a-tooltip>
+                </div>
+                <p v-if="!canWritePolicies" class="policy-note">当前账号只读：需平台/租户管理员才能修改授权。</p>
+                <p v-else-if="!policyReady" class="policy-note">授权接口未就绪，暂不可修改。</p>
+                <p v-else-if="!hasPolicy(device)" class="policy-note">未获取到该设备的授权状态。</p>
+              </div>
+
               <div class="device-card__actions">
                 <a-button size="small" @click="copyConnectParams(device)">
                   <CopyOutlined /> 复制连接参数
                 </a-button>
-                <a-tooltip :title="device.connect_url ? '通过本地 RustDesk 发起连接' : '需该设备安装 RustDesk 并告知 ID'">
-                  <a-button size="small" type="primary" :disabled="!device.connect_url" @click="launch(device)">
+                <a-tooltip
+                  :title="
+                    hasPolicy(device) && !policyFor(device).remote_control_allowed
+                      ? '该设备未开启「可被远程」'
+                      : device.connect_url
+                        ? '通过本地 RustDesk 发起连接'
+                        : '需该设备安装 RustDesk 并告知 ID'
+                  "
+                >
+                  <a-button
+                    size="small"
+                    type="primary"
+                    :disabled="!device.connect_url || (hasPolicy(device) && !policyFor(device).remote_control_allowed)"
+                    @click="launch(device)"
+                  >
                     <PlayCircleOutlined /> 发起连接
                   </a-button>
                 </a-tooltip>
@@ -594,6 +768,35 @@ void load()
 
 .device-card__meta dd.is-stale {
   color: var(--warning);
+}
+
+.device-card__policy {
+  display: flex;
+  padding-top: 10px;
+  flex-direction: column;
+  gap: 8px;
+  border-top: 1px solid var(--border);
+}
+
+.policy-row {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.policy-row__label {
+  flex: 0 0 auto;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.policy-note {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-style: italic;
 }
 
 .device-card__actions {

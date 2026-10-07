@@ -48,6 +48,11 @@ export function canManageRemoteDesktop(role: Role | null): boolean {
   return role === 'platform_admin'
 }
 
+// 「远程桌面」设备授权开关：平台管理员与本租户管理员可改；其余角色只读。
+export function canManageRemoteDesktopPolicies(role: Role | null): boolean {
+  return role === 'platform_admin' || role === 'tenant_admin'
+}
+
 export function canEvaluateAlerts(role: Role | null): boolean {
   return role === 'platform_admin' || role === 'tenant_admin' || role === 'ops'
 }

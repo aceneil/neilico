@@ -64,6 +64,7 @@ type Server struct {
 	streamMu         sync.Mutex
 	streamProblems   map[uuid.UUID]string
 	remoteDesktop    *service.RemoteDesktopService
+	rdPolicies       *service.RemoteDesktopPolicyService
 	downloadsDir     string
 	enrollURL        string
 	agentImage       string
@@ -199,6 +200,8 @@ func NewWithProxy(
 		startedAt:        time.Now().UTC(),
 	}
 	server.tokenUsage = middleware.NewAPITokenUsageTracker(db, logger, middleware.DefaultAPITokenUsageInterval)
+	// 设备授权策略：单独隧道复用 streamRules，Mesh 复用 networks。
+	server.rdPolicies = service.NewRemoteDesktopPolicyService(db, server.streamRules, server.networks)
 	if opts.RateLimit.Enabled && opts.RateLimit.RPS > 0 && opts.RateLimit.Burst > 0 {
 		server.rateLimiter = middleware.NewLimiter(opts.RateLimit.RPS, opts.RateLimit.Burst)
 	}

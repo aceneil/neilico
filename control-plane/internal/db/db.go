@@ -56,6 +56,7 @@ func AutoMigrate(handle *gorm.DB) error {
 		&models.Domain{},
 		&models.ProxyRule{},
 		&models.StreamRule{},
+		&models.RemoteDesktopDevicePolicy{},
 		&models.Node{},
 		&models.VirtualNetwork{},
 		&models.NetworkMember{},

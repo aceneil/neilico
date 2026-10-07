@@ -164,6 +164,32 @@ type StreamRule struct {
 	Tenant *Tenant `gorm:"foreignKey:TenantID;constraint:OnDelete:RESTRICT,OnUpdate:CASCADE" json:"-"`
 }
 
+// RemoteDesktopDevicePolicy 是「远程桌面」每台设备的**授权开关**（NEILICO 侧策略）。
+//
+// 面向公网的产品必须默认拒绝：remote_control_allowed 默认 false（opt-in），
+// 未建过策略的节点在接口里也按默认值返回（不报错）。该策略决定「对我们的客户端与
+// 用户可见性」是否允许被远控，是权威开关；RustDesk 内核层的硬件级拦截在内核接入
+// （rust-core）阶段落地，本表不承诺已强制阻断。
+//
+// 单独隧道复用现有 StreamRule（isolation_stream_rule_id 指向那条转发规则）；
+// Mesh 身份不在此落库，读取时复用 NetworkMember（见 service 层）。
+type RemoteDesktopDevicePolicy struct {
+	// NodeID 与节点一一对应，直接作为主键（一台设备至多一条策略）。
+	NodeID               uuid.UUID `gorm:"type:uuid;primaryKey" json:"node_id"`
+	TenantID             uuid.UUID `gorm:"type:uuid;not null;index" json:"tenant_id"`
+	RemoteControlAllowed bool      `gorm:"not null;default:false" json:"remote_control_allowed"`
+	TunnelMode           string    `gorm:"type:varchar(16);not null;default:auto" json:"tunnel_mode"`
+	// IsolatedTunnelEnabled 表示已为该设备开启单独隧道（对应的转发规则由 StreamRule 承载）。
+	IsolatedTunnelEnabled bool `gorm:"not null;default:false" json:"isolated_tunnel_enabled"`
+	// IsolatedStreamRuleID 指向为该设备单独创建的那条转发规则；未开启时为空。
+	IsolatedStreamRuleID *uuid.UUID `gorm:"type:uuid" json:"isolated_stream_rule_id,omitempty"`
+	CreatedAt            time.Time  `gorm:"type:timestamp;not null;index" json:"created_at"`
+	UpdatedAt            time.Time  `gorm:"type:timestamp;not null;index" json:"updated_at"`
+
+	// 节点删除时一并清理该策略（避免 RESTRICT 外键挡住删设备）。
+	Node *Node `gorm:"foreignKey:NodeID;constraint:OnDelete:CASCADE,OnUpdate:CASCADE" json:"-"`
+}
+
 type BasicAuth struct {
 	Enabled      bool   `json:"enabled"`
 	Username     string `json:"username,omitempty"`

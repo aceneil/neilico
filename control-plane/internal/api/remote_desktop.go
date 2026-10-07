@@ -2,6 +2,7 @@ package api
 
 import (
 	"net/http"
+	"strings"
 
 	"neilico/control-plane/internal/auth"
 	"neilico/control-plane/internal/middleware"
@@ -23,10 +24,14 @@ type RemoteDesktopOptions struct {
 //	PUT  /api/v1/remote-desktop/config   仅 platform_admin：修改 id/relay/enabled
 //	GET  /api/v1/remote-desktop/devices  登录可读：设备列表 + 连接参数
 //	GET  /api/v1/remote-desktop/status   登录可读：服务器端口探活
+//	GET   /api/v1/remote-desktop/device-policies         登录可读：每台设备授权状态
+//	PATCH /api/v1/remote-desktop/device-policies/{id}    仅 platform_admin / tenant_admin：局部更新
 func (s *Server) registerRemoteDesktop(mux *http.ServeMux) {
 	mux.Handle("/api/v1/remote-desktop/config", s.authed(http.HandlerFunc(s.handleRemoteDesktopConfig)))
 	mux.Handle("/api/v1/remote-desktop/devices", s.authed(http.HandlerFunc(s.handleRemoteDesktopDevices)))
 	mux.Handle("/api/v1/remote-desktop/status", s.authed(http.HandlerFunc(s.handleRemoteDesktopStatus)))
+	mux.Handle("/api/v1/remote-desktop/device-policies", s.authed(http.HandlerFunc(s.handleRemoteDesktopDevicePolicies)))
+	mux.Handle("/api/v1/remote-desktop/device-policies/", s.authed(http.HandlerFunc(s.handleRemoteDesktopDevicePolicyItem)))
 }
 
 func (s *Server) handleRemoteDesktopConfig(w http.ResponseWriter, r *http.Request) {
@@ -94,4 +99,67 @@ func (s *Server) handleRemoteDesktopStatus(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	writeJSON(w, http.StatusOK, s.remoteDesktop.Probe(r.Context()))
+}
+
+// handleRemoteDesktopDevicePolicies：GET 每台设备的授权状态（任何登录用户，只读自身租户）。
+func (s *Server) handleRemoteDesktopDevicePolicies(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		s.methodNotAllowed(w, http.MethodGet)
+		return
+	}
+	principal, ok := middleware.PrincipalFromContext(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "valid access token required")
+		return
+	}
+	list, err := s.rdPolicies.List(r.Context(), s.userScope(principal))
+	if err != nil {
+		s.internalError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, list)
+}
+
+// handleRemoteDesktopDevicePolicyItem：PATCH 单台设备的授权开关（仅 admin）。局部更新。
+func (s *Server) handleRemoteDesktopDevicePolicyItem(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPatch {
+		s.methodNotAllowed(w, http.MethodPatch)
+		return
+	}
+	principal, ok := middleware.PrincipalFromContext(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "valid access token required")
+		return
+	}
+	// 授权变更是管理动作：platform_admin / tenant_admin 可改，普通用户 403。
+	if !roleAllowed(r.Context(), principal, auth.RolePlatformAdmin, auth.RoleTenantAdmin) {
+		writeError(w, http.StatusForbidden, "forbidden", "insufficient role")
+		return
+	}
+	rawID := strings.TrimPrefix(r.URL.Path, "/api/v1/remote-desktop/device-policies/")
+	nodeID, err := parseID(rawID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id", "node ID must be a UUID")
+		return
+	}
+	var input service.RemoteDesktopPolicyPatchInput
+	if !s.decodeRequest(w, r, &input) {
+		return
+	}
+	view, err := s.rdPolicies.Patch(r.Context(), nodeID, s.userScope(principal), input)
+	if err != nil {
+		s.serviceError(w, err)
+		return
+	}
+	// 沿用现有审计中间件：记录改了哪些字段（不记录任何密钥）。
+	middleware.SetAuditAction(r.Context(), "remote_desktop.policy.update", r.URL.Path, map[string]any{
+		"node_id":                 nodeID.String(),
+		"remote_control_allowed":  input.RemoteControlAllowed != nil,
+		"tunnel_mode":             input.TunnelMode != nil,
+		"isolated_tunnel_enabled": input.IsolatedTunnelEnabled != nil,
+		"mesh_joined":             input.MeshJoined != nil,
+	})
+	// 单独隧道可能新增/删除转发规则：让转发引擎立即与数据库对齐。
+	s.ReconcileStreams(r.Context())
+	writeJSON(w, http.StatusOK, map[string]any{"item": view})
 }
