@@ -245,6 +245,25 @@ cd deploy/helm && bash neilico/ci/verify.sh
 - **事故与恢复**：一次真机验收把线上管理员密码轮换成随机临时值、回写与恢复同时失败（当时策略没放开）→ 原密码登不上且临时密码从未落盘。恢复手法：用仓库自己的 `auth.HashPassword` 算出 env 原密码的 bcrypt 哈希 → `docker exec -i neilico psql` 直接更新 `users.password_hash`（**SQL 经 stdin，明文不进命令行**）→ 登录 200 恢复。**教训：改凭据的真机验收必须带 try/finally 兜底，且先用指纹比对确认能恢复再动手。**
 - **复验脚本入库**：`scripts/verify_account.py`（轮换→校验回写→改回原值；全程只用 sha256 前 10 位指纹比对；带兜底恢复；绝不回显明文）。
 
+## 远程桌面（RustDesk 内核 + 自建服务器）P1 + NEILICO 集成（2026-10-07 真机验收）
+
+### 已落地
+- **P1 自建 rustdesk-server**（hbbs 信令 + hbbr 中继）：compose 在 `~/Documents/Docker/docker-compose.rustdesk.yaml`，数据绑定挂载 `data/rustdesk/`（目录 700、密钥 600）。**宿主**端口 21115/tcp · 21116/tcp · 21116/udp · 21117/tcp · 21118/tcp · 21119/tcp 全部实测在监听 ✓。公钥 `eTJt8siibSbWPyj9p2sNQwbF5i6gQXICbkGPterq7oY=`（**私钥只在服务器、权限 600，任何环节都不读取** ✓）。未动 neilico / neilico-agent 容器 ✓、未改防火墙 ✓、Homepage 卡片已加 ✓。
+- **NEILICO 侧集成**（提交 `4431b7c`，20 文件）：控制面 `GET/PUT /api/v1/remote-desktop/config`（未登录 401 / 非 admin 403 / 非法 400 ✓，**只下发公钥** ✓，`available` 如实反映就绪）、`GET .../devices`（节点 + `rustdesk_id` + `connect_url`）、`GET .../status`（TCP 探活 21115/21116/21117）；dashboard 侧栏新增「**远程桌面**」页（服务器参数卡 + 一键复制 + 三平台安装指引 `flatpak`/`brew`/`winget` + 设备网格 + 发起连接，未上报 ID 的设备按钮置灰并说明 ✓）；新增 `docs/REMOTE_DESKTOP.md`。
+- **架构决策（已定）**：客户端走 **RustDesk 内核**（Flutter UI + `flutter_rust_bridge`，与官方同构）+ **方案②进程隔离**（内核作为独立组件，**不链接、不改其源码**）→ NEILICO 自身许可保持自由 ✓（AGPL 边界写在文档里）。
+- **P1.5 公网化加固**：`hbbr` 加 `-k _`（**中继校验 Key**，公网防滥用）、`RUSTDESK_RELAY_HOST` 参数化（去掉写死的内网 IP）、镜像锁主版本 tag、NOTES 增「公网部署」节（6 个端口 + **密钥迁移铁律**：丢失或重新生成 → 所有已装客户端都要重配 Key）。
+
+### 真机验收（我亲跑，不采信子代理自报）
+- Go：`gofmt -l` 空 / `go build`·`go vet` / `go test -count=1 ./...` 全 ok；前端：`vue-tsc --noEmit` 0 错 / `npm run build` 成功；本次 20 个文件、**未碰 `DomainsPage.vue`/`StreamsPage.vue`** ✓（「域名与代理」三标签页保持合并状态 ✓）。
+- 线上 `:13000`（真容器，不是临时二进制）：未登录 `/config` → **401** ✓；admin → **200 `available=true` `public_key` 长度 44** ✓；`/status` 21115·21116·21117 全 `reachable` ✓；`/devices` total=2 ✓；容器内只有 `rustdesk.pub`（44B）✓、**私钥不可读** ✓；hbbs/hbbr 仍 Up ✓。
+- 线上 bundle `index-kkIXc0sR.js`，含远程桌面页 chunk `RemoteDesktopPage-3uLCN5PO.js` ✓。
+
+### ⚠️ 踩坑（下次别再犯）
+1. **`docker-compose.neilico.yaml` 的 `environment:` 是 mapping（`KEY: value`），不是 list（`- KEY=value`）** —— 插成 list 会让 `docker compose` 直接拒绝解析（幸好它拦住了，生产零影响）。
+2. **服务名是 `app`**（`neilico` 只是 `container_name`）—— 写脚本前先 `yaml.safe_load` 打印结构，**别猜**。
+3. **改 compose 必须先备份 + 用 YAML 解析器断言（服务名/键/卷都命中）通过后才 `up -d`** —— 第二次失败就是靠这道闸自动回滚的。
+4. **公钥要「单文件 ro」挂进容器**（`data/rustdesk/id_ed25519.pub:/opt/neilico/rustdesk.pub:ro` + `NEILICO_RD_PUBLIC_KEY_FILE=/opt/neilico/rustdesk.pub`）：不挂 → `available=false`、页面显示「服务器未就绪」；**永远别把整个密钥目录挂进去**（私钥会进容器 ✗）。
+
 ## 域名反代 = NPM 式「代理主机」单步模型（2026-10-07 真机验收）
 
 - **从「两步两表」改为 NPM Proxy Host 形态**：一张表单（域名 + 转发地址 + 转发端口，+ http/https 默认 http）**一次提交**即完成「域名 → 地址:端口」绑定；一行 = 一个主机，可单行编辑/删除。
