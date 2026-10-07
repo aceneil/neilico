@@ -1,0 +1,40 @@
+# 内核与服务器的版本事实来源（single source of truth）。
+#
+# 约定：任何「内核能连、别人连不上」的问题，先看这个文件能不能对上号。
+# 升级 = 修改本文件 + 重建 + 跑 scripts/smoke-kernel.sh + 在 NOTES 记录。
+#
+# ⚠️ 本轮只建立骨架：commit / sha256 / 服务器 tag 需在 M1（真正拉取内核）时
+#    核实后填入，禁止凭记忆填写。
+
+rustdesk:
+  upstream_repo: "https://github.com/rustdesk/rustdesk"
+  license: "AGPL-3.0"
+  # 上游 tag（例如 1.3.x）。M1 落地时写入实际采用的 tag。
+  upstream_ref: "TODO(M1): 实际拉取的 tag"
+  # 对应的 40 位 commit，锁定后不得再跟随分支。
+  commit: "TODO(M1): 40 位 commit"
+  # 归档 tarball 的 sha256，用于校验与可复现构建。
+  tarball_sha256: "TODO(M1): sha256"
+
+neilico_kernel:
+  # 产物必须叫这个名字（客户端 KernelLocator 只认它）。
+  binary_name: "neilico-kernel"
+  binary_name_windows: "neilico-kernel.exe"
+  # 稳定入口；真实文件可带版本号，这里用符号链接/拷贝指向当前版本。
+  dist_path: "rust-core/dist/<os>-<arch>/neilico-kernel"
+  platforms: ["linux-x86_64", "macos-aarch64", "windows-x86_64"]
+
+servers:
+  # 与内核必须同代：内核换了，服务器 tag 也要一起评估。
+  hbbs:
+    image: "rustdesk/rustdesk-server"
+    tag: "TODO(M1): 与内核同代的 tag"
+    ports: [21115, 21116, 21118]
+  hbbr:
+    image: "rustdesk/rustdesk-server"
+    tag: "TODO(M1): 与内核同代的 tag"
+    ports: [21117, 21119]
+
+protocol:
+  # 客户端下发给内核的服务器参数（只有公钥）。
+  client_config_keys: ["id_server", "relay_server", "public_key"]

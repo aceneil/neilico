@@ -1,0 +1,40 @@
+# NEILICO 内核运行时配置样例
+#
+# 由客户端 KernelLaunchConfig.toToml() 生成（见
+# desktop/lib/services/kernel/kernel_process.dart），写入 0700 临时目录后
+# 通过 --config 传给内核进程：
+#
+#     neilico-kernel --config /tmp/neilico-kernel-XXXX/kernel.toml --service
+#
+# 安全：本文件只允许出现**公钥**。私钥（id_ed25519）由内核自己生成并持有，
+#       NEILICO 永不读取、永不写入、永不回显。
+
+[server]
+# 控制面下发的 ID/会合服务器（hbbs），端口见下。
+id_server = "rd.neilico.local"
+# 中继（hbbr）；一般与 id_server 同主机，可与 id_server 相同。
+relay_server = "rd.neilico.local"
+# 服务器的公钥（base64）。客户端只拿得到它，用于校验服务器身份。
+public_key = "REPLACE_WITH_PUBLIC_KEY"
+
+[server.ports]
+# 与 control-plane 的 RemoteDesktopConfig.ports 保持一致（默认值）。
+hbbs_id = 21115
+hbbs_relay = 21116
+hbbr_relay = 21117
+
+[render]
+# 画面渲染/编解码完全由内核负责，NEILICO 不参与。
+kernel_only = true
+
+[identity]
+# 可选：期望的 RustDesk ID（内核会持久化自己的 id_ed25519）。
+# device_id = "123456789"
+
+[network]
+# 隧道策略提示（NEILICO 语义）：
+#   auto   = Mesh 可达走直连，否则回落中继（默认）
+#   direct = 强制 Mesh 直连
+#   relay  = 强制中继
+# 该字段由客户端依据设备授权状态写入；内核侧按自身能力择优。
+tunnel_mode = "auto"
