@@ -38,6 +38,9 @@ const router = createRouter({
           path: 'devices',
           name: 'devices',
           component: () => import('@/pages/devices/DevicesPage.vue'),
+          // 旧深链 `/devices?tab=remote`（以及任何本页已废弃的 tab 参数）统一落到干净的 /devices：
+          // 「设备管理」已是单一视图，远程控制直接长在设备列表里。
+          beforeEnter: (to) => (to.query.tab ? { path: '/devices' } : true),
           meta: { title: '设备管理', icon: 'cluster', roles: ['platform_admin', 'tenant_admin', 'ops', 'readonly'] }
         },
         {
@@ -48,11 +51,12 @@ const router = createRouter({
           meta: { title: '设备管理', icon: 'cluster', roles: ['platform_admin', 'tenant_admin', 'ops', 'readonly'], hidden: true }
         },
         {
-          // 远程桌面已并入「设备管理」页（/devices?tab=remote），保留路由做深链兼容，从侧栏隐藏。
+          // 远程桌面已并入「设备管理」页：远程控制长在设备列表里，全局参数在页头弹窗。
+          // 保留路由做深链兼容（不再带 tab 参数），从侧栏隐藏。
           path: 'remote-desktop',
           name: 'remote-desktop',
-          redirect: { path: '/devices', query: { tab: 'remote' } },
-          meta: { title: '远程桌面', icon: 'desktop', roles: ['platform_admin', 'tenant_admin', 'ops', 'readonly'], hidden: true }
+          redirect: { path: '/devices' },
+          meta: { title: '设备管理', icon: 'cluster', roles: ['platform_admin', 'tenant_admin', 'ops', 'readonly'], hidden: true }
         },
         {
           path: 'domains',

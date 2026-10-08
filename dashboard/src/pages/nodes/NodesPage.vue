@@ -1,7 +1,7 @@
 <script setup lang="ts">
-// 「设备列表」标签内容组件（由 NodesPage 抽取而来）。
-// 页面外壳（PageHeader / 顶层标签）由 DevicesPage.vue 提供，本组件只负责
-// 设备表格、筛选、详情与接入/注册弹窗，可被当作标签内容直接渲染。
+// 「设备管理」页的设备列表（唯一视图，不再包在标签里）。
+// 远程控制直接长在本列表：表格「远程」列（可被远程开关 + 发起连接）
+// 与详情抽屉「远程控制」四控件（可被远程 / 隧道模式 / 单独隧道 / Mesh），即时 PATCH。
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import {
   CopyOutlined,
@@ -10,6 +10,7 @@ import {
   EyeOutlined,
   FilterOutlined,
   LinkOutlined,
+  PlayCircleOutlined,
   PlusOutlined,
   ReloadOutlined,
   SafetyCertificateOutlined,
@@ -21,11 +22,12 @@ import DataState from '@/components/DataState.vue'
 import EChart from '@/components/EChart.vue'
 import { apiErrorMessage, apiErrorStatus } from '@/api/http'
 import { nodesApi, type NodeListQuery } from '@/api/nodes'
+import { remoteDesktopApi } from '@/api/remote-desktop'
 import EnrollDeviceModal from '@/pages/nodes/EnrollDeviceModal.vue'
 import { useAuthStore } from '@/stores/auth'
 import { copyText } from '@/utils/clipboard'
 import { useThemeStore } from '@/stores/theme'
-import { canManageNodes } from '@/utils/permissions'
+import { canManageNodes, canManageRemoteDesktopPolicies } from '@/utils/permissions'
 import { formatBytes, formatTime } from '@/utils/format'
 import { maskSecret } from '@/utils/sensitive'
 import type {
@@ -33,11 +35,13 @@ import type {
   NodeCapabilities,
   NodeCertificate,
   NodeMetrics,
-  NodeRegisterResult
+  NodeRegisterResult,
+  RemoteDesktopDevice,
+  RemoteDesktopDevicePolicy,
+  RemoteDesktopDevicePolicyPatch,
+  RemoteDesktopTunnelMode
 } from '@/types/api'
 import { daysUntil, remainingDaysLabel } from '@/utils/format'
-
-const emit = defineEmits<{ count: [value: number] }>()
 
 const auth = useAuthStore()
 const theme = useThemeStore()
@@ -63,6 +67,20 @@ const mtlsLoading = ref(false)
 const mtlsError = ref('')
 const metricsLoading = ref(false)
 const metricsError = ref('')
+
+// ── 远程控制：内联授权状态（后端权威）。接口未就绪时相关控件一律置灰并写明原因。 ──
+const canWritePolicies = computed(() => canManageRemoteDesktopPolicies(auth.role))
+const rdDevices = ref<Record<string, RemoteDesktopDevice>>({})
+const policies = ref<Record<string, RemoteDesktopDevicePolicy>>({})
+const policyReady = ref(false)
+const policyError = ref('')
+const policySaving = ref('')
+
+const tunnelModeOptions: { value: RemoteDesktopTunnelMode; label: string }[] = [
+  { value: 'auto', label: '自动' },
+  { value: 'direct', label: '直连' },
+  { value: 'relay', label: '中继' }
+]
 
 const registerForm = reactive({
   name: '',
@@ -167,6 +185,112 @@ function statusTooltip(node: Node): string {
   return parts.join('\n')
 }
 
+/* ---------------- 远程控制（内联授权） ---------------- */
+
+// 授权状态以后端为准；缺条目时给一个默认视图仅用于渲染（控件会因 hasPolicy=false 置灰）。
+function policyFor(node: Node): RemoteDesktopDevicePolicy {
+  return (
+    policies.value[node.id] ?? {
+      node_id: node.id,
+      remote_control_allowed: false,
+      tunnel_mode: 'auto',
+      isolated_tunnel: { enabled: false, stream_rule_id: null },
+      mesh: { joined: false, network_id: null, virtual_ip: node.virtual_ip ?? null },
+      readonly: { subnet_routes: 'unavailable' }
+    }
+  )
+}
+
+function hasPolicy(node: Node): boolean {
+  return Boolean(policies.value[node.id])
+}
+
+// 可编辑 = 是 admin 且授权接口就绪且拿到了该设备的条目。
+function policyEditable(node: Node): boolean {
+  return canWritePolicies.value && policyReady.value && hasPolicy(node)
+}
+
+function meshBlocked(node: Node): boolean {
+  const policy = policies.value[node.id]
+  if (!policy) return true
+  // 未加入且后端没给出可加入的网络 → 置灰（与客户端一致：没有可加入的虚拟网络）。
+  return !policy.mesh.joined && !policy.mesh.network_id
+}
+
+function meshTitle(node: Node): string {
+  if (meshBlocked(node) && policyEditable(node)) return '未加入任何虚拟网络，先创建虚拟网络再加入'
+  return '加入 / 退出虚拟网络，参与 Mesh 直连'
+}
+
+async function applyPolicy(node: Node, patch: RemoteDesktopDevicePolicyPatch) {
+  if (!policyEditable(node)) return
+  policySaving.value = node.id
+  try {
+    const updated = await remoteDesktopApi.updatePolicy(node.id, patch)
+    policies.value = { ...policies.value, [updated.node_id]: updated }
+    message.success('设备授权已更新')
+  } catch (cause) {
+    // 401/403/409/422 已由 http 拦截器统一提示，这里只补其余状态，避免重复弹窗。
+    const status = apiErrorStatus(cause)
+    if (!status || ![401, 403, 409, 422].includes(status)) {
+      message.error(apiErrorMessage(cause))
+    }
+  } finally {
+    policySaving.value = ''
+  }
+}
+
+function onRemoteControl(node: Node, value: boolean | string | number) {
+  void applyPolicy(node, { remote_control_allowed: Boolean(value) })
+}
+
+function onTunnelMode(node: Node, value: RemoteDesktopTunnelMode) {
+  void applyPolicy(node, { tunnel_mode: value })
+}
+
+function onIsolatedTunnel(node: Node, value: boolean | string | number) {
+  void applyPolicy(node, { isolated_tunnel_enabled: Boolean(value) })
+}
+
+function onMeshJoined(node: Node, value: boolean | string | number) {
+  void applyPolicy(node, { mesh_joined: Boolean(value) })
+}
+
+function remoteDevice(node: Node): RemoteDesktopDevice | undefined {
+  return rdDevices.value[node.id]
+}
+
+// 优先调起本地 RustDesk（rustdesk://<id>）；无 ID 或未开启时按钮置灰并在提示里说明原因。
+function connectUrl(node: Node): string {
+  return remoteDevice(node)?.connect_url || ''
+}
+
+function connectDisabled(node: Node): boolean {
+  if (!connectUrl(node)) return true
+  if (hasPolicy(node) && !policyFor(node).remote_control_allowed) return true
+  return false
+}
+
+function connectReason(node: Node): string {
+  if (!remoteDevice(node)) return '未获取到该设备的远程访问信息'
+  if (!connectUrl(node)) return '需该设备安装 RustDesk 并上报 ID（节点标签 rustdesk:<id>）'
+  if (hasPolicy(node) && !policyFor(node).remote_control_allowed) return '该设备未开启「可被远程」'
+  return '通过本地 RustDesk 发起连接'
+}
+
+function remoteToggleReason(node: Node): string {
+  if (!canWritePolicies.value) return '当前账号只读：需平台/租户管理员才能修改授权'
+  if (!policyReady.value) return `授权接口未就绪${policyError.value ? `：${policyError.value}` : ''}`
+  if (!hasPolicy(node)) return '未获取到该设备的授权状态'
+  return '开启后客户端方可对该设备发起远程连接（默认关闭）'
+}
+
+function launch(node: Node) {
+  const url = connectUrl(node)
+  if (!url) return
+  window.location.href = url
+}
+
 async function load(options: { silent?: boolean } = {}) {
   const silent = options.silent === true
   if (!silent) {
@@ -181,14 +305,45 @@ async function load(options: { silent?: boolean } = {}) {
     announceNewNodes(nodes.value, result.items)
     nodes.value = result.items
     total.value = result.total
-    emit('count', result.total)
     lastRefreshedAt.value = Date.now()
+    await loadRemote()
   } catch (cause) {
     // 静默轮询失败不覆盖已有内容：网络抖一下不该把页面变成错误态
     if (!silent) error.value = apiErrorMessage(cause)
   } finally {
     if (!silent) loading.value = false
   }
+}
+
+// 远程访问信息（ID/连接参数）与授权状态独立降级：失败时相关控件置灰并说明，绝不本地编造状态。
+async function loadRemote() {
+  const [deviceResult, policyResult] = await Promise.allSettled([
+    remoteDesktopApi.devices(),
+    remoteDesktopApi.devicePolicies()
+  ])
+  if (deviceResult.status === 'fulfilled') {
+    const map: Record<string, RemoteDesktopDevice> = {}
+    for (const device of deviceResult.value.items) map[device.id] = device
+    rdDevices.value = map
+  }
+  if (policyResult.status === 'fulfilled') {
+    const map: Record<string, RemoteDesktopDevicePolicy> = {}
+    for (const policy of policyResult.value.items) map[policy.node_id] = policy
+    policies.value = map
+    policyReady.value = true
+    policyError.value = ''
+  } else {
+    policyReady.value = false
+    policyError.value = apiErrorMessage(policyResult.reason)
+  }
+}
+
+// 手动刷新（非静默：失败显示错误）与静默刷新（轮询用：失败不覆盖已有内容）两个入口。
+function loadNow() {
+  return load()
+}
+function reloadSilently() {
+  return load({ silent: true })
 }
 
 // ── 自动刷新：设备接入后无需手动刷新 ─────────────────────────────────────
@@ -217,7 +372,7 @@ function startPolling() {
   stopPolling()
   pollTimer = window.setInterval(() => {
     if (document.visibilityState !== 'visible' || !autoRefresh.value) return
-    void load({ silent: true })
+    void reloadSilently()
   }, AUTO_REFRESH_MS)
 }
 
@@ -231,7 +386,7 @@ function stopPolling() {
 // 从后台切回来时立刻刷一次（标签页在后台时轮询是暂停的）
 function handleVisibilityChange() {
   if (document.visibilityState === 'visible' && autoRefresh.value) {
-    void load({ silent: true })
+    void reloadSilently()
   }
 }
 
@@ -247,7 +402,7 @@ onBeforeUnmount(() => {
 
 function applyFilters() {
   page.value = 1
-  void load()
+  void loadNow()
 }
 
 async function loadNodeMetrics() {
@@ -292,6 +447,8 @@ function openDetail(node: Node) {
   detailOpen.value = true
   void loadNodeMetrics()
   void loadNodeMTLS()
+  // 抽屉里的四个远程控件按最新后端状态渲染。
+  void loadRemote()
 }
 
 watch(detailOpen, (open) => {
@@ -356,7 +513,7 @@ function removeNode(node: Node) {
     async onOk() {
       await nodesApi.remove(node.id)
       message.success('设备已删除')
-      await load()
+      await loadNow()
     }
   })
 }
@@ -375,7 +532,7 @@ async function registerNode() {
     })
     registerOpen.value = false
     message.success('节点注册成功')
-    await load()
+    await loadNow()
   } catch (cause) {
     message.error(apiErrorMessage(cause))
   } finally {
@@ -410,21 +567,21 @@ function resetRegister() {
   registerFormRef.value?.clearValidate()
 }
 
-void load()
+void loadNow()
 
-defineExpose({ reload: load })
+defineExpose({ reload: loadNow })
 </script>
 
 <template>
-  <div class="tab-panel nodes-panel">
-    <div class="tab-actions">
+  <div class="nodes-panel">
+    <div class="nodes-actions">
       <a-tooltip :title="`每 ${AUTO_REFRESH_MS / 1000} 秒自动刷新；上次 ${lastRefreshedLabel}`">
         <span class="auto-refresh">
           <a-switch v-model:checked="autoRefresh" size="small" />
           <span class="auto-refresh-label">自动刷新</span>
         </span>
       </a-tooltip>
-      <a-button @click="load()"><ReloadOutlined /> 刷新</a-button>
+      <a-button @click="loadNow()"><ReloadOutlined /> 刷新</a-button>
       <a-button v-if="canWrite" type="primary" @click="enrollOpen = true">
         <LinkOutlined /> 接入设备
       </a-button>
@@ -466,14 +623,14 @@ defineExpose({ reload: load })
           :empty="filteredNodes.length === 0"
           empty-title="没有匹配的设备"
           empty-description="调整筛选条件，或注册一个新节点"
-          @retry="load"
+          @retry="loadNow"
         >
         <a-table
           :data-source="filteredNodes"
           :row-key="(record: Node) => record.id"
           :pagination="false"
           size="middle"
-          :scroll="{ x: 1180, y: 'calc(100vh - 470px)' }"
+          :scroll="{ x: 1420, y: 'calc(100vh - 470px)' }"
         >
           <a-table-column title="名称" data-index="name" :width="180" fixed="left">
             <template #default="{ record }">
@@ -489,6 +646,40 @@ defineExpose({ reload: load })
           </a-table-column>
           <a-table-column title="虚拟 IP" data-index="virtual_ip" :width="145">
             <template #default="{ record }">{{ record.virtual_ip || '—' }}</template>
+          </a-table-column>
+          <a-table-column title="远程" :width="230">
+            <template #header>
+              <a-tooltip title="该设备是否允许被远程控制，以及通过本地 RustDesk 发起连接">
+                <span>远程</span>
+              </a-tooltip>
+            </template>
+            <template #default="{ record }">
+              <div class="remote-cell">
+                <a-tooltip :title="remoteToggleReason(record)">
+                  <span class="remote-switch">
+                    <a-switch
+                      size="small"
+                      :checked="policyFor(record).remote_control_allowed"
+                      :disabled="!policyEditable(record)"
+                      :loading="policySaving === record.id"
+                      @change="(checked: boolean | string | number) => onRemoteControl(record, checked)"
+                    />
+                  </span>
+                </a-tooltip>
+                <a-tooltip :title="connectReason(record)">
+                  <span class="remote-connect">
+                    <a-button
+                      size="small"
+                      type="primary"
+                      :disabled="connectDisabled(record)"
+                      @click="launch(record)"
+                    >
+                      <PlayCircleOutlined /> 发起连接
+                    </a-button>
+                  </span>
+                </a-tooltip>
+              </div>
+            </template>
           </a-table-column>
           <a-table-column title="接入能力" :width="330">
             <template #default="{ record }">
@@ -550,7 +741,7 @@ defineExpose({ reload: load })
               :total="total"
               show-size-changer
               :show-total="(count: number) => `${count} 条`"
-              @change="load"
+              @change="loadNow"
               @show-size-change="applyFilters"
             />
           </div>
@@ -640,6 +831,97 @@ defineExpose({ reload: load })
           message="该节点尚未签发 mTLS 客户端证书"
           class="drawer-alert"
         />
+
+        <!-- 远程控制：四个控件即时 PATCH（响应 { item }，原地回写） -->
+        <h3 class="drawer-section-title">远程控制</h3>
+        <div class="remote-policy">
+          <p v-if="!canWritePolicies" class="remote-policy__note">当前账号只读：需平台/租户管理员才能修改授权。</p>
+          <p v-else-if="!policyReady" class="remote-policy__note">
+            授权接口未就绪，暂不可修改{{ policyError ? `：${policyError}` : '' }}。
+          </p>
+          <p v-else-if="!hasPolicy(selectedNode)" class="remote-policy__note">未获取到该设备的授权状态。</p>
+
+          <div class="remote-policy__row">
+            <span class="remote-policy__label">可被远程</span>
+            <a-tooltip :title="remoteToggleReason(selectedNode)">
+              <span class="remote-switch">
+                <a-switch
+                  size="small"
+                  :checked="policyFor(selectedNode).remote_control_allowed"
+                  :disabled="!policyEditable(selectedNode)"
+                  :loading="policySaving === selectedNode.id"
+                  @change="(checked: boolean | string | number) => selectedNode && onRemoteControl(selectedNode, checked)"
+                />
+              </span>
+            </a-tooltip>
+          </div>
+
+          <div class="remote-policy__row">
+            <span class="remote-policy__label">隧道模式</span>
+            <a-tooltip title="直连走 Mesh，中继经 hbbr，自动由客户端择优">
+              <a-radio-group
+                size="small"
+                button-style="solid"
+                :value="policyFor(selectedNode).tunnel_mode"
+                :disabled="!policyEditable(selectedNode)"
+                @change="(event: { target: { value: RemoteDesktopTunnelMode } }) => selectedNode && onTunnelMode(selectedNode, event.target.value)"
+              >
+                <a-radio-button v-for="option in tunnelModeOptions" :key="option.value" :value="option.value">
+                  {{ option.label }}
+                </a-radio-button>
+              </a-radio-group>
+            </a-tooltip>
+          </div>
+
+          <div class="remote-policy__row">
+            <span class="remote-policy__label">单独隧道</span>
+            <a-tooltip :title="selectedNode.virtual_ip ? '复用端口转发规则为该设备单独开一条隧道' : '设备未分配虚拟 IP，无法建立单独隧道'">
+              <span class="remote-switch">
+                <a-switch
+                  size="small"
+                  :checked="policyFor(selectedNode).isolated_tunnel.enabled"
+                  :disabled="!policyEditable(selectedNode) || !selectedNode.virtual_ip"
+                  :loading="policySaving === selectedNode.id"
+                  @change="(checked: boolean | string | number) => selectedNode && onIsolatedTunnel(selectedNode, checked)"
+                />
+              </span>
+            </a-tooltip>
+          </div>
+
+          <div class="remote-policy__row">
+            <span class="remote-policy__label">Mesh 加入</span>
+            <a-tooltip :title="meshTitle(selectedNode)">
+              <span class="remote-switch">
+                <a-switch
+                  size="small"
+                  :checked="policyFor(selectedNode).mesh.joined"
+                  :disabled="!policyEditable(selectedNode) || meshBlocked(selectedNode)"
+                  :loading="policySaving === selectedNode.id"
+                  @change="(checked: boolean | string | number) => selectedNode && onMeshJoined(selectedNode, checked)"
+                />
+              </span>
+            </a-tooltip>
+          </div>
+
+          <div class="remote-policy__actions">
+            <a-tooltip :title="connectReason(selectedNode)">
+              <span class="remote-connect">
+                <a-button
+                  size="small"
+                  type="primary"
+                  :disabled="connectDisabled(selectedNode)"
+                  @click="launch(selectedNode)"
+                >
+                  <PlayCircleOutlined /> 发起连接
+                </a-button>
+              </span>
+            </a-tooltip>
+            <span class="detail-muted">
+              {{ remoteDevice(selectedNode)?.rustdesk_id ? `RustDesk ID：${remoteDevice(selectedNode)?.rustdesk_id}` : '未上报 RustDesk ID' }}
+            </span>
+          </div>
+        </div>
+
         <h3 class="drawer-section-title">指标（最近 24 小时）</h3>
         <DataState
           :loading="metricsLoading"
@@ -688,7 +970,7 @@ defineExpose({ reload: load })
 
     <EnrollDeviceModal
       v-model:open="enrollOpen"
-      @enrolled="load({ silent: true })"
+      @enrolled="reloadSilently()"
     />
 
     <a-modal
@@ -778,7 +1060,65 @@ defineExpose({ reload: load })
   min-height: 0;
 }
 
-.tab-actions {
+.nodes-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
   gap: 10px;
+}
+
+/* 「远程」列：可被远程开关 + 发起连接按钮 */
+.remote-cell {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.remote-switch,
+.remote-connect {
+  display: inline-flex;
+  align-items: center;
+}
+
+/* 详情抽屉「远程控制」块 */
+.remote-policy {
+  display: flex;
+  margin-bottom: 8px;
+  padding: 12px 14px;
+  flex-direction: column;
+  gap: 10px;
+  background: var(--surface-subtle);
+  border: 1px solid var(--border);
+  border-radius: var(--ui-card-radius);
+}
+
+.remote-policy__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.remote-policy__label {
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.remote-policy__note {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-style: italic;
+}
+
+.remote-policy__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
 }
 </style>
