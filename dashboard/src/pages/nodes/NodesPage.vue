@@ -1,4 +1,7 @@
 <script setup lang="ts">
+// 「设备列表」标签内容组件（由 NodesPage 抽取而来）。
+// 页面外壳（PageHeader / 顶层标签）由 DevicesPage.vue 提供，本组件只负责
+// 设备表格、筛选、详情与接入/注册弹窗，可被当作标签内容直接渲染。
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import {
   CopyOutlined,
@@ -16,7 +19,6 @@ import { message, Modal } from 'ant-design-vue'
 import type { EChartsOption } from 'echarts'
 import DataState from '@/components/DataState.vue'
 import EChart from '@/components/EChart.vue'
-import PageHeader from '@/components/PageHeader.vue'
 import { apiErrorMessage, apiErrorStatus } from '@/api/http'
 import { nodesApi, type NodeListQuery } from '@/api/nodes'
 import EnrollDeviceModal from '@/pages/nodes/EnrollDeviceModal.vue'
@@ -34,6 +36,8 @@ import type {
   NodeRegisterResult
 } from '@/types/api'
 import { daysUntil, remainingDaysLabel } from '@/utils/format'
+
+const emit = defineEmits<{ count: [value: number] }>()
 
 const auth = useAuthStore()
 const theme = useThemeStore()
@@ -177,6 +181,7 @@ async function load(options: { silent?: boolean } = {}) {
     announceNewNodes(nodes.value, result.items)
     nodes.value = result.items
     total.value = result.total
+    emit('count', result.total)
     lastRefreshedAt.value = Date.now()
   } catch (cause) {
     // 静默轮询失败不覆盖已有内容：网络抖一下不该把页面变成错误态
@@ -406,27 +411,27 @@ function resetRegister() {
 }
 
 void load()
+
+defineExpose({ reload: load })
 </script>
 
 <template>
-  <div class="page-container">
-    <PageHeader title="设备管理" subtitle="注册、查看和维护接入 NEILICO 的节点设备">
-      <template #actions>
-        <a-tooltip :title="`每 ${AUTO_REFRESH_MS / 1000} 秒自动刷新；上次 ${lastRefreshedLabel}`">
-          <span class="auto-refresh">
-            <a-switch v-model:checked="autoRefresh" size="small" />
-            <span class="auto-refresh-label">自动刷新</span>
-          </span>
-        </a-tooltip>
-        <a-button @click="load()"><ReloadOutlined /> 刷新</a-button>
-        <a-button v-if="canWrite" type="primary" @click="enrollOpen = true">
-          <LinkOutlined /> 接入设备
-        </a-button>
-        <a-button v-if="canWrite" @click="registerOpen = true; resetRegister()">
-          <PlusOutlined /> 手动注册
-        </a-button>
-      </template>
-    </PageHeader>
+  <div class="tab-panel nodes-panel">
+    <div class="tab-actions">
+      <a-tooltip :title="`每 ${AUTO_REFRESH_MS / 1000} 秒自动刷新；上次 ${lastRefreshedLabel}`">
+        <span class="auto-refresh">
+          <a-switch v-model:checked="autoRefresh" size="small" />
+          <span class="auto-refresh-label">自动刷新</span>
+        </span>
+      </a-tooltip>
+      <a-button @click="load()"><ReloadOutlined /> 刷新</a-button>
+      <a-button v-if="canWrite" type="primary" @click="enrollOpen = true">
+        <LinkOutlined /> 接入设备
+      </a-button>
+      <a-button v-if="canWrite" @click="registerOpen = true; resetRegister()">
+        <PlusOutlined /> 手动注册
+      </a-button>
+    </div>
 
     <section class="filter-bar" :class="{ 'filter-bar--collapsed': filtersCollapsed }">
       <a-button class="filter-collapse" :aria-label="filtersCollapsed ? '展开筛选' : '收起筛选'" @click="filtersCollapsed = !filtersCollapsed">
@@ -468,7 +473,7 @@ void load()
           :row-key="(record: Node) => record.id"
           :pagination="false"
           size="middle"
-          :scroll="{ x: 1180, y: 'calc(100vh - 390px)' }"
+          :scroll="{ x: 1180, y: 'calc(100vh - 470px)' }"
         >
           <a-table-column title="名称" data-index="name" :width="180" fixed="left">
             <template #default="{ record }">
@@ -767,3 +772,13 @@ void load()
     </a-modal>
   </div>
 </template>
+
+<style scoped>
+.nodes-panel {
+  min-height: 0;
+}
+
+.tab-actions {
+  gap: 10px;
+}
+</style>

@@ -2,6 +2,7 @@ package api_test
 
 import (
 	"net/http"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -318,5 +319,45 @@ func TestRemoteDesktopDevicePolicyPatchIsAudited(t *testing.T) {
 	}
 	if audits < 1 {
 		t.Fatalf("policy update audit records = %d, want at least 1", audits)
+	}
+}
+
+// PATCH 必须回显**更新后的完整对象**（契约：与 GET 单项一致）。
+// 回归锁：曾出现响应 `item` 为空/字段全 null，写入已生效但客户端拿不到新状态。
+func TestRemoteDesktopDevicePolicyPatchEchoesUpdatedItem(t *testing.T) {
+	app := newRemoteDesktopApp(t, writePublicKey(t, testRemoteDesktopPublicKey))
+	admin := mustLogin(t, app, "admin@example.test", "bootstrap-password")
+	nodeID := registerPolicyNode(t, app, admin.Token, "nas-echo")
+
+	status, body := mustRequest(t, app.server, http.MethodPatch, "/api/v1/remote-desktop/device-policies/"+nodeID.String(), admin.Token,
+		map[string]any{"remote_control_allowed": true, "tunnel_mode": "relay"})
+	requireStatus(t, status, http.StatusOK)
+
+	// 原始响应体绝不能是 {"item": null}——那正是「不回显」的形态。
+	if strings.Contains(string(body), `"item":null`) {
+		t.Fatalf("PATCH echoed a null item: %s", body)
+	}
+	var env policyEnvelope
+	decodeResponse(t, body, &env)
+	if env.Item.NodeID != nodeID {
+		t.Fatalf("echoed node_id = %s, want %s", env.Item.NodeID, nodeID)
+	}
+	if !env.Item.RemoteControlAllowed || env.Item.TunnelMode != service.TunnelModeRelay {
+		t.Fatalf("echoed item does not reflect the update: %#v", env.Item)
+	}
+	if env.Item.Readonly.SubnetRoutes != service.SubnetRoutesUnavailable {
+		t.Fatalf("echoed readonly subtree is empty: %#v", env.Item.Readonly)
+	}
+
+	// 回显对象必须与随后 GET 的单项逐字段一致（PATCH ≡ GET 单项）。
+	status, body = mustRequest(t, app.server, http.MethodGet, "/api/v1/remote-desktop/device-policies", admin.Token, nil)
+	requireStatus(t, status, http.StatusOK)
+	var list service.RemoteDesktopDevicePolicyList
+	decodeResponse(t, body, &list)
+	if len(list.Items) != 1 {
+		t.Fatalf("policy list = %#v, want exactly one item", list)
+	}
+	if !reflect.DeepEqual(env.Item, list.Items[0]) {
+		t.Fatalf("PATCH echo %#v != GET item %#v", env.Item, list.Items[0])
 	}
 }

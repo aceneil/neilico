@@ -16,7 +16,7 @@ NEILICO 的「远程桌面」能力：控制面下发**自建 RustDesk 服务器
 | :--- | :--- | :--- |
 | 控制面接口 | `control-plane/internal/api/remote_desktop.go` | `/api/v1/remote-desktop/*` |
 | 服务/配置 | `control-plane/internal/service/remote_desktop.go`、`internal/config/config.go` | 参数解析、公钥读取、设备视图、端口探活 |
-| Dashboard 页 | `dashboard/src/pages/remote-desktop/RemoteDesktopPage.vue` | 侧栏「远程桌面」 |
+| Dashboard 页 | `dashboard/src/pages/devices/DevicesPage.vue`（外壳）+ `dashboard/src/pages/remote-desktop/RemoteDesktopPage.vue`（标签内容） | 侧栏「设备管理」→ 页内标签「远程访问」；旧深链 `/remote-desktop` 保留并重定向到 `/devices?tab=remote` |
 | 前端 API | `dashboard/src/api/remote-desktop.ts` | |
 
 ## 快速启用
@@ -26,7 +26,7 @@ NEILICO 的「远程桌面」能力：控制面下发**自建 RustDesk 服务器
 2. **让控制面能读到公钥**：把 `id_ed25519.pub` 挂载进控制面容器，并把路径用
    `NEILICO_RD_PUBLIC_KEY_FILE` 指过去（**只读公钥，绝不挂载/读取私钥**）。
 3. **设置服务器地址**：`NEILICO_RD_ID_SERVER`（hbbs）与 `NEILICO_RD_RELAY_SERVER`（hbbr）。
-4. 打开侧栏「远程桌面」，把页面上的 **ID 服务器 / 中继服务器 / Key 公钥** 填进各设备的 RustDesk 客户端。
+4. 打开侧栏「设备管理」→ 标签「远程访问」，把页面上的 **ID 服务器 / 中继服务器 / Key 公钥** 填进各设备的 RustDesk 客户端。
 
 ### 环境变量（均可用 YAML `remote_desktop:` 段覆盖）
 

@@ -1,5 +1,6 @@
 <script setup lang="ts">
-// 「远程桌面」页：自建 RustDesk 服务器（hbbs/hbbr）的接入参数 + 客户端安装指引 + 设备网格。
+// 「远程访问」标签内容组件（由「远程桌面」页抽取而来）。
+// 自建 RustDesk 服务器（hbbs/hbbr）的接入参数 + 客户端安装指引 + 设备网格。
 // 安全要点：后端只下发**公钥**；本页永不渲染私钥或任何令牌。
 import { computed, reactive, ref } from 'vue'
 import {
@@ -17,7 +18,6 @@ import {
 } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
 import DataState from '@/components/DataState.vue'
-import PageHeader from '@/components/PageHeader.vue'
 import { remoteDesktopApi, type RemoteDesktopConfigInput } from '@/api/remote-desktop'
 import { apiErrorStatus, apiErrorMessage } from '@/api/http'
 import { copyText } from '@/utils/clipboard'
@@ -36,6 +36,8 @@ import type {
 const auth = useAuthStore()
 const canWrite = computed(() => canManageRemoteDesktop(auth.role))
 const canWritePolicies = computed(() => canManageRemoteDesktopPolicies(auth.role))
+
+const emit = defineEmits<{ count: [value: number] }>()
 
 const config = ref<RemoteDesktopConfig | null>(null)
 const devices = ref<RemoteDesktopDevice[]>([])
@@ -110,6 +112,7 @@ async function load() {
     ])
     config.value = cfg
     devices.value = list.items
+    emit('count', list.total)
     if (policyList) {
       const map: Record<string, RemoteDesktopDevicePolicy> = {}
       for (const policy of policyList.items) map[policy.node_id] = policy
@@ -259,16 +262,16 @@ function copyConnectParams(device: RemoteDesktopDevice) {
 }
 
 void load()
+
+defineExpose({ reload: load })
 </script>
 
 <template>
-  <div class="page-container remote-desktop-page">
-    <PageHeader title="远程桌面" subtitle="自建 RustDesk 服务器接入参数、客户端安装与设备远控">
-      <template #actions>
-        <a-button @click="load"><ReloadOutlined /> 刷新</a-button>
-        <a-button v-if="canWrite" type="primary" @click="openEdit"><EditOutlined /> 编辑服务器参数</a-button>
-      </template>
-    </PageHeader>
+  <div class="tab-panel remote-desktop-panel">
+    <div class="tab-actions">
+      <a-button @click="load"><ReloadOutlined /> 刷新</a-button>
+      <a-button v-if="canWrite" type="primary" @click="openEdit"><EditOutlined /> 编辑服务器参数</a-button>
+    </div>
 
     <DataState
       :loading="loading && !config"
@@ -533,8 +536,12 @@ void load()
 </template>
 
 <style scoped>
-.remote-desktop-page {
+.remote-desktop-panel {
   min-height: 0;
+}
+
+.tab-actions {
+  gap: 10px;
 }
 
 .rd-top {

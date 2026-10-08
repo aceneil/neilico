@@ -161,5 +161,7 @@ func (s *Server) handleRemoteDesktopDevicePolicyItem(w http.ResponseWriter, r *h
 	})
 	// 单独隧道可能新增/删除转发规则：让转发引擎立即与数据库对齐。
 	s.ReconcileStreams(r.Context())
+	// 回显**更新后的完整对象**（契约：`{ "item": { ...同 GET 单项... } }`）——
+	// 客户端据此原地刷新开关，无需再补发一次 GET；绝不可回 null/空对象。
 	writeJSON(w, http.StatusOK, map[string]any{"item": view})
 }

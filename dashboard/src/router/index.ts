@@ -35,16 +35,24 @@ const router = createRouter({
           meta: { title: '告警中心', icon: 'bell', roles: ['platform_admin', 'tenant_admin', 'ops', 'readonly'] }
         },
         {
-          path: 'nodes',
-          name: 'nodes',
-          component: () => import('@/pages/nodes/NodesPage.vue'),
+          path: 'devices',
+          name: 'devices',
+          component: () => import('@/pages/devices/DevicesPage.vue'),
           meta: { title: '设备管理', icon: 'cluster', roles: ['platform_admin', 'tenant_admin', 'ops', 'readonly'] }
         },
         {
+          // 设备列表已并入「设备管理」页（/devices），保留旧路由做深链兼容，从侧栏隐藏。
+          path: 'nodes',
+          name: 'nodes',
+          redirect: { path: '/devices' },
+          meta: { title: '设备管理', icon: 'cluster', roles: ['platform_admin', 'tenant_admin', 'ops', 'readonly'], hidden: true }
+        },
+        {
+          // 远程桌面已并入「设备管理」页（/devices?tab=remote），保留路由做深链兼容，从侧栏隐藏。
           path: 'remote-desktop',
           name: 'remote-desktop',
-          component: () => import('@/pages/remote-desktop/RemoteDesktopPage.vue'),
-          meta: { title: '远程桌面', icon: 'desktop', roles: ['platform_admin', 'tenant_admin', 'ops', 'readonly'] }
+          redirect: { path: '/devices', query: { tab: 'remote' } },
+          meta: { title: '远程桌面', icon: 'desktop', roles: ['platform_admin', 'tenant_admin', 'ops', 'readonly'], hidden: true }
         },
         {
           path: 'domains',
