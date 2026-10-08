@@ -586,6 +586,34 @@ export interface RemoteDesktopStatus {
   checked_at: string
 }
 
+// 自托管 hbbs/hbbr 的端点（按需模式下未启用时 listening=false 属正常）。
+export interface RemoteDesktopServerEndpoint {
+  port: number
+  protocol: 'tcp' | 'udp'
+  owner: 'hbbs' | 'hbbr'
+  listening: boolean
+}
+
+export type RemoteDesktopServerMode = 'on_demand' | 'always_on' | 'off'
+
+// 自托管服务端状态（GET /remote-desktop/server-status）。
+export interface RemoteDesktopServerStatus {
+  mode: RemoteDesktopServerMode
+  running: boolean
+  /** 是否为 admin 手动保持（不受空闲回收影响）。 */
+  manual: boolean
+  ports: RemoteDesktopServerEndpoint[]
+  listening_ports: number[]
+  last_activity?: string | null
+  idle_timeout_seconds: number
+  idle_remaining_seconds?: number | null
+  started_at?: string | null
+  key_dir: string
+  public_key_path: string
+  public_key_ready: boolean
+  last_error?: string
+}
+
 // 每台设备的能力授权状态（后端权威）。对应
 // GET /api/v1/remote-desktop/device-policies 与 PATCH 的元素。
 export type RemoteDesktopTunnelMode = 'auto' | 'direct' | 'relay'

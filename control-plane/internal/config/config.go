@@ -127,12 +127,29 @@ type PKI struct {
 // RemoteDesktop 承载「远程桌面」能力：自建 RustDesk 服务器（hbbs 信令 + hbbr 中继）的接入参数。
 // 控制面**只读取并下发公钥**（id_ed25519.pub），绝不下发/读取私钥；实际值均可由
 // 环境变量（NEILICO_RD_*）或 YAML 覆盖，便于与 P1 的部署参数对接。
+//
+// 自托管（本轮新增）：hbbs/hbbr 已 vendored 进本仓并由 allinone 镜像自行编译，控制面作为
+// 进程监管者按需拉起/回收，不再依赖外部容器或外部镜像。
 type RemoteDesktop struct {
 	Enabled       bool   `yaml:"enabled"`
 	IDServer      string `yaml:"id_server"`
 	RelayServer   string `yaml:"relay_server"`
 	PublicKeyFile string `yaml:"public_key_file"`
 	Ports         []int  `yaml:"ports"`
+	// ServerMode 决定 hbbs/hbbr 的生命周期：on_demand（默认）/ always_on / off。
+	ServerMode string `yaml:"server_mode"`
+	// IdleTimeout 是 on_demand 模式下的空闲回收阈值。
+	IdleTimeout time.Duration `yaml:"idle_timeout"`
+	// KeyDir 是服务端密钥目录（id_ed25519 私钥 + .pub 公钥），控制面会在其中启动子进程。
+	KeyDir string `yaml:"key_dir"`
+	// HBBSPath / HBBRPath 是自编译二进制的路径（allinone 镜像装到 /usr/local/bin）。
+	HBBSPath string `yaml:"hbbs_path"`
+	HBBRPath string `yaml:"hbbr_path"`
+	// RelayHost 非空时以 `-r <relay>` 下发给 hbbs。
+	RelayHost string `yaml:"relay_host"`
+	// RelayPort 归 hbbr（默认 21117）；UDPPort 额外以 UDP 监听（默认 21116）。
+	RelayPort int `yaml:"relay_port"`
+	UDPPort   int `yaml:"udp_port"`
 }
 
 // 远程桌面默认值：**一律留空** —— 服务器地址与公钥路径都不硬编码进源码/仓库，
@@ -142,7 +159,20 @@ type RemoteDesktop struct {
 const (
 	DefaultRemoteDesktopServer        = ""
 	DefaultRemoteDesktopPublicKeyFile = ""
+	// DefaultRemoteDesktopServerMode：默认按需启动（无活动不监听、进程数 0）。
+	DefaultRemoteDesktopServerMode = "on_demand"
+	// DefaultRemoteDesktopKeyDir：默认密钥目录落在数据目录下（allinone 的数据卷为 /var/lib/neilico）。
+	DefaultRemoteDesktopKeyDir = "/var/lib/neilico/rustdesk"
+	// DefaultRemoteDesktopHBBSPath / HBBRPath：自编译二进制的镜像内安装路径。
+	DefaultRemoteDesktopHBBSPath = "/usr/local/bin/hbbs"
+	DefaultRemoteDesktopHBBRPath = "/usr/local/bin/hbbr"
+	// DefaultRemoteDesktopRelayPort / UDPPort：hbbr 中继端口 / hbbs 的 UDP 端口。
+	DefaultRemoteDesktopRelayPort = 21117
+	DefaultRemoteDesktopUDPPort   = 21116
 )
+
+// DefaultRemoteDesktopIdleTimeout：无活动 10 分钟后自动停用自托管服务端。
+const DefaultRemoteDesktopIdleTimeout = 10 * time.Minute
 
 // defaultRemoteDesktopPorts 是 rustdesk-server 默认使用的端口集合
 // （21115/21116/21118/21119 属 hbbs，21117 属 hbbr）。
@@ -249,6 +279,13 @@ func Default() Config {
 			RelayServer:   DefaultRemoteDesktopServer,
 			PublicKeyFile: DefaultRemoteDesktopPublicKeyFile,
 			Ports:         append([]int(nil), defaultRemoteDesktopPorts...),
+			ServerMode:    DefaultRemoteDesktopServerMode,
+			IdleTimeout:   DefaultRemoteDesktopIdleTimeout,
+			KeyDir:        DefaultRemoteDesktopKeyDir,
+			HBBSPath:      DefaultRemoteDesktopHBBSPath,
+			HBBRPath:      DefaultRemoteDesktopHBBRPath,
+			RelayPort:     DefaultRemoteDesktopRelayPort,
+			UDPPort:       DefaultRemoteDesktopUDPPort,
 		},
 	}
 }
@@ -318,6 +355,11 @@ func applyEnvironment(cfg *Config) error {
 		{"NEILICO_RD_ID_SERVER", &cfg.RemoteDesktop.IDServer},
 		{"NEILICO_RD_RELAY_SERVER", &cfg.RemoteDesktop.RelayServer},
 		{"NEILICO_RD_PUBLIC_KEY_FILE", &cfg.RemoteDesktop.PublicKeyFile},
+		{"NEILICO_RD_SERVER_MODE", &cfg.RemoteDesktop.ServerMode},
+		{"NEILICO_RD_KEY_DIR", &cfg.RemoteDesktop.KeyDir},
+		{"NEILICO_RD_HBBS_PATH", &cfg.RemoteDesktop.HBBSPath},
+		{"NEILICO_RD_HBBR_PATH", &cfg.RemoteDesktop.HBBRPath},
+		{"NEILICO_RD_RELAY_HOST", &cfg.RemoteDesktop.RelayHost},
 	}
 	if value, ok := os.LookupEnv("NEILICO_PKI_SERVER_HOSTS"); ok {
 		cfg.PKI.ServerHosts = nil
@@ -385,6 +427,8 @@ func applyEnvironment(cfg *Config) error {
 		{"NEILICO_ACME_RENEW_BEFORE_DAYS", &cfg.ACME.RenewBeforeDays},
 		{"NEILICO_STREAM_PORT_MIN", &cfg.Proxy.StreamPortMin},
 		{"NEILICO_STREAM_PORT_MAX", &cfg.Proxy.StreamPortMax},
+		{"NEILICO_RD_RELAY_PORT", &cfg.RemoteDesktop.RelayPort},
+		{"NEILICO_RD_UDP_PORT", &cfg.RemoteDesktop.UDPPort},
 	} {
 		value, ok := os.LookupEnv(item.key)
 		if !ok {
@@ -411,6 +455,7 @@ func applyEnvironment(cfg *Config) error {
 		{"NEILICO_ALERTS_RELAY_BASELINE_WINDOW", &cfg.Alerts.RelayBaselineWindow},
 		{"NEILICO_ALERTS_RESOLVED_RETENTION", &cfg.Alerts.ResolvedRetention},
 		{"NEILICO_ALERTS_WEBHOOK_TIMEOUT", &cfg.Alerts.WebhookTimeout},
+		{"NEILICO_RD_IDLE_TIMEOUT", &cfg.RemoteDesktop.IdleTimeout},
 	}
 	intOverrides := []struct {
 		key string
@@ -564,6 +609,20 @@ func (c Config) Validate() error {
 		if port < 1 || port > 65535 {
 			return fmt.Errorf("remote_desktop.ports entries must be between 1 and 65535")
 		}
+	}
+	switch strings.ToLower(strings.TrimSpace(c.RemoteDesktop.ServerMode)) {
+	case "on_demand", "always_on", "off":
+	default:
+		return fmt.Errorf("remote_desktop.server_mode must be on_demand, always_on, or off")
+	}
+	if c.RemoteDesktop.IdleTimeout < 0 {
+		return fmt.Errorf("remote_desktop.idle_timeout must not be negative")
+	}
+	if c.RemoteDesktop.RelayPort < 0 || c.RemoteDesktop.RelayPort > 65535 {
+		return fmt.Errorf("remote_desktop.relay_port must be between 0 and 65535")
+	}
+	if c.RemoteDesktop.UDPPort < 0 || c.RemoteDesktop.UDPPort > 65535 {
+		return fmt.Errorf("remote_desktop.udp_port must be between 0 and 65535")
 	}
 	return nil
 }

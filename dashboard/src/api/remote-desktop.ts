@@ -5,6 +5,7 @@ import type {
   RemoteDesktopDevicePolicy,
   RemoteDesktopDevicePolicyList,
   RemoteDesktopDevicePolicyPatch,
+  RemoteDesktopServerStatus,
   RemoteDesktopStatus
 } from '@/types/api'
 
@@ -42,5 +43,23 @@ export const remoteDesktopApi = {
     return http
       .patch<{ item: RemoteDesktopDevicePolicy }>(`/remote-desktop/device-policies/${nodeId}`, patch)
       .then((response) => response.data.item)
+  },
+  /** 自托管 hbbs/hbbr 的实时状态（运行中/已停止/空闲倒计时）。登录可读。 */
+  serverStatus() {
+    return http
+      .get<RemoteDesktopServerStatus>('/remote-desktop/server-status')
+      .then((response) => response.data)
+  },
+  /** 手动拉起自托管服务端（仅 admin）。 */
+  serverStart() {
+    return http
+      .post<RemoteDesktopServerStatus>('/remote-desktop/server/start')
+      .then((response) => response.data)
+  },
+  /** 手动停止自托管服务端（仅 admin）。 */
+  serverStop() {
+    return http
+      .post<RemoteDesktopServerStatus>('/remote-desktop/server/stop')
+      .then((response) => response.data)
   }
 }

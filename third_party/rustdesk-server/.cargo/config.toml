@@ -1,0 +1,44 @@
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-Ctarget-feature=+crt-static"]
+[target.i686-pc-windows-msvc]
+rustflags = ["-Ctarget-feature=+crt-static"]
+[target.'cfg(target_os="macos")']
+rustflags = [
+    "-C", "link-args=-sectcreate __CGPreLoginApp __cgpreloginapp /dev/null",
+]
+
+# ── vendored crates（离线构建；NEILICO 增加）──
+[source.crates-io]
+replace-with = "vendored-sources"
+
+[source."git+https://github.com/open-trade/async-speed-limit"]
+git = "https://github.com/open-trade/async-speed-limit"
+replace-with = "vendored-sources"
+
+[source."git+https://github.com/rustdesk-org/confy"]
+git = "https://github.com/rustdesk-org/confy"
+replace-with = "vendored-sources"
+
+[source."git+https://github.com/rustdesk-org/default_net"]
+git = "https://github.com/rustdesk-org/default_net"
+replace-with = "vendored-sources"
+
+[source."git+https://github.com/rustdesk-org/machine-uid"]
+git = "https://github.com/rustdesk-org/machine-uid"
+replace-with = "vendored-sources"
+
+[source."git+https://github.com/rustdesk-org/reqwest"]
+git = "https://github.com/rustdesk-org/reqwest"
+replace-with = "vendored-sources"
+
+[source."git+https://github.com/rustdesk-org/sysinfo?branch=rlim_max"]
+git = "https://github.com/rustdesk-org/sysinfo"
+branch = "rlim_max"
+replace-with = "vendored-sources"
+
+[source."git+https://github.com/rustdesk-org/tokio-socks"]
+git = "https://github.com/rustdesk-org/tokio-socks"
+replace-with = "vendored-sources"
+
+[source.vendored-sources]
+directory = "vendor"

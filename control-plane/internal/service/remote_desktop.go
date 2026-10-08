@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -23,6 +24,9 @@ type RemoteDesktopOptions struct {
 	RelayServer   string
 	PublicKeyFile string
 	Ports         []int
+	// KeyDir 是自托管 hbbs/hbbr 的密钥目录；当 PublicKeyFile 留空时，公钥路径由它派生
+	// （<KeyDir>/id_ed25519.pub）。控制面**只读公钥**。
+	KeyDir string
 }
 
 // RemoteDesktopConfig 是下发给客户端的服务器参数视图。
@@ -103,6 +107,7 @@ type RemoteDesktopService struct {
 	idServer      string
 	relayServer   string
 	publicKeyFile string
+	keyDir        string
 	ports         []int
 }
 
@@ -122,7 +127,19 @@ func (s *RemoteDesktopService) reset(opts RemoteDesktopOptions) {
 	s.idServer = idServer
 	s.relayServer = relayServer
 	s.publicKeyFile = strings.TrimSpace(opts.PublicKeyFile)
+	s.keyDir = strings.TrimSpace(opts.KeyDir)
 	s.ports = normalizeRemoteDesktopPorts(opts.Ports)
+}
+
+// publicKeyFilePath 返回实际读取公钥的路径：显式配置优先，否则由自托管密钥目录派生。
+func (s *RemoteDesktopService) publicKeyFilePath() string {
+	if s.publicKeyFile != "" {
+		return s.publicKeyFile
+	}
+	if s.keyDir != "" {
+		return filepath.Join(s.keyDir, "id_ed25519.pub")
+	}
+	return ""
 }
 
 func normalizeRemoteDesktopPorts(ports []int) []int {
@@ -151,7 +168,7 @@ func (s *RemoteDesktopService) Config(ctx context.Context) RemoteDesktopConfig {
 	enabled := s.enabled
 	idServer := s.idServer
 	relayServer := s.relayServer
-	publicKeyFile := s.publicKeyFile
+	publicKeyFile := s.publicKeyFilePath()
 	ports := append([]int(nil), s.ports...)
 	s.mu.RUnlock()
 

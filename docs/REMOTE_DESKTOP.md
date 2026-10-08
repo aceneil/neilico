@@ -7,8 +7,9 @@ NEILICO 的「远程桌面」能力：控制面下发**自建 RustDesk 服务器
 参考上游：[rustdesk/rustdesk](https://github.com/rustdesk/rustdesk)（客户端）、
 [rustdesk/rustdesk-server](https://github.com/rustdesk/rustdesk-server)（hbbs/hbbr 服务端）。
 
-> 本页只覆盖 **控制面 + Dashboard** 的 NEILICO 侧集成。RustDesk **服务端**（hbbs/hbbr）由独立的部署
-> 环节（P1）用 Docker 常驻，见下文「与 P1 部署的对应关系」。Flutter 客户端不在本轮范围。
+> 本页覆盖 **控制面 + Dashboard** 的 NEILICO 侧集成。RustDesk **服务端**（hbbs/hbbr）已
+> **vendored 进本仓**并由 allinone 镜像**自行编译**、由控制面**按需拉起**（不再依赖外部容器/镜像），
+> 见下文「自建与按需模式」。Flutter 客户端不在本轮范围。
 
 ## 组成
 
@@ -19,12 +20,64 @@ NEILICO 的「远程桌面」能力：控制面下发**自建 RustDesk 服务器
 | Dashboard 页 | `dashboard/src/pages/devices/DevicesPage.vue`（页头 + 设备列表）+ `dashboard/src/pages/nodes/NodesPage.vue`（列表内「远程」列 + 详情抽屉） | 侧栏「设备管理」**单一视图**（无页内标签）：列表「远程」列只展示「可被远程」开关 + 一行「连接请在 NEILICO 客户端中发起」提示（**Web 不提供连接入口**）；四个策略开关（可被远程 / 隧道模式 / 单独隧道 / Mesh）在详情抽屉里即时 PATCH；全局参数在页头「远程桌面设置」弹窗（`remote-desktop/RemoteDesktopSettingsModal.vue`）。旧深链 `/remote-desktop` 与 `/devices?tab=remote` 均落到 `/devices` |
 | 前端 API | `dashboard/src/api/remote-desktop.ts` | |
 
+## 自建与按需模式（本轮）
+
+自 RustDesk 服务端**进入本仓自行构建**后，hbbs/hbbr 不再是常驻的外部容器，而是**控制面的子进程**，
+默认**按需启动**。
+
+### 工作原理
+
+- **源码内置**：`third_party/rustdesk-server/`（tag `1.1.16` + 展平的 `hbb_common`）随仓；
+  `vendor.tar.gz` 内含全部 cargo 依赖，`deploy/allinone/Dockerfile` 的 `rustdesk-build` 阶段
+  **完全离线**（`cargo --offline`）编译出 `hbbs`/`hbbr`，装进最终镜像 `/usr/local/bin/`。镜像仍是**单容器**。
+- **按需生命周期**（`RemoteDesktopServer` 进程监管模块，`control-plane/internal/service/rustdesk_server.go`）：
+  - `on_demand`（默认）：**无远程桌面活动时不启动** —— 不监听 `21115-21119`、进程数 0。
+  - **触发**：设备策略被启用（`PATCH device-policies` 里 `remote_control_allowed` / `isolated_tunnel_enabled`
+    / `mesh_joined` 任一置真）时**自动拉起**；admin 也可在 Dashboard 手动「启动」。
+  - **空闲回收**：无活动超过 `NEILICO_RD_IDLE_TIMEOUT`（默认 10m）后**自动停止**。手动启动为「手动保持」，
+    不受空闲回收影响，直到手动「停止」。
+  - `always_on`：控制面启动即拉起并常驻（仍可被 admin 手动停）。
+  - `off`：永不启动；触发为 no-op，手动 start 返回 `409 server_disabled`。
+- **启动参数**：hbbs 以工作目录=密钥目录启动（**只有服务端读私钥**），可带 `-r <relay_host>`；hbbr 以
+  `-k _` 启动（从 `id_ed25519` 取 Key 并**强制校验客户端**，公网防滥用）。子进程日志写在密钥目录的
+  `hbbs.log`/`hbbr.log`（mode 600），**私钥绝不进日志或接口响应**。
+
+### 端口
+
+| 端口 | 归属 | 用途 | 协议 |
+| :--- | :--- | :--- | :--- |
+| `21115` | hbbs | NAT 类型测试 | TCP |
+| `21116` | hbbs | **ID 注册/信令** | TCP **+ UDP** |
+| `21117` | hbbr | **中继转发**（P2P 打不通时走这里） | TCP |
+| `21118` | hbbs | 直连 / Web 客户端 | TCP |
+| `21119` | hbbs | Web 客户端（`/ws`） | TCP |
+
+共 6 个发布端点（`21116` 兼 TCP/UDP）。**按需模式下未启用时这些端口不监听是正常的。**
+
+### 密钥位置与迁移铁律
+
+- 密钥目录由 `NEILICO_RD_KEY_DIR` 指定（默认 `/var/lib/neilico/rustdesk`，allinone 部署里绑定挂载
+  宿主 `data/neilico/rustdesk/`），权限 **700**，密钥文件 **600**。
+- hbbs 首次启动自动生成 `id_ed25519`（**私钥**）与 `id_ed25519.pub`（**公钥**）；hbbr 与 hbbs 共用同一目录，
+  读到的是**同一把** Key。
+- **铁律**：
+  1. **私钥 `id_ed25519` 永不出该目录**——不挂载给别的服务、不入库、不贴聊天、不进日志。
+  2. 控制面**只读 `id_ed25519.pub`**（`GET /config` 只下发公钥；仓库里没有任何读取私钥的代码路径）。
+  3. **迁移/换机**：整目录（`id_ed25519` + `id_ed25519.pub` + `db_v2.sqlite3`）一起搬；只搬公钥会导致
+     客户端校验失败、服务端签名自相矛盾。旧外部部署的密钥目录可直接迁到新目录，**保持权限 700/600**。
+
+### 切成 always_on
+
+把 `NEILICO_RD_SERVER_MODE` 设为 `always_on`（或 YAML `remote_desktop.server_mode: always_on`）并重启控制面，
+服务端即常驻；想临时常驻又不想改配置，可在「远程桌面设置」弹窗点「启动」（手动保持）。切回按需用 `on_demand`。
+
 ## 快速启用
 
-1. **部署 rustdesk-server（P1）**：在 Docker 里跑 `hbbs` + `hbbr`，暴露 `21115/21116/21117/21118/21119`
-   （TCP；`21116` 另需 UDP）。首次启动会生成密钥对，其中 `id_ed25519.pub` 是**公钥**。
-2. **让控制面能读到公钥**：把 `id_ed25519.pub` 挂载进控制面容器，并把路径用
-   `NEILICO_RD_PUBLIC_KEY_FILE` 指过去（**只读公钥，绝不挂载/读取私钥**）。
+1. **服务端已内置**：hbbs/hbbr 由 allinone 镜像从 `third_party/rustdesk-server/` 自行编译，
+   无需单独部署；镜像发布 `21115/21116/21117/21118/21119`（`21116` 兼 UDP）。首次启动（或首次被触发）
+   会生成密钥对，其中 `id_ed25519.pub` 是**公钥**（落在 `NEILICO_RD_KEY_DIR`）。
+2. **让控制面能读到公钥**：绑定挂载密钥目录并把 `NEILICO_RD_KEY_DIR` 指过去（`NEILICO_RD_PUBLIC_KEY_FILE`
+   留空即可自动派生 `<key_dir>/id_ed25519.pub`）。**只读公钥，绝不挂载/读取私钥**。
 3. **设置服务器地址**：`NEILICO_RD_ID_SERVER`（hbbs）与 `NEILICO_RD_RELAY_SERVER`（hbbr）。
 4. 打开侧栏「设备管理」→ 点页头「远程桌面设置」，把弹窗里的 **ID 服务器 / 中继服务器 / Key 公钥** 填进各设备的 RustDesk 客户端；在设备列表「远程」列（或设备详情抽屉）逐台开启「可被远程」。**远程连接请到 NEILICO 客户端发起**——Web 端只做管理与策略开关，不提供连接入口。
 
@@ -35,8 +88,14 @@ NEILICO 的「远程桌面」能力：控制面下发**自建 RustDesk 服务器
 | `NEILICO_RD_ENABLED` | `true` | 是否启用远程桌面能力 |
 | `NEILICO_RD_ID_SERVER` | （留空，由部署机下发） | hbbs 信令服务器（`host` 或 `host:port`）；示例 `192.168.1.10` |
 | `NEILICO_RD_RELAY_SERVER` | （留空，由部署机下发） | hbbr 中继服务器（`host` 或 `host:port`）；示例 `your-server.example.com` |
-| `NEILICO_RD_PUBLIC_KEY_FILE` | （留空，由部署机下发） | **公钥**文件路径（`id_ed25519.pub`）；示例 `$HOME/Documents/Docker/data/rustdesk/id_ed25519.pub` |
+| `NEILICO_RD_PUBLIC_KEY_FILE` | （留空，由部署机下发） | **公钥**文件路径（`id_ed25519.pub`）；留空则从 `NEILICO_RD_KEY_DIR` 派生 `<key_dir>/id_ed25519.pub` |
 | `NEILICO_RD_PORTS` | `21115,21116,21117,21118,21119` | 需要暴露/探活的端口列表 |
+| `NEILICO_RD_SERVER_MODE` | `on_demand` | hbbs/hbbr 生命周期：`on_demand` / `always_on` / `off` |
+| `NEILICO_RD_IDLE_TIMEOUT` | `10m` | on_demand 模式下的空闲回收阈值（Go 时长语法） |
+| `NEILICO_RD_KEY_DIR` | `/var/lib/neilico/rustdesk` | 密钥目录（`id_ed25519` + `.pub`，权限 700/600） |
+| `NEILICO_RD_HBBS_PATH` / `NEILICO_RD_HBBR_PATH` | `/usr/local/bin/hbbs` / `hbbr` | 自编译二进制路径 |
+| `NEILICO_RD_RELAY_PORT` / `NEILICO_RD_UDP_PORT` | `21117` / `21116` | hbbr 中继端口 / hbbs 的 UDP 端口 |
+| `NEILICO_RD_RELAY_HOST` | （留空） | 非空则给 hbbs 传 `-r <relay_host>` |
 
 YAML 形态见 `control-plane/configs/config.example.yaml` 的 `remote_desktop:` 段；
 单容器部署的 env 示例见 `deploy/allinone/.env.example`。
@@ -63,6 +122,9 @@ YAML 形态见 `control-plane/configs/config.example.yaml` 的 `remote_desktop:`
 | `GET` | `/api/v1/remote-desktop/status` | 登录可读 | 对 `21115/21116/21117` 做纯 TCP 探活（1s 超时，总预算 3s） |
 | `GET` | `/api/v1/remote-desktop/device-policies` | 登录可读（限自身租户） | 每台设备的授权状态；未建过策略的节点返回默认值 |
 | `PATCH` | `/api/v1/remote-desktop/device-policies/{node_id}` | `platform_admin` / `tenant_admin` | 局部更新授权开关，写审计 `remote_desktop.policy.update` |
+| `GET` | `/api/v1/remote-desktop/server-status` | 登录可读 | 自托管服务端状态：运行中/已停止 + 监听端口 + 最近活动时间 + 空闲倒计时（`mode`/`running`/`manual`/`ports`/`idle_remaining_seconds`） |
+| `POST` | `/api/v1/remote-desktop/server/start` | `platform_admin` / `tenant_admin` | 手动拉起（进入「手动保持」，不受空闲回收）；`mode=off` 时 `409 server_disabled` |
+| `POST` | `/api/v1/remote-desktop/server/stop` | `platform_admin` / `tenant_admin` | 手动停止自托管服务端 |
 
 `GET /config` 响应示例：
 
@@ -83,9 +145,14 @@ TOKEN=$(curl -fsS -X POST http://<host>:13000/api/v1/auth/login \
   -H 'Content-Type: application/json' \
   -d '{"email":"admin@neilico.local","password":"<admin-password>"}' | jq -r .token)
 
-curl -fsS http://<host>:13000/api/v1/remote-desktop/config  -H "Authorization: Bearer $TOKEN"
-curl -fsS http://<host>:13000/api/v1/remote-desktop/devices -H "Authorization: Bearer $TOKEN"
-curl -fsS http://<host>:13000/api/v1/remote-desktop/status  -H "Authorization: Bearer $TOKEN"
+curl -fsS http://<host>:13000/api/v1/remote-desktop/config  -H "Authorization: Bearer ***"
+curl -fsS http://<host>:13000/api/v1/remote-desktop/devices -H "Authorization: Bearer ***"
+curl -fsS http://<host>:13000/api/v1/remote-desktop/status  -H "Authorization: Bearer ***"
+
+# 自托管服务端状态与手动开关（start/stop 需 admin）。
+curl -fsS http://<host>:13000/api/v1/remote-desktop/server-status -H "Authorization: Bearer ***"
+curl -fsS -X POST http://<host>:13000/api/v1/remote-desktop/server/start -H "Authorization: Bearer ***"
+curl -fsS -X POST http://<host>:13000/api/v1/remote-desktop/server/stop  -H "Authorization: Bearer ***"
 ```
 
 ### 「服务器未就绪」
@@ -173,7 +240,11 @@ curl -fsS -X PATCH http://<host>:13000/api/v1/remote-desktop/device-policies/<no
 **ID 上报方式（当前）**：给节点打一个标签 `rustdesk:<id>`（大小写不敏感）。这是客户端原生上报字段
 落地前的最小约定；未上报时 Web 不展示连接入口（连接本就在客户端发起），客户端会提示「需该设备安装 RustDesk 并告知 ID」。
 
-## 与 P1 部署的对应关系
+## 与 P1 部署的对应关系（已由「自建与按需模式」取代）
+
+> **注意**：下文的「P1 外部部署」是历史形态。自本轮起 hbbs/hbbr 已 **vendored 进本仓、由 allinone 镜像
+> 自行编译、由控制面按需拉起**，不再依赖外部容器/镜像。旧的外部 `docker-compose.rustdesk.yaml`
+> **仅作回滚保留**，文档不再推荐使用。以下描述保留以便理解迁移。
 
 - P1 在本机 Docker 部署 `rustdesk-server`，产出密钥对：
   - `.../data/rustdesk/id_ed25519`（**私钥，仅服务端持有**）

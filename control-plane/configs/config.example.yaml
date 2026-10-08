@@ -48,16 +48,34 @@ ratelimit:
   rps: 20
   burst: 40
 
-# 「远程桌面」：自建 RustDesk 服务器（hbbs 信令 + hbbr 中继）的接入参数。
-# 控制面只读取 public_key_file 指向的**公钥**（id_ed25519.pub），绝不下发私钥。
+# 「远程桌面」：自托管 RustDesk 服务端（hbbs 信令 + hbbr 中继）的接入与生命周期参数。
+# hbbs/hbbr 由 allinone 镜像从本仓 vendored 源码自编译，控制面作为进程监管者**按需**拉起/回收。
+# 控制面只读取 public_key_file（或 key_dir 派生的 **公钥** id_ed25519.pub），绝不下发私钥。
 # 所有值均可用环境变量覆盖：NEILICO_RD_ENABLED / NEILICO_RD_ID_SERVER /
-# NEILICO_RD_RELAY_SERVER / NEILICO_RD_PUBLIC_KEY_FILE / NEILICO_RD_PORTS。
+# NEILICO_RD_RELAY_SERVER / NEILICO_RD_PUBLIC_KEY_FILE / NEILICO_RD_PORTS /
+# NEILICO_RD_SERVER_MODE / NEILICO_RD_IDLE_TIMEOUT / NEILICO_RD_KEY_DIR /
+# NEILICO_RD_HBBS_PATH / NEILICO_RD_HBBR_PATH / NEILICO_RD_RELAY_HOST。
 remote_desktop:
   enabled: true
   id_server: "192.168.1.10"          # hbbs 信令服务器（host 或 host:port）；文档保留地址，部署机替换为实际地址
   relay_server: "192.168.1.10"       # hbbr 中继服务器（host 或 host:port）；文档保留地址，部署机替换为实际地址
-  public_key_file: "$HOME/Documents/Docker/data/rustdesk/id_ed25519.pub"
   ports: [21115, 21116, 21117, 21118, 21119]
+  # 自托管 hbbs/hbbr 的密钥目录（id_ed25519 私钥 + id_ed25519.pub 公钥；权限 700/600）。
+  key_dir: "/var/lib/neilico/rustdesk"
+  # 留空则从 key_dir 派生 <key_dir>/id_ed25519.pub（推荐；也可显式指向别处的 .pub）。
+  public_key_file: ""
+  # 生命周期：on_demand（默认，无活动不监听、进程数 0）/ always_on（常驻）/ off（禁用）。
+  server_mode: "on_demand"
+  # on_demand 模式下的空闲回收阈值（无远程桌面活动超过该时长即自动停止）。
+  idle_timeout: 10m
+  # 自编译二进制路径（allinone 镜像装到 /usr/local/bin）。
+  hbbs_path: "/usr/local/bin/hbbs"
+  hbbr_path: "/usr/local/bin/hbbr"
+  # hbbr 中继端口 / hbbs 的 UDP 端口（默认 21117 / 21116；一般无需改）。
+  relay_port: 21117
+  udp_port: 21116
+  # 非空则以 `-r <relay_host>` 下发给 hbbs（显式告诉客户端中继地址）；留空则由客户端自动推导。
+  relay_host: ""
 
 log:
   level: info

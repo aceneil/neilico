@@ -64,6 +64,25 @@ RUN set -eux; \
         -o /out/downloads/neilico-agent-windows-amd64.exe ./cmd/agent; \
     cd /out/downloads && sha256sum neilico-agent-* > SHA256SUMS && cat SHA256SUMS
 
+# ── stage 2c: RustDesk 服务端（hbbs/hbbr，从本仓 vendored 源码自编译）─────────
+#   源码来源见 third_party/rustdesk-server/README.NEILICO.md（tag 1.1.16 + hbb_common 展平）。
+#   vendor.tar.gz 内含全部 cargo 依赖（含 git 依赖）→ 本阶段**完全离线**编译。
+#   用 alpine(rust = musl 原生) 产出静态二进制，可直接跑在 alpine 运行时底座上。
+FROM rust:1.99-alpine AS rustdesk-build
+# build-base(gcc/make) 供 libsodium-sys / libsqlite3-sys / zstd-sys / ring 的 C 代码编译；pkgconf 供探测。
+RUN apk add --no-cache build-base pkgconf
+WORKDIR /src/rustdesk-server
+COPY third_party/rustdesk-server/ ./
+# sqlx 的 query! 宏在编译期需要 DATABASE_URL 指向 schema 库（本仓 vendored 的 db_v2.sqlite3）。
+ENV DATABASE_URL=sqlite://./db_v2.sqlite3
+# 解压 vendored crates 后彻底离线（.cargo/config.toml 已用 vendored-sources 替换 crates-io）。
+RUN tar -xzf vendor.tar.gz && rm -f vendor.tar.gz
+ENV CARGO_NET_OFFLINE=true
+RUN cargo build --release --offline --bin hbbs --bin hbbr \
+    && mkdir -p /out/neilico-rd \
+    && cp target/release/hbbs target/release/hbbr /out/neilico-rd/ \
+    && file /out/neilico-rd/hbbs || true
+
 # ── stage 3: 运行时（postgres 官方镜像为底座，自带 initdb/pg_isready/psql）──
 FROM postgres:16-alpine
 # bash(entrypoint) + curl(healthcheck) + su-exec(降权) + tini(信号/PID1)
@@ -77,9 +96,14 @@ RUN apk add --no-cache bash curl su-exec tini \
 COPY --from=dashboard-build /src/dashboard/dist/ /opt/neilico/dashboard/
 COPY --from=control-build /out/neilico-control-api /usr/local/bin/neilico-control-api
 COPY --from=agent-build /out/downloads/ /usr/local/share/neilico/downloads/
+# 自编译的 RustDesk 服务端（hbbs/hbbr）：由控制面按需拉起（on_demand）。
+COPY --from=rustdesk-build /out/neilico-rd/hbbs /usr/local/bin/hbbs
+COPY --from=rustdesk-build /out/neilico-rd/hbbr /usr/local/bin/hbbr
 COPY --from=control-build /src/control-plane/configs/config.example.yaml /opt/neilico/configs/config.example.yaml
 COPY deploy/allinone/entrypoint.sh /usr/local/bin/neilico-entrypoint.sh
-RUN chmod 0755 /usr/local/bin/neilico-entrypoint.sh /usr/local/bin/neilico-control-api /usr/local/share/neilico/downloads/neilico-agent-*
+RUN chmod 0755 /usr/local/bin/neilico-entrypoint.sh /usr/local/bin/neilico-control-api /usr/local/bin/hbbs /usr/local/bin/hbbr /usr/local/share/neilico/downloads/neilico-agent-* \
+    && mkdir -p /var/lib/neilico/rustdesk \
+    && chown -R neilico:neilico /var/lib/neilico/rustdesk
 
 # 应用侧默认值（数据库连接由 entrypoint 在运行时导出，密码只走环境变量）
 ENV PGDATA=/var/lib/postgresql/data \
@@ -88,10 +112,14 @@ ENV PGDATA=/var/lib/postgresql/data \
     NEILICO_SERVER_DASHBOARD_DIR=/opt/neilico/dashboard \
     NEILICO_SERVER_DASHBOARD_SPA=true \
     NEILICO_DOWNLOADS_DIR=/usr/local/share/neilico/downloads \
-    NEILICO_SERVER_HOST=0.0.0.0
+    NEILICO_SERVER_HOST=0.0.0.0 \
+    NEILICO_RD_KEY_DIR=/var/lib/neilico/rustdesk \
+    NEILICO_RD_SERVER_MODE=on_demand \
+    NEILICO_RD_IDLE_TIMEOUT=10m
 
 VOLUME ["/var/lib/postgresql/data"]
-EXPOSE 8080 8081 5002 8443
+# 21115-21119：自托管 hbbs/hbbr 端口（按需模式下未启用时这些端口不监听属正常）。
+EXPOSE 8080 8081 5002 8443 21115 21116 21116/udp 21117 21118 21119
 HEALTHCHECK --interval=10s --timeout=3s --start-period=30s --retries=10 \
     CMD curl -fsS "http://127.0.0.1:${NEILICO_SERVER_PORT:-8080}/healthz" >/dev/null || exit 1
 

@@ -6,11 +6,15 @@ import { computed, reactive, ref, watch } from 'vue'
 import {
   ApiOutlined,
   AppleOutlined,
+  CloudServerOutlined,
   CopyOutlined,
   DesktopOutlined,
   DownloadOutlined,
   EditOutlined,
   LaptopOutlined,
+  PlayCircleOutlined,
+  PoweroffOutlined,
+  ReloadOutlined,
   WindowsOutlined
 } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
@@ -21,7 +25,7 @@ import { copyText } from '@/utils/clipboard'
 import { formatTime } from '@/utils/format'
 import { canManageRemoteDesktop } from '@/utils/permissions'
 import { useAuthStore } from '@/stores/auth'
-import type { RemoteDesktopConfig, RemoteDesktopStatus } from '@/types/api'
+import type { RemoteDesktopConfig, RemoteDesktopServerStatus, RemoteDesktopStatus } from '@/types/api'
 
 const props = defineProps<{ open: boolean }>()
 const emit = defineEmits<{ 'update:open': [value: boolean] }>()
@@ -31,13 +35,32 @@ const canWrite = computed(() => canManageRemoteDesktop(auth.role))
 
 const config = ref<RemoteDesktopConfig | null>(null)
 const probeResult = ref<RemoteDesktopStatus | null>(null)
+const serverStatus = ref<RemoteDesktopServerStatus | null>(null)
 const loading = ref(false)
 const probing = ref(false)
 const saving = ref(false)
+const serverBusy = ref(false)
 const error = ref('')
 
 const editOpen = ref(false)
 const form = reactive({ id_server: '', relay_server: '', enabled: true })
+
+const modeLabels: Record<string, string> = {
+  on_demand: '按需（无活动自动停止）',
+  always_on: '常驻',
+  off: '已关闭'
+}
+
+const idleLabel = computed(() => {
+  const status = serverStatus.value
+  if (!status || !status.running) return ''
+  if (status.manual) return '手动保持中，不会被自动回收'
+  if (status.idle_remaining_seconds == null) return ''
+  const seconds = status.idle_remaining_seconds
+  const minutes = Math.floor(seconds / 60)
+  const rest = seconds % 60
+  return `空闲 ${minutes} 分 ${rest} 秒后自动停止`
+})
 
 function origin(): string {
   return typeof window !== 'undefined' ? window.location.origin : ''
@@ -82,6 +105,28 @@ async function load() {
     error.value = apiErrorMessage(cause)
   } finally {
     loading.value = false
+  }
+  await loadServerStatus()
+}
+
+// 服务端状态是「锦上添花」：读取失败不影响服务器参数展示。
+async function loadServerStatus() {
+  try {
+    serverStatus.value = await remoteDesktopApi.serverStatus()
+  } catch {
+    serverStatus.value = null
+  }
+}
+
+async function toggleServer(start: boolean) {
+  serverBusy.value = true
+  try {
+    serverStatus.value = start ? await remoteDesktopApi.serverStart() : await remoteDesktopApi.serverStop()
+    message.success(start ? '服务端已手动启动' : '服务端已停止')
+  } catch (cause) {
+    message.error(apiErrorMessage(cause))
+  } finally {
+    serverBusy.value = false
   }
 }
 
@@ -217,6 +262,66 @@ async function submitEdit() {
         </div>
       </section>
 
+      <section class="panel server-lifecycle-panel">
+        <div class="panel-heading">
+          <div>
+            <h2><CloudServerOutlined /> 服务端状态（自托管 · 按需）</h2>
+            <p>按需启动：无远程桌面活动时自动停止（不监听 21115-21119、进程数 0）；有活动自动拉起，空闲后自动回收。</p>
+          </div>
+          <div class="panel-heading__actions">
+            <a-tag :color="serverStatus?.running ? 'green' : 'default'">
+              {{ serverStatus?.running ? '运行中' : '已停止' }}
+            </a-tag>
+            <a-tag v-if="serverStatus?.manual" color="blue">手动保持</a-tag>
+            <a-button size="small" @click="loadServerStatus"><ReloadOutlined /> 刷新</a-button>
+            <a-button
+              v-if="canWrite"
+              size="small"
+              type="primary"
+              :loading="serverBusy"
+              :disabled="serverStatus?.running || serverStatus?.mode === 'off'"
+              @click="toggleServer(true)"
+            >
+              <PlayCircleOutlined /> 启动
+            </a-button>
+            <a-button
+              v-if="canWrite"
+              size="small"
+              danger
+              :loading="serverBusy"
+              :disabled="!serverStatus?.running"
+              @click="toggleServer(false)"
+            >
+              <PoweroffOutlined /> 停止
+            </a-button>
+          </div>
+        </div>
+
+        <div v-if="serverStatus" class="rd-muted">
+          模式：{{ modeLabels[serverStatus.mode] || serverStatus.mode }}
+          <span v-if="idleLabel"> · {{ idleLabel }}</span>
+          <span v-if="serverStatus.last_activity"> · 最近活动 {{ formatTime(serverStatus.last_activity) }}</span>
+        </div>
+
+        <div v-if="serverStatus" class="probe-row">
+          <span
+            v-for="endpoint in serverStatus.ports"
+            :key="`${endpoint.port}-${endpoint.protocol}`"
+            class="probe-chip"
+            :class="endpoint.listening ? 'is-up' : 'is-down'"
+            :title="endpoint.owner"
+          >
+            {{ endpoint.port }}/{{ endpoint.protocol }} · {{ endpoint.listening ? '监听中' : '未监听' }}
+          </span>
+        </div>
+
+        <a-alert v-if="serverStatus?.last_error" type="warning" show-icon class="rd-alert" :message="serverStatus.last_error" />
+
+        <span class="rd-muted">
+          按需模式下「未监听」是正常的——服务端只在有远程桌面活动时才启动。控制面只读取公钥，私钥永不进入日志或接口响应。
+        </span>
+      </section>
+
       <section class="panel install-panel">
         <div class="panel-heading">
           <div>
@@ -279,6 +384,7 @@ async function submitEdit() {
 
 <style scoped>
 .server-panel,
+.server-lifecycle-panel,
 .install-panel {
   display: flex;
   min-width: 0;
@@ -287,6 +393,7 @@ async function submitEdit() {
   gap: 12px;
 }
 
+.server-lifecycle-panel,
 .install-panel {
   margin-top: 18px;
   padding-top: 16px;

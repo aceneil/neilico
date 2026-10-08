@@ -167,6 +167,13 @@ if [[ -n "$bootstrap_env_file" && -f "$bootstrap_env_file" ]]; then
     fi
 fi
 
+# 自托管 RustDesk 密钥目录：确保控制面运行用户可写，权限收紧到 700（密钥目录约定）。
+# 目录可能是宿主绑定挂载，docker 首次创建时为 root 属主，故这里兜底 chown 给控制面用户。
+rd_key_dir="${NEILICO_RD_KEY_DIR:-/var/lib/neilico/rustdesk}"
+mkdir -p "$rd_key_dir" 2>/dev/null || true
+chown -R "$CONTROL_USER" "$rd_key_dir" 2>/dev/null || true
+chmod 0700 "$rd_key_dir" 2>/dev/null || true
+
 log "starting NEILICO control API and dashboard"
 # 轮换密码时控制面要往 /opt/neilico/bootstrap.env 原子回写（临时文件 + rename），
 # 而 rename 需要目标【目录】可写：把 /opt/neilico 交给控制面运行用户，否则会

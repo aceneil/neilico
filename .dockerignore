@@ -1,0 +1,14 @@
+# 构建上下文 = 仓库根。排除巨型且可由构建重建/不需要的目录，显著加快上下文传输。
+# 注意：dashboard 阶段会 `npm ci` 重新安装依赖，故 node_modules 无需进上下文。
+.git
+**/.git
+dashboard/node_modules
+dashboard/dist
+dashboard/screenshots
+dashboard/test-results
+dashboard/playwright-report
+dashboard/playwright/.cache
+control-plane/bin
+third_party/rustdesk-server/target
+**/*.log
+NOTES.md

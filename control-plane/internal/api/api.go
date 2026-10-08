@@ -65,6 +65,7 @@ type Server struct {
 	streamProblems   map[uuid.UUID]string
 	remoteDesktop    *service.RemoteDesktopService
 	rdPolicies       *service.RemoteDesktopPolicyService
+	rustdesk         *service.RustDeskServer
 	downloadsDir     string
 	enrollURL        string
 	agentImage       string
@@ -88,6 +89,17 @@ func (h *Handler) StartCertificateLifecycle(ctx context.Context) {
 
 func (h *Handler) StartAlertEvaluation(ctx context.Context) {
 	h.server.alertEngine.Run(ctx)
+}
+
+// StartRemoteDesktopServer 运行 hbbs/hbbr 的生命周期 watchdog（always_on 时会立即拉起，
+// on_demand 时空闲回收）。阻塞直到 ctx 结束。
+func (h *Handler) StartRemoteDesktopServer(ctx context.Context) {
+	h.server.rustdesk.Run(ctx)
+}
+
+// StopRemoteDesktopServer 同步停止自托管服务端子进程（进程退出/关停时调用）。
+func (h *Handler) StopRemoteDesktopServer() {
+	_ = h.server.rustdesk.Stop(context.Background())
 }
 
 func New(
@@ -175,6 +187,19 @@ func NewWithProxy(
 			RelayServer:   opts.RemoteDesktop.RelayServer,
 			PublicKeyFile: opts.RemoteDesktop.PublicKeyFile,
 			Ports:         opts.RemoteDesktop.Ports,
+			KeyDir:        opts.RemoteDesktop.KeyDir,
+		}),
+		rustdesk: service.NewRustDeskServer(service.RustDeskServerOptions{
+			Mode:        service.ParseRustDeskServerMode(opts.RemoteDesktop.ServerMode),
+			IdleTimeout: opts.RemoteDesktop.IdleTimeout,
+			KeyDir:      opts.RemoteDesktop.KeyDir,
+			HBBSPath:    opts.RemoteDesktop.HBBSPath,
+			HBBRPath:    opts.RemoteDesktop.HBBRPath,
+			RelayHost:   opts.RemoteDesktop.RelayHost,
+			RelayPort:   opts.RemoteDesktop.RelayPort,
+			UDPPort:     opts.RemoteDesktop.UDPPort,
+			Ports:       opts.RemoteDesktop.Ports,
+			Logger:      logger,
 		}),
 		auditLogs:        service.NewAuditLogService(db),
 		relays:           service.NewRelayServerService(db),

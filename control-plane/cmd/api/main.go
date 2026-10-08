@@ -177,6 +177,14 @@ func run() error {
 			RelayServer:   cfg.RemoteDesktop.RelayServer,
 			PublicKeyFile: cfg.RemoteDesktop.PublicKeyFile,
 			Ports:         cfg.RemoteDesktop.Ports,
+			ServerMode:    cfg.RemoteDesktop.ServerMode,
+			IdleTimeout:   cfg.RemoteDesktop.IdleTimeout,
+			KeyDir:        cfg.RemoteDesktop.KeyDir,
+			HBBSPath:      cfg.RemoteDesktop.HBBSPath,
+			HBBRPath:      cfg.RemoteDesktop.HBBRPath,
+			RelayHost:     cfg.RemoteDesktop.RelayHost,
+			RelayPort:     cfg.RemoteDesktop.RelayPort,
+			UDPPort:       cfg.RemoteDesktop.UDPPort,
 		},
 	})
 	if cfg.Downloads.Dir == "" {
@@ -189,6 +197,8 @@ func run() error {
 	}
 	go handler.StartCertificateLifecycle(ctx)
 	go handler.StartAlertEvaluation(ctx)
+	// 自托管 hbbs/hbbr：on_demand 空闲回收 watchdog / always_on 立即拉起（mode=off 时 no-op）。
+	go handler.StartRemoteDesktopServer(ctx)
 	if cfg.ACME.Enabled {
 		go challengeStore.RunCleanup(ctx, time.Minute)
 	}
@@ -301,6 +311,8 @@ func run() error {
 	shutdown := func() error {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
+		// 先停自托管 hbbs/hbbr，避免关停后留下孤儿子进程。
+		handler.StopRemoteDesktopServer()
 		for _, listener := range []*http.Server{tlsServer, proxyServer, challengeServer, redirectServer, server} {
 			if listener == nil {
 				continue
