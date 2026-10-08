@@ -1,7 +1,8 @@
 <script setup lang="ts">
 // 「设备管理」页的设备列表（唯一视图，不再包在标签里）。
-// 远程控制直接长在本列表：表格「远程」列（可被远程开关 + 发起连接）
-// 与详情抽屉「远程控制」四控件（可被远程 / 隧道模式 / 单独隧道 / Mesh），即时 PATCH。
+// Web 只做设备与策略管理：表格「远程」列仅展示「可被远程」开关 + 一行客户端连接提示，
+// Web 不提供任何连接入口，连接一律由 NEILICO 客户端发起。
+// 详情抽屉「远程控制」四控件（可被远程 / 隧道模式 / 单独隧道 / Mesh），即时 PATCH。
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import {
   CopyOutlined,
@@ -10,7 +11,6 @@ import {
   EyeOutlined,
   FilterOutlined,
   LinkOutlined,
-  PlayCircleOutlined,
   PlusOutlined,
   ReloadOutlined,
   SafetyCertificateOutlined,
@@ -36,7 +36,6 @@ import type {
   NodeCertificate,
   NodeMetrics,
   NodeRegisterResult,
-  RemoteDesktopDevice,
   RemoteDesktopDevicePolicy,
   RemoteDesktopDevicePolicyPatch,
   RemoteDesktopTunnelMode
@@ -70,7 +69,6 @@ const metricsError = ref('')
 
 // ── 远程控制：内联授权状态（后端权威）。接口未就绪时相关控件一律置灰并写明原因。 ──
 const canWritePolicies = computed(() => canManageRemoteDesktopPolicies(auth.role))
-const rdDevices = ref<Record<string, RemoteDesktopDevice>>({})
 const policies = ref<Record<string, RemoteDesktopDevicePolicy>>({})
 const policyReady = ref(false)
 const policyError = ref('')
@@ -256,39 +254,11 @@ function onMeshJoined(node: Node, value: boolean | string | number) {
   void applyPolicy(node, { mesh_joined: Boolean(value) })
 }
 
-function remoteDevice(node: Node): RemoteDesktopDevice | undefined {
-  return rdDevices.value[node.id]
-}
-
-// 优先调起本地 RustDesk（rustdesk://<id>）；无 ID 或未开启时按钮置灰并在提示里说明原因。
-function connectUrl(node: Node): string {
-  return remoteDevice(node)?.connect_url || ''
-}
-
-function connectDisabled(node: Node): boolean {
-  if (!connectUrl(node)) return true
-  if (hasPolicy(node) && !policyFor(node).remote_control_allowed) return true
-  return false
-}
-
-function connectReason(node: Node): string {
-  if (!remoteDevice(node)) return '未获取到该设备的远程访问信息'
-  if (!connectUrl(node)) return '需该设备安装 RustDesk 并上报 ID（节点标签 rustdesk:<id>）'
-  if (hasPolicy(node) && !policyFor(node).remote_control_allowed) return '该设备未开启「可被远程」'
-  return '通过本地 RustDesk 发起连接'
-}
-
 function remoteToggleReason(node: Node): string {
   if (!canWritePolicies.value) return '当前账号只读：需平台/租户管理员才能修改授权'
   if (!policyReady.value) return `授权接口未就绪${policyError.value ? `：${policyError.value}` : ''}`
   if (!hasPolicy(node)) return '未获取到该设备的授权状态'
   return '开启后客户端方可对该设备发起远程连接（默认关闭）'
-}
-
-function launch(node: Node) {
-  const url = connectUrl(node)
-  if (!url) return
-  window.location.href = url
 }
 
 async function load(options: { silent?: boolean } = {}) {
@@ -315,26 +285,18 @@ async function load(options: { silent?: boolean } = {}) {
   }
 }
 
-// 远程访问信息（ID/连接参数）与授权状态独立降级：失败时相关控件置灰并说明，绝不本地编造状态。
+// 授权状态独立降级：失败时相关控件置灰并说明，绝不本地编造状态。
 async function loadRemote() {
-  const [deviceResult, policyResult] = await Promise.allSettled([
-    remoteDesktopApi.devices(),
-    remoteDesktopApi.devicePolicies()
-  ])
-  if (deviceResult.status === 'fulfilled') {
-    const map: Record<string, RemoteDesktopDevice> = {}
-    for (const device of deviceResult.value.items) map[device.id] = device
-    rdDevices.value = map
-  }
-  if (policyResult.status === 'fulfilled') {
+  try {
+    const result = await remoteDesktopApi.devicePolicies()
     const map: Record<string, RemoteDesktopDevicePolicy> = {}
-    for (const policy of policyResult.value.items) map[policy.node_id] = policy
+    for (const policy of result.items) map[policy.node_id] = policy
     policies.value = map
     policyReady.value = true
     policyError.value = ''
-  } else {
+  } catch (cause) {
     policyReady.value = false
-    policyError.value = apiErrorMessage(policyResult.reason)
+    policyError.value = apiErrorMessage(cause)
   }
 }
 
@@ -630,7 +592,7 @@ defineExpose({ reload: loadNow })
           :row-key="(record: Node) => record.id"
           :pagination="false"
           size="middle"
-          :scroll="{ x: 1420, y: 'calc(100vh - 470px)' }"
+          :scroll="{ x: 1440, y: 'calc(100vh - 470px)' }"
         >
           <a-table-column title="名称" data-index="name" :width="180" fixed="left">
             <template #default="{ record }">
@@ -647,9 +609,9 @@ defineExpose({ reload: loadNow })
           <a-table-column title="虚拟 IP" data-index="virtual_ip" :width="145">
             <template #default="{ record }">{{ record.virtual_ip || '—' }}</template>
           </a-table-column>
-          <a-table-column title="远程" :width="230">
+          <a-table-column title="远程" :width="250">
             <template #header>
-              <a-tooltip title="该设备是否允许被远程控制，以及通过本地 RustDesk 发起连接">
+              <a-tooltip title="该设备是否允许被远程控制；连接一律由 NEILICO 客户端发起，Web 不提供发起入口">
                 <span>远程</span>
               </a-tooltip>
             </template>
@@ -666,18 +628,7 @@ defineExpose({ reload: loadNow })
                     />
                   </span>
                 </a-tooltip>
-                <a-tooltip :title="connectReason(record)">
-                  <span class="remote-connect">
-                    <a-button
-                      size="small"
-                      type="primary"
-                      :disabled="connectDisabled(record)"
-                      @click="launch(record)"
-                    >
-                      <PlayCircleOutlined /> 发起连接
-                    </a-button>
-                  </span>
-                </a-tooltip>
+                <span class="remote-hint">连接请在 NEILICO 客户端中发起</span>
               </div>
             </template>
           </a-table-column>
@@ -903,23 +854,7 @@ defineExpose({ reload: loadNow })
             </a-tooltip>
           </div>
 
-          <div class="remote-policy__actions">
-            <a-tooltip :title="connectReason(selectedNode)">
-              <span class="remote-connect">
-                <a-button
-                  size="small"
-                  type="primary"
-                  :disabled="connectDisabled(selectedNode)"
-                  @click="launch(selectedNode)"
-                >
-                  <PlayCircleOutlined /> 发起连接
-                </a-button>
-              </span>
-            </a-tooltip>
-            <span class="detail-muted">
-              {{ remoteDevice(selectedNode)?.rustdesk_id ? `RustDesk ID：${remoteDevice(selectedNode)?.rustdesk_id}` : '未上报 RustDesk ID' }}
-            </span>
-          </div>
+          <p class="remote-policy__hint">连接请在 NEILICO 客户端中发起</p>
         </div>
 
         <h3 class="drawer-section-title">指标（最近 24 小时）</h3>
@@ -1068,17 +1003,23 @@ defineExpose({ reload: loadNow })
   gap: 10px;
 }
 
-/* 「远程」列：可被远程开关 + 发起连接按钮 */
+/* 「远程」列：可被远程开关 + 一行客户端连接提示（Web 不提供连接入口） */
 .remote-cell {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
 }
 
-.remote-switch,
-.remote-connect {
+.remote-switch {
   display: inline-flex;
   align-items: center;
+}
+
+.remote-hint {
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.2;
+  white-space: nowrap;
 }
 
 /* 详情抽屉「远程控制」块 */
@@ -1112,13 +1053,11 @@ defineExpose({ reload: loadNow })
   font-style: italic;
 }
 
-.remote-policy__actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
+.remote-policy__hint {
+  margin: 0;
   padding-top: 8px;
   border-top: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-size: 12px;
 }
 </style>

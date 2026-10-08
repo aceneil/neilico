@@ -560,7 +560,7 @@ export interface RemoteDesktopDevice {
   /** 该设备上报的 RustDesk ID（未上报为空）。 */
   rustdesk_id: string
   rustdesk_hint: string
-  /** rustdesk://<id>；无 ID 时为空串。 */
+  /** 客户端连接深链；无 ID 时为空串。Web 侧不使用（连接由客户端发起）。 */
   connect_url: string
   /** 可一键复制的连接参数文本（含服务器与公钥）。 */
   connection_params: string
@@ -603,7 +603,7 @@ export interface RemoteDesktopMeshMembership {
 
 export interface RemoteDesktopDevicePolicy {
   node_id: string
-  /** 被控方授权开关；false 时任何客户端都不得对其发起连接。默认 false（opt-in）。 */
+  /** 被控方授权开关；false 时任何客户端都不得连接该设备。默认 false（opt-in）。 */
   remote_control_allowed: boolean
   tunnel_mode: RemoteDesktopTunnelMode
   isolated_tunnel: RemoteDesktopIsolatedTunnel

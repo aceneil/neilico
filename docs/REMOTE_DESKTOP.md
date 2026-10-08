@@ -1,8 +1,8 @@
 # 远程桌面（自建 RustDesk）
 
 NEILICO 的「远程桌面」能力：控制面下发**自建 RustDesk 服务器**（`rustdesk-server`：`hbbs` 信令 +
-`hbbr` 中继）的接入参数，Dashboard 展示服务器参数、客户端安装指引与设备网格，并支持一键复制连接
-参数、一键调起本地 RustDesk 发起连接。
+`hbbr` 中继）的接入参数，Dashboard 只做**设备与策略管理**——展示服务器参数、客户端安装指引与设备网格，
+并支持一键复制连接参数。**Web 只做管理，远程连接一律由 NEILICO 客户端发起；Web 不提供任何连接入口。**
 
 参考上游：[rustdesk/rustdesk](https://github.com/rustdesk/rustdesk)（客户端）、
 [rustdesk/rustdesk-server](https://github.com/rustdesk/rustdesk-server)（hbbs/hbbr 服务端）。
@@ -16,7 +16,7 @@ NEILICO 的「远程桌面」能力：控制面下发**自建 RustDesk 服务器
 | :--- | :--- | :--- |
 | 控制面接口 | `control-plane/internal/api/remote_desktop.go` | `/api/v1/remote-desktop/*` |
 | 服务/配置 | `control-plane/internal/service/remote_desktop.go`、`internal/config/config.go` | 参数解析、公钥读取、设备视图、端口探活 |
-| Dashboard 页 | `dashboard/src/pages/devices/DevicesPage.vue`（页头 + 设备列表）+ `dashboard/src/pages/nodes/NodesPage.vue`（列表内「远程」列 + 详情抽屉） | 侧栏「设备管理」**单一视图**（无页内标签）：每台设备的远程控制就在列表「远程」列与详情抽屉里；全局参数在页头「远程桌面设置」弹窗（`remote-desktop/RemoteDesktopSettingsModal.vue`）。旧深链 `/remote-desktop` 与 `/devices?tab=remote` 均落到 `/devices` |
+| Dashboard 页 | `dashboard/src/pages/devices/DevicesPage.vue`（页头 + 设备列表）+ `dashboard/src/pages/nodes/NodesPage.vue`（列表内「远程」列 + 详情抽屉） | 侧栏「设备管理」**单一视图**（无页内标签）：列表「远程」列只展示「可被远程」开关 + 一行「连接请在 NEILICO 客户端中发起」提示（**Web 不提供连接入口**）；四个策略开关（可被远程 / 隧道模式 / 单独隧道 / Mesh）在详情抽屉里即时 PATCH；全局参数在页头「远程桌面设置」弹窗（`remote-desktop/RemoteDesktopSettingsModal.vue`）。旧深链 `/remote-desktop` 与 `/devices?tab=remote` 均落到 `/devices` |
 | 前端 API | `dashboard/src/api/remote-desktop.ts` | |
 
 ## 快速启用
@@ -26,7 +26,7 @@ NEILICO 的「远程桌面」能力：控制面下发**自建 RustDesk 服务器
 2. **让控制面能读到公钥**：把 `id_ed25519.pub` 挂载进控制面容器，并把路径用
    `NEILICO_RD_PUBLIC_KEY_FILE` 指过去（**只读公钥，绝不挂载/读取私钥**）。
 3. **设置服务器地址**：`NEILICO_RD_ID_SERVER`（hbbs）与 `NEILICO_RD_RELAY_SERVER`（hbbr）。
-4. 打开侧栏「设备管理」→ 点页头「远程桌面设置」，把弹窗里的 **ID 服务器 / 中继服务器 / Key 公钥** 填进各设备的 RustDesk 客户端；在设备列表「远程」列逐台开启「可被远程」并点「发起连接」。
+4. 打开侧栏「设备管理」→ 点页头「远程桌面设置」，把弹窗里的 **ID 服务器 / 中继服务器 / Key 公钥** 填进各设备的 RustDesk 客户端；在设备列表「远程」列（或设备详情抽屉）逐台开启「可被远程」。**远程连接请到 NEILICO 客户端发起**——Web 端只做管理与策略开关，不提供连接入口。
 
 ### 环境变量（均可用 YAML `remote_desktop:` 段覆盖）
 
@@ -59,7 +59,7 @@ YAML 形态见 `control-plane/configs/config.example.yaml` 的 `remote_desktop:`
 | :--- | :--- | :--- | :--- |
 | `GET` | `/api/v1/remote-desktop/config` | 登录可读 | 服务器参数，**只含公钥** |
 | `PUT` | `/api/v1/remote-desktop/config` | 仅 `platform_admin` | 改 `id_server` / `relay_server` / `enabled`，写审计 |
-| `GET` | `/api/v1/remote-desktop/devices` | 登录可读 | 设备列表 + 每台的 `rustdesk_hint` / 连接参数文本 |
+| `GET` | `/api/v1/remote-desktop/devices` | 登录可读 | 设备列表 + 每台的 `rustdesk_hint` / 连接参数文本（供客户端或手动填写，Web 不据此发起连接） |
 | `GET` | `/api/v1/remote-desktop/status` | 登录可读 | 对 `21115/21116/21117` 做纯 TCP 探活（1s 超时，总预算 3s） |
 | `GET` | `/api/v1/remote-desktop/device-policies` | 登录可读（限自身租户） | 每台设备的授权状态；未建过策略的节点返回默认值 |
 | `PATCH` | `/api/v1/remote-desktop/device-policies/{node_id}` | `platform_admin` / `tenant_admin` | 局部更新授权开关，写审计 `remote_desktop.policy.update` |
@@ -167,11 +167,11 @@ curl -fsS -X PATCH http://<host>:13000/api/v1/remote-desktop/device-policies/<no
 `os`+`arch`），并为每台设备派生：
 
 - `rustdesk_id` / `rustdesk_hint`：该设备上报的 RustDesk ID（没有则为空串）；
-- `connect_url`：`rustdesk://<id>`，Dashboard 的「发起连接」按钮用它调起本地客户端；
+- `connect_url`：客户端连接深链；**Web 侧已不再使用**（连接一律由客户端发起）；
 - `connection_params`：可直接粘贴的连接参数文本（设备名 / 虚拟 IP / RustDesk ID / 两个服务器 / Key）。
 
 **ID 上报方式（当前）**：给节点打一个标签 `rustdesk:<id>`（大小写不敏感）。这是客户端原生上报字段
-落地前的最小约定；未上报时按钮置灰并提示「需该设备安装 RustDesk 并告知 ID」。
+落地前的最小约定；未上报时 Web 不展示连接入口（连接本就在客户端发起），客户端会提示「需该设备安装 RustDesk 并告知 ID」。
 
 ## 与 P1 部署的对应关系
 
