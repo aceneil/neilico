@@ -1721,6 +1721,44 @@ pre {
 
 .capability-badge {
   font-weight: 600;
+  border-width: 1px;
+  border-style: solid;
+}
+
+/* 接入能力标签色调：彩色仅用于「在线 且 该能力确实就绪」，颜色一律走主题变量。 */
+.capability-badge--ok {
+  color: var(--success);
+  border-color: var(--success);
+  background: var(--surface-subtle);
+  background: color-mix(in srgb, var(--success) 12%, transparent);
+}
+
+/* 设备离线，或该能力未就绪/未启用：置灰。 */
+.capability-badge--muted {
+  color: var(--text-secondary);
+  border-color: var(--border);
+  background: var(--surface-subtle);
+}
+
+/* 「接入能力」列的远程授权图标：开启=彩色、未开启=灰（颜色走主题变量）。 */
+.remote-indicator {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  font-size: 15px;
+  line-height: 1;
+  vertical-align: middle;
+  cursor: default;
+}
+
+.remote-indicator--on {
+  color: var(--success);
+}
+
+.remote-indicator--off {
+  color: var(--text-secondary);
 }
 
 .capability-reason {

@@ -1,7 +1,8 @@
 <script setup lang="ts">
 // 「设备管理」页的设备列表（唯一视图，不再包在标签里）。
-// Web 只做设备与策略管理：表格「远程」列仅展示「可被远程」开关 + 一行客户端连接提示，
-// Web 不提供任何连接入口，连接一律由 NEILICO 客户端发起。
+// Web 只做设备与策略管理：表格不再有独立的「远程」列，远程授权以图标并入「接入能力」列
+// （tooltip 说明该设备是否开启远程授权；连接一律由 NEILICO 客户端发起，Web 不提供连接入口）。
+// 状态列只表达两个值：就绪 / 离线。
 // 详情抽屉「远程控制」四控件（可被远程 / 隧道模式 / 单独隧道 / Mesh），即时 PATCH。
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import {
@@ -124,11 +125,9 @@ function capabilityValue(node: Node, key: CapabilityKey): string {
   return capabilitiesFor(node)[key] || 'unavailable'
 }
 
-function capabilityColor(value: string): string {
-  if (value === 'ready') return 'green'
-  if (value === 'degraded') return 'orange'
-  return 'default'
-}
+// 能力标签的色调只有两档：在线且该能力确实就绪 → 彩色（ok）；其余一律置灰（muted）。
+// 就绪与否由文字（ready/degraded/unavailable）与 tooltip 表达，颜色不承载更多语义。
+type CapabilityTone = 'ok' | 'muted'
 
 function capabilityLabel(value: string): string {
   if (value === 'ready') return 'ready'
@@ -140,47 +139,43 @@ function capabilityReason(node: Node): string {
   return capabilitiesFor(node).reason?.trim() || '未提供原因'
 }
 
-type MeshStatus = { label: string; badge: 'success' | 'warning' | 'error' | 'default' }
-
-const meshStatusMeta: Record<string, MeshStatus> = {
-  ready: { label: 'Mesh 就绪', badge: 'success' },
-  degraded: { label: 'Mesh 降级', badge: 'warning' },
-  unavailable: { label: 'Mesh 不可用', badge: 'error' }
-}
-
-// 有效 Mesh 状态以 tunnel 为权威信号：服务端已按「更悲观者」算出 effective_mesh；
-// 这里再做一次兜底，保证 tunnel 不可用时【绝不】显示绿色就绪（不再让 mesh=ready 掩盖故障）。
-function effectiveMesh(node: Node): string {
-  if (node.effective_mesh) return node.effective_mesh
-  const capabilities = capabilitiesFor(node)
-  if (capabilities.tunnel && capabilities.tunnel !== 'ready') return capabilities.tunnel
-  return capabilities.mesh || 'unavailable'
-}
-
-function meshStatus(node: Node): MeshStatus {
-  return meshStatusMeta[effectiveMesh(node)] || meshStatusMeta.unavailable
-}
-
 // 心跳是否已超时（服务端按 last_seen 与心跳超时时间推算）。
 function isStale(node: Node): boolean {
   return node.heartbeat_stale === true
 }
 
-// 状态列：能力故障优先于心跳时效——tunnel 不可用时绝不显示绿色就绪。
-function nodeStatus(node: Node): MeshStatus {
-  const mesh = meshStatus(node)
-  if (mesh.badge !== 'success') return mesh
-  if (isStale(node) || node.status !== 'online') return { label: '离线', badge: 'default' }
-  return mesh
+// 设备是否在线：必须 status=online 且心跳未陈旧（陈旧时「在线」不再可信）。
+function isOnline(node: Node): boolean {
+  return node.status === 'online' && !isStale(node)
+}
+
+// 状态列只表达两个值：在线 →「就绪」，其余 →「离线」。
+// 能力是否真的就绪交给「接入能力」列表达，状态列不再拼接 Mesh 等文字。
+type NodeStatusBadge = { label: string; badge: 'success' | 'default' }
+
+function nodeStatus(node: Node): NodeStatusBadge {
+  return isOnline(node)
+    ? { label: '就绪', badge: 'success' }
+    : { label: '离线', badge: 'default' }
 }
 
 function statusTooltip(node: Node): string {
-  const mesh = meshStatus(node)
-  const parts = [`有效状态：${nodeStatus(node).label}`, `有效 Mesh：${mesh.label}（以 tunnel 为准）`]
-  parts.push(`能力原因：${capabilityReason(node)}`)
+  const parts = [`状态：${nodeStatus(node).label}`]
+  parts.push(`接入能力原因：${capabilityReason(node)}`)
   if (node.capabilities_note) parts.push(node.capabilities_note)
-  parts.push(isStale(node) ? `心跳已超时，超过心跳超时时间即判为陈旧（最后心跳 ${formatTime(node.last_seen)}）` : `最后心跳 ${formatTime(node.last_seen)}`)
+  parts.push(
+    isStale(node)
+      ? `心跳已超时，超过心跳超时时间即判为陈旧（最后心跳 ${formatTime(node.last_seen)}）`
+      : `最后心跳 ${formatTime(node.last_seen)}`
+  )
   return parts.join('\n')
+}
+
+// 接入能力列的颜色规则（真 bug 修复）：设备离线 → 所有能力标签都置灰；
+// 能力未就绪/未启用 → 该标签置灰；只有「在线 且 该能力确实就绪」才彩色。
+function capabilityTone(node: Node, key: CapabilityKey): CapabilityTone {
+  if (!isOnline(node)) return 'muted'
+  return capabilityValue(node, key) === 'ready' ? 'ok' : 'muted'
 }
 
 /* ---------------- 远程控制（内联授权） ---------------- */
@@ -259,6 +254,22 @@ function remoteToggleReason(node: Node): string {
   if (!policyReady.value) return `授权接口未就绪${policyError.value ? `：${policyError.value}` : ''}`
   if (!hasPolicy(node)) return '未获取到该设备的授权状态'
   return '开启后客户端方可对该设备发起远程连接（默认关闭）'
+}
+
+// 该设备是否开启远程连接授权（以后端 device-policies 为准，缺条目按未开启处理）。
+function remoteAllowed(node: Node): boolean {
+  return Boolean(policies.value[node.id]?.remote_control_allowed)
+}
+
+// 「接入能力」列远程图标的 tooltip：说明是否开启远程授权 + 客户端发起连接的提示。
+function remoteIconTooltip(node: Node): string {
+  const parts = [
+    `远程：${remoteAllowed(node) ? '已开启' : '未开启'}`,
+    '连接请在 NEILICO 客户端中发起'
+  ]
+  if (!policyReady.value) parts.push('授权接口未就绪，状态暂不可确认')
+  else if (canWritePolicies.value) parts.push(remoteAllowed(node) ? '可在详情中关闭授权' : '可在详情中开启授权')
+  return parts.join(' · ')
 }
 
 async function load(options: { silent?: boolean } = {}) {
@@ -609,29 +620,6 @@ defineExpose({ reload: loadNow })
           <a-table-column title="虚拟 IP" data-index="virtual_ip" :width="145">
             <template #default="{ record }">{{ record.virtual_ip || '—' }}</template>
           </a-table-column>
-          <a-table-column title="远程" :width="250">
-            <template #header>
-              <a-tooltip title="该设备是否允许被远程控制；连接一律由 NEILICO 客户端发起，Web 不提供发起入口">
-                <span>远程</span>
-              </a-tooltip>
-            </template>
-            <template #default="{ record }">
-              <div class="remote-cell">
-                <a-tooltip :title="remoteToggleReason(record)">
-                  <span class="remote-switch">
-                    <a-switch
-                      size="small"
-                      :checked="policyFor(record).remote_control_allowed"
-                      :disabled="!policyEditable(record)"
-                      :loading="policySaving === record.id"
-                      @change="(checked: boolean | string | number) => onRemoteControl(record, checked)"
-                    />
-                  </span>
-                </a-tooltip>
-                <span class="remote-hint">连接请在 NEILICO 客户端中发起</span>
-              </div>
-            </template>
-          </a-table-column>
           <a-table-column title="接入能力" :width="330">
             <template #default="{ record }">
               <div class="capability-list">
@@ -639,11 +627,20 @@ defineExpose({ reload: loadNow })
                   <a-tag
                     v-for="key in capabilityKeys"
                     :key="key"
-                    :color="capabilityColor(capabilityValue(record, key))"
                     class="capability-badge"
+                    :class="`capability-badge--${capabilityTone(record, key)}`"
                   >
                     {{ capabilityLabels[key] }} {{ capabilityLabel(capabilityValue(record, key)) }}
                   </a-tag>
+                  <a-tooltip :title="remoteIconTooltip(record)">
+                    <span
+                      class="remote-indicator"
+                      :class="remoteAllowed(record) ? 'remote-indicator--on' : 'remote-indicator--off'"
+                      :aria-label="remoteAllowed(record) ? '远程授权已开启' : '远程授权未开启'"
+                    >
+                      <DesktopOutlined />
+                    </span>
+                  </a-tooltip>
                 </a-space>
                 <div class="capability-reason">原因：{{ capabilityReason(record) }}</div>
               </div>
@@ -714,10 +711,6 @@ defineExpose({ reload: loadNow })
             <a-badge :status="nodeStatus(selectedNode).badge" :text="nodeStatus(selectedNode).label" />
             <span v-if="isStale(selectedNode)" class="detail-muted">（心跳已超时，在线状态不可信）</span>
           </a-descriptions-item>
-          <a-descriptions-item label="有效 Mesh 状态">
-            <a-badge :status="meshStatus(selectedNode).badge" :text="meshStatus(selectedNode).label" />
-            <span class="detail-muted">以 tunnel 为准</span>
-          </a-descriptions-item>
           <a-descriptions-item label="最后心跳">
             {{ formatTime(selectedNode.last_seen) }}
             <a-tag v-if="isStale(selectedNode)" color="warning">陈旧</a-tag>
@@ -732,8 +725,8 @@ defineExpose({ reload: loadNow })
                 <a-tag
                   v-for="key in capabilityKeys"
                   :key="key"
-                  :color="capabilityColor(capabilityValue(selectedNode, key))"
                   class="capability-badge"
+                  :class="`capability-badge--${capabilityTone(selectedNode, key)}`"
                 >
                   {{ capabilityLabels[key] }} {{ capabilityLabel(capabilityValue(selectedNode, key)) }}
                 </a-tag>
@@ -1003,23 +996,10 @@ defineExpose({ reload: loadNow })
   gap: 10px;
 }
 
-/* 「远程」列：可被远程开关 + 一行客户端连接提示（Web 不提供连接入口） */
-.remote-cell {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
+/* 「接入能力」列的远程授权图标（Web 不提供连接入口，连接由客户端发起） */
 .remote-switch {
   display: inline-flex;
   align-items: center;
-}
-
-.remote-hint {
-  color: var(--text-secondary);
-  font-size: 12px;
-  line-height: 1.2;
-  white-space: nowrap;
 }
 
 /* 详情抽屉「远程控制」块 */
