@@ -556,6 +556,10 @@ func (s *Server) handleAgentDownload(w http.ResponseWriter, r *http.Request) {
 	http.ServeContent(w, r, filename, info.ModTime(), file)
 }
 
+// validAgentDownloadName 是 /downloads/{filename} 的**文件名白名单**：只有在此列出的
+// 名称才会被服务，其余一律 404（防目录穿越/任意文件读取）。除内置的 agent 二进制外，
+// 这里也放行 NEILICO 自有远程桌面客户端的发布包（由部署机放进下载目录自行分发，
+// 见 docs/REMOTE_DESKTOP.md「客户端分发」）。
 func validAgentDownloadName(filename string) bool {
 	switch filename {
 	case "neilico-agent-linux-amd64",
@@ -563,7 +567,13 @@ func validAgentDownloadName(filename string) bool {
 		"neilico-agent-linux-armv7",
 		"neilico-agent-darwin-amd64",
 		"neilico-agent-darwin-arm64",
-		"neilico-agent-windows-amd64.exe":
+		"neilico-agent-windows-amd64.exe",
+		// NEILICO 远程桌面客户端发布包（当前仅 Windows 已构建，Linux/macOS 预留）。
+		"neilico-client-windows-x64.zip",
+		"neilico-client-linux-x64.zip",
+		"neilico-client-macos-x64.zip",
+		// 可选：客户端包校验清单。
+		"neilico-client-SHA256SUMS":
 		return true
 	default:
 		return false

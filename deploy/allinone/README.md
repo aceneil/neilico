@@ -36,6 +36,8 @@ open http://127.0.0.1:13000/
 
 PostgreSQL 持久化目录是 `$HOME/Documents/Docker/data/neilico/pg`，容器内挂载到 `/var/lib/postgresql/data`。该路径保存数据库、角色和 WAL；不要把 `neilico.env` 放进数据库目录。
 
+**下载分发目录**是 `$HOME/Documents/Docker/data/neilico/downloads`，容器内挂载到 `/usr/local/share/neilico/downloads`（`NEILICO_DOWNLOADS_DIR`）。控制面 `/downloads/{filename}` 与 `/install.sh`、`/install.ps1` 都从这里读取产物。把自有客户端发布包（`neilico-client-windows-x64.zip` 等按白名单命名）放进该目录即**无需重建镜像**即可分发/更新；镜像内置的 agent 二进制在容器启动时由 `entrypoint` 从 `/opt/neilico/downloads-seed/` 补齐缺失项，故挂载不会影响一键接入脚本。详见 `docs/REMOTE_DESKTOP.md` 的「客户端分发」。
+
 逻辑备份（命令不会输出密码）：
 
 ```bash

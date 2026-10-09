@@ -42,6 +42,8 @@ enroll:
                         # 接入命令里 docker run 用的镜像；必须是**目标机能拉到**的地址
                         # （早先用本机 tag neilico-agent:local，别的机器必然 pull 失败）
 downloads:
+  # /downloads/{filename} 的服务目录（agent 二进制 + 自有客户端发布包）。
+  # 环境变量 NEILICO_DOWNLOADS_DIR 可覆盖；单容器部署里由宿主 data/neilico/downloads/ 绑定挂载。
   dir: "/usr/local/share/neilico/downloads"
 ratelimit:
   enabled: true

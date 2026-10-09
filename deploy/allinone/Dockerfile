@@ -96,12 +96,16 @@ RUN apk add --no-cache bash curl su-exec tini \
 COPY --from=dashboard-build /src/dashboard/dist/ /opt/neilico/dashboard/
 COPY --from=control-build /out/neilico-control-api /usr/local/bin/neilico-control-api
 COPY --from=agent-build /out/downloads/ /usr/local/share/neilico/downloads/
+# 另存一份「种子」：部署里下载目录会被宿主 data/neilico/downloads/ 绑定挂载遮蔽，
+# entrypoint 启动时用种子补齐缺失的内置 agent 二进制，保证一键安装脚本的下载不因挂载而失效；
+# 宿主放入的自有客户端包（neilico-client-*.zip）不会被覆盖。
+COPY --from=agent-build /out/downloads/ /opt/neilico/downloads-seed/
 # 自编译的 RustDesk 服务端（hbbs/hbbr）：由控制面按需拉起（on_demand）。
 COPY --from=rustdesk-build /out/neilico-rd/hbbs /usr/local/bin/hbbs
 COPY --from=rustdesk-build /out/neilico-rd/hbbr /usr/local/bin/hbbr
 COPY --from=control-build /src/control-plane/configs/config.example.yaml /opt/neilico/configs/config.example.yaml
 COPY deploy/allinone/entrypoint.sh /usr/local/bin/neilico-entrypoint.sh
-RUN chmod 0755 /usr/local/bin/neilico-entrypoint.sh /usr/local/bin/neilico-control-api /usr/local/bin/hbbs /usr/local/bin/hbbr /usr/local/share/neilico/downloads/neilico-agent-* \
+RUN chmod 0755 /usr/local/bin/neilico-entrypoint.sh /usr/local/bin/neilico-control-api /usr/local/bin/hbbs /usr/local/bin/hbbr /usr/local/share/neilico/downloads/neilico-agent-* /opt/neilico/downloads-seed/neilico-agent-* \
     && mkdir -p /var/lib/neilico/rustdesk \
     && chown -R neilico:neilico /var/lib/neilico/rustdesk
 

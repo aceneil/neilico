@@ -174,6 +174,24 @@ mkdir -p "$rd_key_dir" 2>/dev/null || true
 chown -R "$CONTROL_USER" "$rd_key_dir" 2>/dev/null || true
 chmod 0700 "$rd_key_dir" 2>/dev/null || true
 
+# 下载分发目录：/downloads/{filename} 与一键安装脚本的 agent 二进制都从这里读取。
+# 部署里该目录常是宿主绑定挂载（data/neilico/downloads），会遮蔽镜像内置的 agent 二进制 ——
+# 启动时从镜像种子目录补齐【缺失】的文件（不覆盖宿主放入的自有客户端包 neilico-client-*.zip）。
+NEILICO_DOWNLOADS_DIR="${NEILICO_DOWNLOADS_DIR:-/usr/local/share/neilico/downloads}"
+export NEILICO_DOWNLOADS_DIR
+seed_dir="/opt/neilico/downloads-seed"
+if [[ -d "$seed_dir" ]]; then
+    mkdir -p "$NEILICO_DOWNLOADS_DIR"
+    for artifact in "$seed_dir"/*; do
+        [[ -e "$artifact" ]] || continue
+        target="$NEILICO_DOWNLOADS_DIR/$(basename "$artifact")"
+        if [[ ! -e "$target" ]]; then
+            cp -f "$artifact" "$target" 2>/dev/null || true
+        fi
+    done
+    log "seeded agent downloads into $NEILICO_DOWNLOADS_DIR"
+fi
+
 log "starting NEILICO control API and dashboard"
 # 轮换密码时控制面要往 /opt/neilico/bootstrap.env 原子回写（临时文件 + rename），
 # 而 rename 需要目标【目录】可写：把 /opt/neilico 交给控制面运行用户，否则会

@@ -16,6 +16,7 @@ NEILICO 的「远程桌面」能力：控制面下发**自建 RustDesk 服务器
 | 部分 | 位置 | 说明 |
 | :--- | :--- | :--- |
 | 控制面接口 | `control-plane/internal/api/remote_desktop.go` | `/api/v1/remote-desktop/*` |
+| 下载分发 | `control-plane/internal/api/public_downloads.go` | `/downloads/{filename}`（白名单）、`/install.sh`、`/install.ps1`；含 NEILICO 客户端发布包分发，见「客户端分发」 |
 | 服务/配置 | `control-plane/internal/service/remote_desktop.go`、`internal/config/config.go` | 参数解析、公钥读取、设备视图、端口探活 |
 | Dashboard 页 | `dashboard/src/pages/devices/DevicesPage.vue`（页头 + 设备列表）+ `dashboard/src/pages/nodes/NodesPage.vue`（列表内「远程」列 + 详情抽屉） | 侧栏「设备管理」**单一视图**（无页内标签）：列表「远程」列只展示「可被远程」开关 + 一行「连接请在 NEILICO 客户端中发起」提示（**Web 不提供连接入口**）；四个策略开关（可被远程 / 隧道模式 / 单独隧道 / Mesh）在详情抽屉里即时 PATCH；全局参数在页头「远程桌面设置」弹窗（`remote-desktop/RemoteDesktopSettingsModal.vue`）。旧深链 `/remote-desktop` 与 `/devices?tab=remote` 均落到 `/devices` |
 | 前端 API | `dashboard/src/api/remote-desktop.ts` | |
@@ -79,7 +80,7 @@ NEILICO 的「远程桌面」能力：控制面下发**自建 RustDesk 服务器
 2. **让控制面能读到公钥**：绑定挂载密钥目录并把 `NEILICO_RD_KEY_DIR` 指过去（`NEILICO_RD_PUBLIC_KEY_FILE`
    留空即可自动派生 `<key_dir>/id_ed25519.pub`）。**只读公钥，绝不挂载/读取私钥**。
 3. **设置服务器地址**：`NEILICO_RD_ID_SERVER`（hbbs）与 `NEILICO_RD_RELAY_SERVER`（hbbr）。
-4. 打开侧栏「设备管理」→ 点页头「远程桌面设置」，把弹窗里的 **ID 服务器 / 中继服务器 / Key 公钥** 填进各设备的 RustDesk 客户端；在设备列表「远程」列（或设备详情抽屉）逐台开启「可被远程」。**远程连接请到 NEILICO 客户端发起**——Web 端只做管理与策略开关，不提供连接入口。
+4. 打开侧栏「设备管理」→ 点页头「远程桌面设置」，把弹窗里的 **ID 服务器 / 中继服务器 / Key 公钥** 填进各设备的 RustDesk 客户端；在设备列表「远程」列（或设备详情抽屉）逐台开启「可被远程」。**远程连接请到 NEILICO 客户端发起**——Web 端只做管理与策略开关，不提供连接入口。Windows 用户可在弹窗「客户端安装指引」里**直接下载 NEILICO 客户端**；Linux / macOS 构建中，暂用官方客户端 + 同一组服务器参数（见「客户端分发」）。
 
 ### 环境变量（均可用 YAML `remote_desktop:` 段覆盖）
 
@@ -108,6 +109,59 @@ YAML 形态见 `control-plane/configs/config.example.yaml` 的 `remote_desktop:`
 | `21116` | hbbs | **ID 注册/信令**（TCP + UDP） |
 | `21117` | hbbr | **中继转发**（P2P 打不通时走这里） |
 | `21118` / `21119` | hbbs | Web 客户端（`/ws`，可选） |
+
+## 客户端分发（NEILICO 自有客户端 + 内置 agent）
+
+控制面在**同一组公开入口**上分发两类产物，均通过 `GET /downloads/{filename}` 提供：
+
+| 产物 | 文件名（白名单，区分大小写） | 来源 | 用途 |
+| :--- | :--- | :--- | :--- |
+| agent 二进制 | `neilico-agent-linux-{amd64,arm64,armv7}`、`neilico-agent-darwin-{amd64,arm64}`、`neilico-agent-windows-amd64.exe` | 镜像内置（`/usr/local/share/neilico/downloads/`） | `/install.sh`、`/install.ps1` 一键接入 |
+| NEILICO 客户端 | `neilico-client-windows-x64.zip`（已构建）、`neilico-client-linux-x64.zip` / `neilico-client-macos-x64.zip`（预留）、可选 `neilico-client-SHA256SUMS` | 部署机放入下载目录 | Dashboard「远程桌面设置」弹窗的下载按钮 |
+
+- **白名单**：只有上表里的名字会被服务，其余一律 `404`（防目录穿越/任意文件读取）。实现见 `control-plane/internal/api/public_downloads.go` 的 `validAgentDownloadName`。
+- **校验**：响应带 `X-Neilico-Sha256` 头（服务端现算的 SHA-256），客户端/脚本据此校验完整性。
+
+### 下载目录（可挂载，无需重烤镜像）
+
+下载目录由环境变量 `NEILICO_DOWNLOADS_DIR` 指定（默认 `/usr/local/share/neilico/downloads`）。单容器部署里把它**绑定挂载**到宿主目录，这样**放进/更新客户端包不用重建镜像**：
+
+```yaml
+# docker-compose.neilico.yaml（服务 app）
+environment:
+  NEILICO_DOWNLOADS_DIR: /usr/local/share/neilico/downloads
+volumes:
+  - /home/<user>/Documents/Docker/data/neilico/downloads:/usr/local/share/neilico/downloads
+```
+
+> **agent 二进制不会因挂载而丢**：镜像在 `/opt/neilico/downloads-seed/` 另存了一份 agent 二进制「种子」。容器 **entrypoint 启动时**把种子目录里**缺失**的文件补进下载目录（已存在的文件不覆盖，故宿主放进的自有客户端包不受影响）。所以把 `data/neilico/downloads/` 挂上去后，一键安装脚本的 agent 下载照常可用。
+
+### 放进自有客户端包
+
+1. 取得客户端产物（Windows 发布包内应含 `neilico.exe` + `librustdesk.dll` + `data/` + `BUILD-INFO.txt`）。CI 产物见 `https://github.com/aceneil/neilico-client/releases`。
+2. 按**白名单文件名**放进宿主下载目录（文件名必须逐字一致）：
+
+   ```bash
+   D=$HOME/Documents/Docker/data/neilico/downloads
+   cp neilico-windows-x64.zip "$D/neilico-client-windows-x64.zip"
+   # 可选：生成校验清单，供客户端/运维核对
+   ( cd "$D" && sha256sum neilico-client-windows-x64.zip > neilico-client-SHA256SUMS )
+   ```
+
+3. **立即生效、无需重启容器**（每次请求都从磁盘现读现算哈希）。验证：
+
+   ```bash
+   curl -fsSI https://<host>:13000/downloads/neilico-client-windows-x64.zip | grep -iE 'content-length|x-neilico-sha256'
+   diff <(curl -fsS https://<host>:13000/downloads/neilico-client-windows-x64.zip | sha256sum | awk '{print $1}') \
+        <(curl -fsS https://<host>:13000/downloads/neilico-client-SHA256SUMS | awk '{print $1}')
+   ```
+
+### 出新平台包（Linux / macOS）
+
+1. 在 `aceneil/neilico-client` 侧构建对应平台产物，产出 zip（目录结构对齐 Windows 包）。
+2. 用白名单里的名字（`neilico-client-linux-x64.zip` / `neilico-client-macos-x64.zip`；白名单**已预留**，无需改后端）放进宿主下载目录。
+3. 前端把该平台指引从「构建中」切到「下载」：编辑 `dashboard/src/pages/remote-desktop/RemoteDesktopSettingsModal.vue` 的 `clientPackageNames`，补上对应平台键（如 `linux: '/downloads/neilico-client-linux-x64.zip'`），并把该平台 `available` 置 `true`、清空 `fallbackCommand`，然后重新构建前端（`npm run build`）。
+4. 若引入**新文件名**（不在白名单里），必须同步在 `control-plane/internal/api/public_downloads.go` 的 `validAgentDownloadName` 追加，否则一律 `404`。
 
 ## 接口
 

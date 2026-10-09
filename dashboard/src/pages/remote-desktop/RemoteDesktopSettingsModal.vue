@@ -2,7 +2,7 @@
 // 「远程桌面设置」弹窗：全局服务器参数（ID 服务器 / 中继服务器 / Key 公钥）与三平台安装指引。
 // 这些属于全局基础设施、不绑定某台设备，因此从「设备管理」页头按钮唤起，不再占用页内标签。
 // 安全要点：后端只下发**公钥**；本组件永不渲染私钥或任何令牌。
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, reactive, ref, watch, type Component } from 'vue'
 import {
   ApiOutlined,
   AppleOutlined,
@@ -69,12 +69,49 @@ function origin(): string {
 // 复用平台现有的公开入口（/downloads/、/install.sh、/install.ps1），不新增端点。
 const downloadsHref = computed(() => `${origin()}/downloads/`)
 
-const installGuides = computed(() => [
+// NEILICO 自有远程桌面客户端的下载入口（根相对路径：由各部署自己分发，不指向外部地址）。
+// 目前仅 Windows x64 已构建；Linux / macOS 仍在构建中，暂按官方 RustDesk 客户端引导。
+const clientPackageNames: Partial<Record<'windows' | 'linux' | 'macos', string>> = {
+  windows: '/downloads/neilico-client-windows-x64.zip'
+}
+
+type InstallGuide = {
+  key: 'windows' | 'linux' | 'macos'
+  label: string
+  icon: Component
+  // 自有客户端是否已可下载；不可用时引导用户暂用官方客户端 + 下方服务器参数。
+  available: boolean
+  href: string
+  buttonLabel: string
+  hint: string
+  // 官方客户端「备选」命令；Windows 已有自有客户端，故留空。
+  fallbackCommand: string
+  scriptHref: string
+  scriptLabel: string
+}
+
+const installGuides = computed<InstallGuide[]>(() => [
+  {
+    key: 'windows',
+    label: 'Windows',
+    icon: WindowsOutlined,
+    available: true,
+    href: clientPackageNames.windows ?? '',
+    buttonLabel: '下载 NEILICO 客户端',
+    hint: '下载并安装 NEILICO 客户端后，把「服务器参数」中的地址与 Key 填入「ID/中继服务器」与「Key」',
+    fallbackCommand: '',
+    scriptHref: `${origin()}/install.ps1`,
+    scriptLabel: '设备接入脚本 install.ps1'
+  },
   {
     key: 'linux',
     label: 'Linux',
     icon: LaptopOutlined,
-    command: 'flatpak install -y flathub com.rustdesk.RustDesk',
+    available: false,
+    href: '',
+    buttonLabel: '',
+    hint: 'NEILICO 客户端 Linux 版构建中，请暂用官方 RustDesk 客户端并填入下方服务器参数',
+    fallbackCommand: 'flatpak install -y flathub com.rustdesk.RustDesk',
     scriptHref: `${origin()}/install.sh`,
     scriptLabel: '设备接入脚本 install.sh'
   },
@@ -82,17 +119,13 @@ const installGuides = computed(() => [
     key: 'macos',
     label: 'macOS',
     icon: AppleOutlined,
-    command: 'brew install --cask rustdesk',
+    available: false,
+    href: '',
+    buttonLabel: '',
+    hint: 'NEILICO 客户端 macOS 版构建中，请暂用官方 RustDesk 客户端并填入下方服务器参数',
+    fallbackCommand: 'brew install --cask rustdesk',
     scriptHref: `${origin()}/install.sh`,
     scriptLabel: '设备接入脚本 install.sh'
-  },
-  {
-    key: 'windows',
-    label: 'Windows',
-    icon: WindowsOutlined,
-    command: 'winget install RustDesk.RustDesk',
-    scriptHref: `${origin()}/install.ps1`,
-    scriptLabel: '设备接入脚本 install.ps1'
   }
 ])
 
@@ -326,7 +359,7 @@ async function submitEdit() {
         <div class="panel-heading">
           <div>
             <h2><DownloadOutlined /> 客户端安装指引</h2>
-            <p>先安装 RustDesk 客户端，再用上方参数连接；设备接入脚本沿用平台现有入口</p>
+            <p>Windows 直接下载 NEILICO 客户端；Linux / macOS 构建中，暂用官方客户端 + 下方服务器参数</p>
           </div>
         </div>
 
@@ -335,12 +368,28 @@ async function submitEdit() {
             <div class="platform-card__head">
               <component :is="item.icon" />
               <strong>{{ item.label }}</strong>
+              <a-tag v-if="item.available" color="green">可下载</a-tag>
+              <a-tag v-else color="default">构建中</a-tag>
             </div>
-            <code class="platform-card__cmd">{{ item.command }}</code>
+            <p class="platform-card__hint">{{ item.hint }}</p>
+            <a
+              v-if="item.available"
+              class="platform-card__download"
+              :href="item.href"
+              target="_blank"
+              rel="noreferrer"
+            >
+              <DownloadOutlined /> {{ item.buttonLabel }}
+            </a>
+            <template v-else>
+              <code class="platform-card__cmd">{{ item.fallbackCommand }}</code>
+              <div class="platform-card__actions">
+                <a-button size="small" @click="copy(item.fallbackCommand, `${item.label} 官方客户端安装命令`)">
+                  <CopyOutlined /> 复制官方客户端命令
+                </a-button>
+              </div>
+            </template>
             <div class="platform-card__actions">
-              <a-button size="small" @click="copy(item.command, `${item.label} 安装命令`)">
-                <CopyOutlined /> 复制
-              </a-button>
               <a :href="item.scriptHref" target="_blank" rel="noreferrer">{{ item.scriptLabel }}</a>
             </div>
           </article>
@@ -517,6 +566,30 @@ async function submitEdit() {
   align-items: center;
   gap: 8px;
   color: var(--text);
+}
+
+.platform-card__hint {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.platform-card__download {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  padding: 6px 14px;
+  gap: 6px;
+  background: var(--info);
+  border-radius: 6px;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.platform-card__download:hover {
+  opacity: 0.9;
 }
 
 .platform-card__cmd {

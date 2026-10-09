@@ -211,6 +211,64 @@ func TestAgentDownloadAllowlistServesSixArtifacts(t *testing.T) {
 	}
 }
 
+func TestClientPackageDownloadAllowlistServesKnownArtifacts(t *testing.T) {
+	downloadDir := t.TempDir()
+	app := newTestAppWithOptions(t, api.ProxyOptions{
+		Enabled: true, Kind: "builtin", Listen: "127.0.0.1:0",
+		Downloads: api.DownloadsOptions{Dir: downloadDir},
+	})
+	defer app.server.Close()
+
+	// 白名单内：自有客户端发布包（Windows 已构建，Linux/macOS 预留）与可选校验清单。
+	allowed := []string{
+		"neilico-client-windows-x64.zip",
+		"neilico-client-linux-x64.zip",
+		"neilico-client-macos-x64.zip",
+		"neilico-client-SHA256SUMS",
+	}
+	for _, name := range allowed {
+		content := []byte("client-artifact:" + name)
+		if err := os.WriteFile(filepath.Join(downloadDir, name), content, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		response, err := app.server.Client().Get(app.server.URL + "/downloads/" + name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		payload, err := readAll(response)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if response.StatusCode != http.StatusOK {
+			t.Fatalf("%s status = %d", name, response.StatusCode)
+		}
+		if string(payload) != string(content) {
+			t.Fatalf("%s payload = %q", name, payload)
+		}
+		sum := sha256.Sum256(content)
+		if got := response.Header.Get("X-Neilico-Sha256"); got != hex.EncodeToString(sum[:]) {
+			t.Fatalf("%s checksum = %q", name, got)
+		}
+	}
+
+	// 白名单外：即使同名文件真实存在也一律 404（非 HTML）。
+	rejected := []string{
+		"neilico-client-solaris-x64.zip",
+		"neilico-client-windows-x64.tar.gz",
+		"neilico-client-SHA256SUMS.txt",
+	}
+	for _, name := range rejected {
+		if err := os.WriteFile(filepath.Join(downloadDir, name), []byte("should-not-be-served"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		status, body := mustRequest(t, app.server, http.MethodGet, "/downloads/"+name, "", nil)
+		requireStatus(t, status, http.StatusNotFound)
+		if strings.Contains(strings.ToLower(string(body)), "<html") {
+			t.Fatalf("rejected %q returned HTML: %s", name, body)
+		}
+	}
+}
+
 func readAll(response *http.Response) ([]byte, error) {
 	defer response.Body.Close()
 	return io.ReadAll(response.Body)
