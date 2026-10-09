@@ -245,6 +245,16 @@ cd deploy/helm && bash neilico/ci/verify.sh
 - **事故与恢复**：一次真机验收把线上管理员密码轮换成随机临时值、回写与恢复同时失败（当时策略没放开）→ 原密码登不上且临时密码从未落盘。恢复手法：用仓库自己的 `auth.HashPassword` 算出 env 原密码的 bcrypt 哈希 → `docker exec -i neilico psql` 直接更新 `users.password_hash`（**SQL 经 stdin，明文不进命令行**）→ 登录 200 恢复。**教训：改凭据的真机验收必须带 try/finally 兜底，且先用指纹比对确认能恢复再动手。**
 - **复验脚本入库**：`scripts/verify_account.py`（轮换→校验回写→改回原值；全程只用 sha256 前 10 位指纹比对；带兜底恢复；绝不回显明文）。
 
+## 自建 hbbs/hbbr 并入项目 + 按需加载（2026-10-09 真机验收）
+
+- **不再依赖外部容器**：`rustdesk/rustdesk-server`（tag `1.1.16`）源码 **vendored** 进 `third_party/rustdesk-server/`（含 `vendor.tar.gz` 全量 crates，可**完全离线**编译；AGPL `LICENSE` 原文保留 + 根 `NOTICE` 记来源/commit/改动）。`deploy/allinone/Dockerfile` 新增 `rustdesk-build` 阶段，从 vendored 源编出 `hbbs`/`hbbr` 装进**同一个 allinone 镜像**（仍是单容器）。证据：容器内 `hbbs -h` → `hbbs 1.1.16` ✓。
+- **定位（用户明确）**：**"我们只是借助它的能力"** ✓ —— 源码**保持上游原样**、不改其内部逻辑（不做 fork 式改造，升级只换 tag 重编）；"控制"体现在**部署与治理层**：何时启动、端口、密钥位置、是否启用、界面展示全在 NEILICO 侧。
+- **按需生命周期**（`internal/service/rustdesk_server.go`，默认 `on_demand`）：无远程桌面活动**不启动** → 容器内 `hbbs`/`hbbr` **进程数 0**、不占 CPU/内存 ✓；有活动自动拉起；空闲超时自动停；另有 `always_on`/`off` 模式。接口 `GET /api/v1/remote-desktop/server-status`、`POST .../server/{start|stop}`（admin）。真机实测：idle `running=false`/进程 0 → start 后进程 2 且宿主 `0.0.0.0:21115/21116` 真监听、TCP 可连 → stop 后回 0 ✓✓。
+  - ⚠️ **判据修正（诚实记录）**：`ports:` 发布模式下，宿主端口由 **docker-proxy** 常驻监听（6 端口 × v4/v6 = 12 条 ✓ 约 2MB/个、不占 CPU ✓）→ 所以"idle 时宿主零监听"**做不到** ✗；真正的按需收益是**服务进程不启动**（0 进程 ✓）。要连端口都不出现，只能 `network_mode: host` ✗（牺牲隔离 ✓）——按现状取舍：保留发布端口 ✓。
+- **密钥**：RD 密钥目录已**绑定挂载** `data/neilico/rustdesk/`（宿主/容器指纹一致 ✓ 700/600 ✓）→ 容器重建**不再丢密钥** ✓；当前生效的是容器首次启动时**新生成**的那对（用户决定：**直接用新密钥** ✓，不做恢复；旧 `data/rustdesk/` 仅留作备份 ✓）。公钥由 `GET /api/v1/remote-desktop/config` 动态下发 ✓，界面自动跟随 ✓。
+- **踩坑（重要，下次别再犯）**：**发布端口与外部同名容器冲突** → 新容器 `failed to bind host port 0.0.0.0:21115` ✗ 且留下**半残容器**（无网络、`{{.Ports}}` 空、宿主无监听 ✗）。正确顺序：**先 `docker compose -f docker-compose.rustdesk.yaml down`（不加 `-v` 以保密钥）腾出端口 → 再起新容器**；若已半残，用 `up -d --force-recreate` 修复 ✓。回滚：把外部的 `up -d` 拉回来即可 ✓。
+- 已推送：`8d248df`（设备列表三处 UI 修正 ✓）+ 自建 hbbs/hbbr 相关提交 ✓，本地=远程 ✓。
+
 ## 远程桌面（RustDesk 内核 + 自建服务器）P1 + NEILICO 集成（2026-10-07 真机验收）
 
 ### 已落地
