@@ -11,9 +11,6 @@ import {
   DesktopOutlined,
   EyeOutlined,
   FilterOutlined,
-  LinkOutlined,
-  PlusOutlined,
-  ReloadOutlined,
   SafetyCertificateOutlined,
   SearchOutlined
 } from '@ant-design/icons-vue'
@@ -331,6 +328,12 @@ const lastRefreshedLabel = computed(() =>
     : '—'
 )
 
+// 页头「自动刷新」开关的悬浮说明。操作按钮本体已上移到「设备管理」页头唯一操作行，
+// 这里只提供文案与状态；reload / autoRefresh / enroll / register 一并经 defineExpose 暴露。
+const autoRefreshTooltip = computed(
+  () => `每 ${AUTO_REFRESH_MS / 1000} 秒自动刷新；上次 ${lastRefreshedLabel.value}`
+)
+
 // 对比前后两次列表，把「新出现的设备」直接说出来，避免用户以为没生效
 function announceNewNodes(previous: Node[], next: Node[]) {
   if (lastRefreshedAt.value === null) return // 首次加载不算「新增」
@@ -542,27 +545,19 @@ function resetRegister() {
 
 void loadNow()
 
-defineExpose({ reload: loadNow })
+defineExpose({
+  // 交给「设备管理」页头单一操作行复用的控制面（defineExpose 的 ref 经 proxyRefs 解包）。
+  reload: loadNow,
+  autoRefresh,
+  autoRefreshTooltip,
+  enrollOpen,
+  registerOpen,
+  resetRegister
+})
 </script>
 
 <template>
   <div class="nodes-panel">
-    <div class="nodes-actions">
-      <a-tooltip :title="`每 ${AUTO_REFRESH_MS / 1000} 秒自动刷新；上次 ${lastRefreshedLabel}`">
-        <span class="auto-refresh">
-          <a-switch v-model:checked="autoRefresh" size="small" />
-          <span class="auto-refresh-label">自动刷新</span>
-        </span>
-      </a-tooltip>
-      <a-button @click="loadNow()"><ReloadOutlined /> 刷新</a-button>
-      <a-button v-if="canWrite" type="primary" @click="enrollOpen = true">
-        <LinkOutlined /> 接入设备
-      </a-button>
-      <a-button v-if="canWrite" @click="registerOpen = true; resetRegister()">
-        <PlusOutlined /> 手动注册
-      </a-button>
-    </div>
-
     <section class="filter-bar" :class="{ 'filter-bar--collapsed': filtersCollapsed }">
       <a-button class="filter-collapse" :aria-label="filtersCollapsed ? '展开筛选' : '收起筛选'" @click="filtersCollapsed = !filtersCollapsed">
         <FilterOutlined />
@@ -986,14 +981,6 @@ defineExpose({ reload: loadNow })
 <style scoped>
 .nodes-panel {
   min-height: 0;
-}
-
-.nodes-actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 10px;
 }
 
 /* 「接入能力」列的远程授权图标（Web 不提供连接入口，连接由客户端发起） */

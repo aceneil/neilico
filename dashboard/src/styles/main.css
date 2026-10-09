@@ -286,8 +286,12 @@ pre {
 
 .page-header__actions {
   display: flex;
-  flex: 0 0 auto;
+  /* 允许收缩 + 换行：宽屏一行放下，窄屏自动折行；始终右对齐。 */
+  flex: 0 1 auto;
+  min-width: 0;
+  flex-wrap: wrap;
   align-items: center;
+  justify-content: flex-end;
   gap: 10px;
 }
 
