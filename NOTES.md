@@ -329,3 +329,20 @@ cd deploy/helm && bash neilico/ci/verify.sh
 - **前线抽公共实现**：`composables/useForwardTarget.ts`（地址/端口 + 静默推断 + 校验 + 必填判定）与 `components/ProxyTargetFields.vue`（从设备选择 + 两框），表单一处实现。
 - **验收（亲跑）**：`gofmt -l .` 空；`go build ./...`/`go vet ./...`/`go test ./...` 全绿；新接口集成测试 `TestProxyHostsSingleStepFlow`（一次提交同建 domain+rule、非法目标整笔回滚不落盘、域名冲突 409 不新增规则、三种目标、单行编辑改名改目标、删除级联清规则、跨租户 404/列表不泄漏）与 `TestProxyHostsBackwardCompatibleAndAdoptsLegacyDomain`（旧流程仍可用、无规则旧域名被单行编辑时补建默认规则）均 PASS；前端 `npx vue-tsc --noEmit` exit=0、`npm run build` 成功，产物含新文案且已不含「高级 / 自定义」「代理规则（」等被砍文案。**未部署**。
 
+## CI 镜像发布失败根因：包被个人 PAT 先创建 → GITHUB_TOKEN 无写权限（2026-10-10 已修）
+
+- **症状**：`.github/workflows/images.yml` 在 main 上连续两次失败（run `38018583890`、`38019953711`），报错分别是
+  `Build neilico-agent → failed to push ghcr.io/aceneil/neilico-agent:latest: denied: permission_denied: write_package` 与
+  `Build neilico-allinone → failed to push ghcr.io/aceneil/neilico-allinone:latest: denied: permission_denied: read_package`。
+  workflow 自身的 `permissions: packages: write` 与 `docker/login-action` 用 `${{ secrets.GITHUB_TOKEN }}` 都正确 —— **不是 workflow 的问题**。
+- **根因**：这两个 ghcr 包是**早先由个人 PAT 手工推送**创建的（`neilico-agent` 当时甚至挂在**另一个仓库** `aceneil/neilico-agent` 名下），包所有者是用户账号而不是仓库 → 仓库级 `GITHUB_TOKEN` 对它们**没有写权限**（`allinone` 连读都被拒）。
+- **修复（方案 A，已执行）**：删掉这两个旧包 → 再 `gh workflow run images.yml` 由仓库自带 token 重建。用户命名空间下的容器包可以**直接整包删除**（`DELETE /user/packages/container/<name>` 会连版本一起删，不必逐个删版本；删除需要 classic PAT 带 `delete:packages`）。新包**继承仓库可见性**并自动链接到 `aceneil/neilico`。
+- **结果**：run [`38030400273`](https://github.com/aceneil/neilico/actions/runs/38030400273) **success** —— `Build neilico-agent` 1m42s、`Build neilico-allinone` 7m45s，两个 job 全绿。
+  - `ghcr.io/aceneil/neilico-agent:latest` = `sha256:7dde59c8ec4d544e2756f3150c90bb628f67791288e675875eb79504eb14ea56`（public ✓ 匿名可拉 ✓，repo=`aceneil/neilico`）
+  - `ghcr.io/aceneil/neilico-allinone:latest` = `sha256:f43710b9eb16e5a21275a63d89d47c774c0b8aee9ae119d2410d439c6941f738`（**重建后变为 public** —— 删包重建 + 公开仓库的必然结果，原先为 private）
+  - 两个包都同时带 `sha-1133c2a` 与 `latest` 标签（1133c2a = 触发时的 main HEAD）。
+- **⚠️ 判据（下次直接用）**：**包的创建方式决定写权限** —— 用 PAT 建的包，仓库 `GITHUB_TOKEN` 写不进去（会报 `permission_denied: write_package` / `read_package`）；要修只能删包让 CI 重建，或改由公开仓库的 workflow 发布。另：`gh api -X PATCH /user/packages/... -f visibility=public` 对用户命名空间的容器包**无效**，可见性只能靠「从公开仓库发布」或网页 UI。
+- **⚠️ 匿名可拉的判据（别被误导）**：`curl -sI https://ghcr.io/v2/<owner>/<pkg>/manifests/latest` **永远返回 401** —— 那只是 ghcr 的标准 bearer 挑战，公开包也一样。正确做法：先取**匿名 token**
+  （`curl -s 'https://ghcr.io/token?service=ghcr.io&scope=repository:<owner>/<pkg>:pull'`）→ token 为空 = **private**；再带该 token 请求 manifest，**200 = 公开可拉**。本机只读脚本：`~/.hermes/cache/ghcr-anon-check.sh <pkg>`（不打印任何令牌）。
+
+
