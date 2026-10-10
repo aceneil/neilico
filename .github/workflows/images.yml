@@ -62,6 +62,7 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          annotations: ${{ steps.meta.outputs.annotations }}
           cache-from: type=gha,scope=neilico-agent
           cache-to: type=gha,scope=neilico-agent,mode=max
 
@@ -122,6 +123,7 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          annotations: ${{ steps.meta.outputs.annotations }}
           cache-from: type=gha,scope=neilico-allinone
           cache-to: type=gha,scope=neilico-allinone,mode=max
 
