@@ -1855,3 +1855,358 @@ pre {
     min-height: 520px;
   }
 }
+
+/* Dashboard large-screen layout hardening.
+   Existing px-based UI is scaled through stepped html zoom; dashboard grids,
+   card metrics, spacing, and chart canvases then expand without changing data logic. */
+html,
+body,
+#app {
+  overflow: hidden;
+}
+
+@media (min-width: 1920px) {
+  html {
+    zoom: 1.12;
+  }
+
+  .app-shell {
+    height: calc(100vh / 1.12);
+  }
+
+  .app-content {
+    height: calc(100vh / 1.12 - 76px);
+  }
+}
+
+@media (min-width: 2560px) {
+  html {
+    zoom: 1.25;
+  }
+
+  .app-shell {
+    height: calc(100vh / 1.25);
+  }
+
+  .app-content {
+    height: calc(100vh / 1.25 - 92px);
+  }
+}
+
+@media (min-width: 3200px) {
+  html {
+    zoom: 1.4;
+  }
+
+  .app-shell {
+    height: calc(100vh / 1.4);
+  }
+
+  .app-content {
+    height: calc(100vh / 1.4 - 92px);
+  }
+
+  :root {
+    --ui-page-gap: 24px;
+    --ui-panel-padding: 26px;
+  }
+}
+
+@media (max-width: 1500px) and (min-width: 821px) {
+  .metric-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1920px) {
+  .page-container {
+    padding-block: 18px 20px;
+    gap: 14px;
+  }
+
+  .page-header {
+    min-height: 62px;
+    gap: 20px;
+  }
+
+  .dashboard-scroll {
+    gap: 14px;
+  }
+
+  .alert-summary-grid,
+  .metric-grid,
+  .dashboard-charts,
+  .dashboard-scroll > .alert-panel {
+    gap: 14px;
+  }
+
+  .alert-summary-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .alert-summary-card {
+    min-height: 96px;
+    padding: 15px 19px;
+    grid-template-columns: 46px minmax(0, 1fr) auto;
+    gap: 14px;
+  }
+
+  .alert-summary-card > .anticon {
+    width: 46px;
+    height: 46px;
+    font-size: 23px;
+  }
+
+  .alert-summary-card span {
+    font-size: 14px;
+  }
+
+  .alert-summary-card strong {
+    font-size: 31px;
+  }
+
+  .metric-grid {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+
+  .metric-card {
+    min-height: 124px;
+    padding: 20px;
+    gap: 16px;
+  }
+
+  .metric-card__icon {
+    width: 52px;
+    height: 52px;
+    font-size: 25px;
+  }
+
+  .metric-card span {
+    font-size: 13px;
+  }
+
+  .metric-card strong {
+    margin-block: 4px 2px;
+    font-size: 32px;
+  }
+
+  .metric-card small {
+    font-size: 12px;
+  }
+
+  .dashboard-scroll > .dashboard-charts {
+    min-height: 280px;
+    flex: 1 1 auto;
+  }
+
+  .dashboard-charts {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .chart-panel {
+    display: flex;
+    min-height: 0;
+    flex-direction: column;
+  }
+
+  .chart-panel .panel-heading {
+    padding: var(--ui-panel-padding) var(--ui-panel-padding) 0;
+  }
+
+  .chart-panel .echart {
+    min-height: 220px;
+    height: auto !important;
+    padding: 8px 16px 18px;
+    flex: 1 1 auto;
+  }
+
+  .alert-panel {
+    min-height: 180px;
+    max-height: 240px;
+    padding-bottom: 14px;
+  }
+
+  .alert-list {
+    max-height: 152px;
+    padding-top: 14px;
+  }
+
+  .alert-avatar {
+    width: 44px;
+    height: 44px;
+    font-size: 19px;
+  }
+}
+
+@media (min-width: 2560px) {
+  .page-container {
+    max-width: min(2200px, 94vw);
+    padding-block: 24px 26px;
+    gap: var(--ui-page-gap);
+  }
+
+  .page-header {
+    min-height: 72px;
+    gap: 24px;
+  }
+
+  .dashboard-scroll,
+  .alert-summary-grid,
+  .metric-grid,
+  .dashboard-charts,
+  .dashboard-scroll > .alert-panel {
+    gap: var(--ui-page-gap);
+  }
+
+  .alert-summary-card {
+    min-height: 118px;
+    padding: 21px 25px;
+    grid-template-columns: 56px minmax(0, 1fr) auto;
+    gap: 18px;
+  }
+
+  .alert-summary-card > .anticon {
+    width: 56px;
+    height: 56px;
+    font-size: 28px;
+  }
+
+  .alert-summary-card span {
+    font-size: 16px;
+  }
+
+  .alert-summary-card strong {
+    font-size: 39px;
+  }
+
+  .metric-card {
+    min-height: 152px;
+    padding: 26px;
+    gap: 21px;
+  }
+
+  .metric-card__icon {
+    width: 62px;
+    height: 62px;
+    font-size: 31px;
+  }
+
+  .metric-card span {
+    font-size: 15px;
+  }
+
+  .metric-card strong {
+    margin-block: 7px 3px;
+    font-size: 39px;
+  }
+
+  .metric-card small {
+    font-size: 14px;
+  }
+
+  .dashboard-scroll > .dashboard-charts {
+    min-height: 340px;
+  }
+
+  .chart-panel .echart {
+    min-height: 260px;
+    padding: 10px 20px 20px;
+  }
+
+  .alert-panel {
+    min-height: 210px;
+    max-height: 280px;
+    padding-bottom: 16px;
+  }
+
+  .alert-list {
+    max-height: 172px;
+    padding-top: 16px;
+  }
+
+  .alert-avatar {
+    width: 46px;
+    height: 46px;
+    font-size: 20px;
+  }
+}
+
+@media (min-width: 3200px) {
+  .alert-summary-card {
+    min-height: 126px;
+  }
+
+  .metric-card {
+    min-height: 164px;
+  }
+
+  .metric-card strong {
+    font-size: 43px;
+  }
+}
+
+@media (min-width: 1281px) and (max-width: 1500px) {
+  .dashboard-charts {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1440px) and (max-width: 1919px) {
+  .dashboard-scroll,
+  .alert-summary-grid,
+  .metric-grid,
+  .dashboard-charts {
+    gap: var(--ui-page-gap);
+  }
+
+  .alert-summary-card {
+    min-height: 104px;
+    padding: 17px 20px;
+    grid-template-columns: 46px minmax(0, 1fr) auto;
+    gap: 14px;
+  }
+
+  .alert-summary-card > .anticon {
+    width: 46px;
+    height: 46px;
+    font-size: 23px;
+  }
+
+  .alert-summary-card span {
+    font-size: 13px;
+  }
+
+  .alert-summary-card strong {
+    font-size: 31px;
+  }
+
+  .metric-card {
+    min-height: 124px;
+    padding: 20px;
+    gap: 16px;
+  }
+
+  .metric-card__icon {
+    width: 52px;
+    height: 52px;
+    font-size: 25px;
+  }
+
+  .metric-card span {
+    font-size: 13px;
+  }
+
+  .metric-card strong {
+    margin-block: 4px 2px;
+    font-size: 32px;
+  }
+
+  .metric-card small {
+    font-size: 12px;
+  }
+}
+
+.chart-panel .echart {
+  min-height: 190px;
+  height: clamp(190px, 26vh, 320px) !important;
+}
