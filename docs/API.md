@@ -80,6 +80,10 @@ scope 不足时还会返回 `detail`；API Token 使用 `insufficient_scope`，J
 | GET | `/api/v1/networks/{id}/mesh/export` | JWT | WireGuard/EasyTier 配置导出 |
 | POST | `/api/v1/nodes/{id}/keys/rotate` | JWT，需 node 管理权限 | WireGuard key 轮换 |
 | GET | `/api/v1/agent/config?node_id=&version=` | agent/admin JWT | 版本化下发；相等 version 返回 304 |
+| GET | `/api/v1/device-policies` | JWT，按 tenant scope | 每设备能力三态策略列表（`allow`/`deny`/`forced`） |
+| GET/PATCH | `/api/v1/device-policies/{node_id}` | GET 登录可读；PATCH 仅 platform/tenant admin | map 策略读取/局部更新，PATCH 回显完整对象 |
+| POST | `/api/v1/remote-desktop/register` | agent_token 或 JWT | 远程桌面运行时注册；拒绝 deny/过期策略 |
+| POST | `/api/v1/remote-desktop/heartbeat` | agent_token 或 JWT | 远程桌面运行时心跳；每轮必须刷新策略 |
 | GET | `/api/v1/configs?target_type=&target_id=` | tenant_admin | 配置版本列表 |
 | POST | `/api/v1/configs/{target_type}/{target_id}/rollback` | tenant_admin | 生成新版本回滚 |
 | GET | `/api/v1/alerts` | JWT；readonly 可读 | 告警列表，支持 state/severity/rule/target_type/target_id/page/page_size；platform_admin 可传 tenant_id |
@@ -305,11 +309,11 @@ curl -sS -X POST http://127.0.0.1:18080/api/v1/proxy-rules \
 | :--- | :--- | :--- |
 | 400 | `invalid_request` / `invalid_id` | JSON、UUID、CIDR、分页或必填字段错误 |
 | 401 | `unauthorized` / `invalid_token` / `token_expired` / `token_revoked` / `invalid_agent_token` | 凭据缺失/无效；API Token 过期或撤销使用独立错误码 |
-| 403 | `forbidden` / `insufficient_scope` | 角色、scope 或 tenant scope 不足；`detail.required_scope` 指出缺失项 |
+| 403 | `forbidden` / `insufficient_scope` / `policy_denied` | 角色/scope/tenant 不足，或设备能力被服务端策略拒绝 |
 | 429 | `rate_limited` | API Token/JWT user 超过令牌桶速率，响应含 `Retry-After` |
 | 404 | `not_found` | 资源不存在或不属于当前 tenant |
 | 405 | `method_not_allowed` | 路由不支持该方法，响应含 `Allow` |
-| 409 | `conflict` / `order_in_flight` / `acme_disabled` / `acme_tos_not_accepted` | 资源引用、并发 order，或 ACME 未启用/未同意 TOS |
+| 409 | `conflict` / `policy_stale` / `order_in_flight` / `acme_disabled` / `acme_tos_not_accepted` | 资源引用、策略缓存过期/版本陈旧、并发 order，或 ACME 未启用/未同意 TOS |
 | 422 | `unprocessable_entity` / `acme_order_failed` | 代理目标无法解析、节点没有虚拟 IP、ACME order 失败 |
 | 500 | `internal_error` | 服务端错误，查看控制面日志 |
 | 501 | `not_implemented` / `acme_revoke_not_implemented` | DNS-01、EAB 或证书撤销接口位尚未实现 |

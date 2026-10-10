@@ -178,7 +178,11 @@ type RemoteDesktopDevicePolicy struct {
 	NodeID               uuid.UUID `gorm:"type:uuid;primaryKey" json:"node_id"`
 	TenantID             uuid.UUID `gorm:"type:uuid;not null;index" json:"tenant_id"`
 	RemoteControlAllowed bool      `gorm:"not null;default:false" json:"remote_control_allowed"`
-	TunnelMode           string    `gorm:"type:varchar(16);not null;default:auto" json:"tunnel_mode"`
+	// Features 是可扩展的每设备能力策略 map（例如 mesh、remote_desktop），
+	// 取值为 allow / deny / forced。保留上面的旧布尔字段是为了兼容旧 API。
+	Features      datatypes.JSONMap `gorm:"type:jsonb;not null;default:'{}'" json:"features"`
+	PolicyVersion int64             `gorm:"not null;default:1" json:"policy_version"`
+	TunnelMode    string            `gorm:"type:varchar(16);not null;default:auto" json:"tunnel_mode"`
 	// IsolatedTunnelEnabled 表示已为该设备开启单独隧道（对应的转发规则由 StreamRule 承载）。
 	IsolatedTunnelEnabled bool `gorm:"not null;default:false" json:"isolated_tunnel_enabled"`
 	// IsolatedStreamRuleID 指向为该设备单独创建的那条转发规则；未开启时为空。

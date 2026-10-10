@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"gorm.io/datatypes"
@@ -568,6 +569,25 @@ func (s *Server) handleAgentConfig(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		includePrivate = true
+	}
+	// 服务端硬拦：mesh=deny 时连 WireGuard 配置本身都不下发。
+	// 即使设备本地缓存了旧配置，成员/peer 也已在策略变更时撤销。
+	meshState, policyView, policyErr := s.rdPolicies.FeatureStateForNode(r.Context(), nodeID, service.FeatureMesh)
+	if policyErr != nil {
+		s.serviceError(w, policyErr)
+		return
+	}
+	if !meshState.Allowed() {
+		s.logger.Warn("mesh config denied by device policy",
+			"event_time", time.Now().UTC().Format(time.RFC3339Nano),
+			"node_id", nodeID.String(),
+			"feature", service.FeatureMesh,
+			"feature_state", meshState,
+			"policy_version", policyView.PolicyVersion,
+		)
+		writeErrorDetail(w, http.StatusForbidden, "policy_denied",
+			"mesh is denied by server device policy", map[string]any{"policy": policyView})
+		return
 	}
 	requestedVersion := 0
 	if raw := r.URL.Query().Get("version"); raw != "" {

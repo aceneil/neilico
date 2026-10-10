@@ -41,6 +41,8 @@ type RemoteDesktopConfig struct {
 	Available bool   `json:"available"`
 	Hint      string `json:"hint"`
 	Ports     []int  `json:"ports"`
+	// Policy 仅在请求方明确指定 node_id 时返回，用于客户端每轮心跳刷新。
+	Policy *DevicePolicyView `json:"policy,omitempty"`
 }
 
 // RemoteDesktopUpdateInput 是管理员可修改的字段。

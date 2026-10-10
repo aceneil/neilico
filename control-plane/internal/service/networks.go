@@ -235,6 +235,16 @@ func (s *NetworkService) ListMembers(ctx context.Context, networkID uuid.UUID, t
 }
 
 func (s *NetworkService) AddMember(ctx context.Context, networkID uuid.UUID, tenantID *uuid.UUID, input NetworkMemberInput) (models.NetworkMember, error) {
+	return s.addMember(ctx, networkID, tenantID, input, true)
+}
+
+// addMemberForPolicyUpdate 仅供策略服务在写入 forced 状态时复用成员能力。
+// 此时新策略尚未落库，若沿用公网入口的 deny 检查会把服务端自己的强制启用误拒绝。
+func (s *NetworkService) addMemberForPolicyUpdate(ctx context.Context, networkID uuid.UUID, tenantID *uuid.UUID, input NetworkMemberInput) (models.NetworkMember, error) {
+	return s.addMember(ctx, networkID, tenantID, input, false)
+}
+
+func (s *NetworkService) addMember(ctx context.Context, networkID uuid.UUID, tenantID *uuid.UUID, input NetworkMemberInput, enforceFeaturePolicy bool) (models.NetworkMember, error) {
 	network, err := s.Get(ctx, networkID, tenantID)
 	if err != nil {
 		return models.NetworkMember{}, err
@@ -250,6 +260,15 @@ func (s *NetworkService) AddMember(ctx context.Context, networkID uuid.UUID, ten
 	}
 	if err != nil {
 		return models.NetworkMember{}, fmt.Errorf("get member node: %w", err)
+	}
+	if enforceFeaturePolicy {
+		meshState, err := deviceFeatureState(ctx, s.db, node.ID, FeatureMesh)
+		if err != nil {
+			return models.NetworkMember{}, err
+		}
+		if !meshState.Allowed() {
+			return models.NetworkMember{}, fmt.Errorf("%w: mesh is denied by server device policy", ErrForbidden)
+		}
 	}
 	role := strings.TrimSpace(input.Role)
 	if role == "" {

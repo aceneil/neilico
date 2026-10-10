@@ -170,12 +170,14 @@ volumes:
 
 | 方法 | 路径 | 权限 | 说明 |
 | :--- | :--- | :--- | :--- |
-| `GET` | `/api/v1/remote-desktop/config` | 登录可读 | 服务器参数，**只含公钥** |
+| `GET` | `/api/v1/remote-desktop/config?node_id=` | 登录可读 | 服务器参数，**只含公钥**；指定设备且 `remote_desktop=deny` 时返回 `403 policy_denied`，不下发凭据 |
 | `PUT` | `/api/v1/remote-desktop/config` | 仅 `platform_admin` | 改 `id_server` / `relay_server` / `enabled`，写审计 |
 | `GET` | `/api/v1/remote-desktop/devices` | 登录可读 | 设备列表 + 每台的 `rustdesk_hint` / 连接参数文本（供客户端或手动填写，Web 不据此发起连接） |
 | `GET` | `/api/v1/remote-desktop/status` | 登录可读 | 对 `21115/21116/21117` 做纯 TCP 探活（1s 超时，总预算 3s） |
 | `GET` | `/api/v1/remote-desktop/device-policies` | 登录可读（限自身租户） | 每台设备的授权状态；未建过策略的节点返回默认值 |
 | `PATCH` | `/api/v1/remote-desktop/device-policies/{node_id}` | `platform_admin` / `tenant_admin` | 局部更新授权开关，写审计 `remote_desktop.policy.update` |
+| `GET/PATCH` | `/api/v1/device-policies[/{node_id}]` | GET 登录可读；PATCH 仅 admin | 通用 `features` map 三态策略，带 `policy_version`/`policy_updated_at`/`min_cache_ttl_seconds` |
+| `POST` | `/api/v1/remote-desktop/register` / `heartbeat` | agent_token 或 JWT | 注册/心跳；`deny` 返回 403，过期版本或缓存超过 60 秒返回 `409 policy_stale` |
 | `GET` | `/api/v1/remote-desktop/server-status` | 登录可读 | 自托管服务端状态：运行中/已停止 + 监听端口 + 最近活动时间 + 空闲倒计时（`mode`/`running`/`manual`/`ports`/`idle_remaining_seconds`） |
 | `POST` | `/api/v1/remote-desktop/server/start` | `platform_admin` / `tenant_admin` | 手动拉起（进入「手动保持」，不受空闲回收）；`mode=off` 时 `409 server_disabled` |
 | `POST` | `/api/v1/remote-desktop/server/stop` | `platform_admin` / `tenant_admin` | 手动停止自托管服务端 |

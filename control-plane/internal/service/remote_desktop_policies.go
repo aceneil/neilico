@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -20,6 +21,42 @@ const (
 	TunnelModeRelay  = "relay"
 )
 
+// FeatureState 是服务端对单个设备能力的三态硬策略。
+// allow 保留用户开关；deny/forced 由控制面单方面决定，客户端不能覆盖。
+type FeatureState string
+
+const (
+	FeatureAllow  FeatureState = "allow"
+	FeatureDeny   FeatureState = "deny"
+	FeatureForced FeatureState = "forced"
+)
+
+const (
+	FeatureMesh          = "mesh"
+	FeatureRemoteDesktop = "remote_desktop"
+)
+
+// PolicyMinCacheTTL 是服务端要求客户端策略缓存的最长有效期。
+// 注册/心跳不仅校验版本，还拒绝超过该时长仍未重新拉取策略的请求。
+const PolicyMinCacheTTL = 60 * time.Second
+
+func (state FeatureState) Valid() bool {
+	return state == FeatureAllow || state == FeatureDeny || state == FeatureForced
+}
+
+func (state FeatureState) Allowed() bool {
+	return state == FeatureAllow || state == FeatureForced
+}
+
+// DefaultFeatureState 保持既有 opt-in 语义：remote_desktop 默认 deny；
+// mesh 延续现有“加入网络才启用”的用户可控语义，默认 allow。
+func DefaultFeatureState(feature string) FeatureState {
+	if feature == FeatureRemoteDesktop {
+		return FeatureDeny
+	}
+	return FeatureAllow
+}
+
 // 只读的子网路由状态。
 const (
 	SubnetRoutesReady       = "ready"
@@ -34,11 +71,12 @@ const remoteDesktopIsolatedTargetPort = 21118
 // RemoteDesktopPolicyPatchInput 是 PATCH 的**局部更新**入参。
 // 用指针区分「未提供该字段」与「显式置零/置空」：只有非 nil 的字段会被改动。
 type RemoteDesktopPolicyPatchInput struct {
-	RemoteControlAllowed  *bool      `json:"remote_control_allowed"`
-	TunnelMode            *string    `json:"tunnel_mode"`
-	IsolatedTunnelEnabled *bool      `json:"isolated_tunnel_enabled"`
-	MeshJoined            *bool      `json:"mesh_joined"`
-	MeshNetworkID         *uuid.UUID `json:"mesh_network_id,omitempty"`
+	RemoteControlAllowed  *bool             `json:"remote_control_allowed"`
+	Features              map[string]string `json:"features,omitempty"`
+	TunnelMode            *string           `json:"tunnel_mode"`
+	IsolatedTunnelEnabled *bool             `json:"isolated_tunnel_enabled"`
+	MeshJoined            *bool             `json:"mesh_joined"`
+	MeshNetworkID         *uuid.UUID        `json:"mesh_network_id,omitempty"`
 }
 
 // RemoteDesktopIsolatedTunnelView 描述「单独隧道」：复用现有 StreamRule 的能力。
@@ -62,6 +100,10 @@ type RemoteDesktopReadonlyView struct {
 // RemoteDesktopDevicePolicyView 是 GET/PATCH 返回的单台设备授权视图。
 type RemoteDesktopDevicePolicyView struct {
 	NodeID               uuid.UUID                       `json:"node_id"`
+	Features             map[string]string               `json:"features"`
+	PolicyVersion        int64                           `json:"policy_version"`
+	PolicyUpdatedAt      time.Time                       `json:"policy_updated_at"`
+	MinCacheTTLSeconds   int                             `json:"min_cache_ttl_seconds"`
 	RemoteControlAllowed bool                            `json:"remote_control_allowed"`
 	TunnelMode           string                          `json:"tunnel_mode"`
 	IsolatedTunnel       RemoteDesktopIsolatedTunnelView `json:"isolated_tunnel"`
@@ -73,6 +115,24 @@ type RemoteDesktopDevicePolicyView struct {
 type RemoteDesktopDevicePolicyList struct {
 	Items []RemoteDesktopDevicePolicyView `json:"items"`
 	Total int64                           `json:"total"`
+}
+
+// DevicePolicyView/List 是通用 /api/v1/device-policies 的稳定别名。
+// API 保持旧远程桌面视图的完整兼容字段，同时新增 map/版本/时间戳。
+type DevicePolicyView = RemoteDesktopDevicePolicyView
+type DevicePolicyList = RemoteDesktopDevicePolicyList
+
+type DevicePolicyPatchInput struct {
+	Features map[string]string `json:"features"`
+}
+
+type PolicyPatchResult struct {
+	Item        RemoteDesktopDevicePolicyView `json:"item"`
+	AuditDetail map[string]any                `json:"-"`
+}
+
+type PolicyConfigBumper interface {
+	BumpForNetwork(context.Context, uuid.UUID, string) (models.ConfigVersion, error)
 }
 
 // RemoteDesktopPolicyService 管理每台设备的远控授权开关。
@@ -87,10 +147,11 @@ type RemoteDesktopPolicyService struct {
 	db       *gorm.DB
 	streams  *StreamRuleService
 	networks *NetworkService
+	configs  PolicyConfigBumper
 }
 
-func NewRemoteDesktopPolicyService(db *gorm.DB, streams *StreamRuleService, networks *NetworkService) *RemoteDesktopPolicyService {
-	return &RemoteDesktopPolicyService{db: db, streams: streams, networks: networks}
+func NewRemoteDesktopPolicyService(db *gorm.DB, streams *StreamRuleService, networks *NetworkService, configs PolicyConfigBumper) *RemoteDesktopPolicyService {
+	return &RemoteDesktopPolicyService{db: db, streams: streams, networks: networks, configs: configs}
 }
 
 type nodeMeshState struct {
@@ -127,55 +188,120 @@ func (s *RemoteDesktopPolicyService) List(ctx context.Context, tenantID *uuid.UU
 	items := make([]RemoteDesktopDevicePolicyView, 0, len(nodes))
 	for _, node := range nodes {
 		meshState, joined := mesh[node.ID]
-		items = append(items, buildPolicyView(node.ID, policies[node.ID], meshState, joined, routes[node.ID]))
+		items = append(items, buildPolicyView(node.ID, policies[node.ID], meshState, joined, routes[node.ID], node.CreatedAt))
 	}
 	return RemoteDesktopDevicePolicyList{Items: items, Total: int64(len(items))}, nil
 }
 
-// Patch 局部更新某台设备的授权开关。只改动入参里非 nil 的字段。
-func (s *RemoteDesktopPolicyService) Patch(
-	ctx context.Context,
-	nodeID uuid.UUID,
-	tenantID *uuid.UUID,
-	input RemoteDesktopPolicyPatchInput,
-) (RemoteDesktopDevicePolicyView, error) {
+// Get 返回单台设备的策略视图。
+func (s *RemoteDesktopPolicyService) Get(ctx context.Context, nodeID uuid.UUID, tenantID *uuid.UUID) (RemoteDesktopDevicePolicyView, error) {
 	node, err := s.getNode(ctx, nodeID, tenantID)
 	if err != nil {
 		return RemoteDesktopDevicePolicyView{}, err
 	}
-	policy, exists, err := s.loadPolicy(ctx, nodeID)
+	policy, _, err := s.loadPolicy(ctx, nodeID)
 	if err != nil {
 		return RemoteDesktopDevicePolicyView{}, err
 	}
+	return s.viewForNode(ctx, node, policy)
+}
+
+// FeatureStateForNode 返回服务端权威能力状态。未知的新能力采取默认拒绝，
+// 已知能力按兼容默认值解析，绝不读取客户端本地值。
+func (s *RemoteDesktopPolicyService) FeatureStateForNode(ctx context.Context, nodeID uuid.UUID, feature string) (FeatureState, RemoteDesktopDevicePolicyView, error) {
+	view, err := s.Get(ctx, nodeID, nil)
+	if err != nil {
+		return FeatureDeny, RemoteDesktopDevicePolicyView{}, err
+	}
+	state := FeatureState(view.Features[feature])
+	if !state.Valid() {
+		state = FeatureDeny
+	}
+	return state, view, nil
+}
+
+// Patch 保留旧接口签名；新接口使用 PatchWithAudit 以记录 from/to。
+func (s *RemoteDesktopPolicyService) Patch(ctx context.Context, nodeID uuid.UUID, tenantID *uuid.UUID, input RemoteDesktopPolicyPatchInput) (RemoteDesktopDevicePolicyView, error) {
+	result, err := s.PatchWithAudit(ctx, nodeID, tenantID, input)
+	return result.Item, err
+}
+
+// PatchFeatures 更新通用 map 策略。
+func (s *RemoteDesktopPolicyService) PatchFeatures(ctx context.Context, nodeID uuid.UUID, tenantID *uuid.UUID, input DevicePolicyPatchInput) (PolicyPatchResult, error) {
+	return s.PatchWithAudit(ctx, nodeID, tenantID, RemoteDesktopPolicyPatchInput{Features: input.Features})
+}
+
+// PatchWithAudit 局部更新策略，并返回可用于审计的 before/after。
+// 只改动入参里非 nil 的字段；Features 按 key 合并，结构可扩展到 file_transfer 等能力。
+func (s *RemoteDesktopPolicyService) PatchWithAudit(
+	ctx context.Context,
+	nodeID uuid.UUID,
+	tenantID *uuid.UUID,
+	input RemoteDesktopPolicyPatchInput,
+) (PolicyPatchResult, error) {
+	node, err := s.getNode(ctx, nodeID, tenantID)
+	if err != nil {
+		return PolicyPatchResult{}, err
+	}
+	policy, exists, err := s.loadPolicy(ctx, nodeID)
+	if err != nil {
+		return PolicyPatchResult{}, err
+	}
 	policy.NodeID = nodeID
 	policy.TenantID = node.TenantID
+	beforeFeatures := featureMap(policy.Features, policy.RemoteControlAllowed)
+	beforeVersion := policyVersion(policy, exists)
+	beforeUpdatedAt := policyUpdatedAt(policy, exists, node.CreatedAt)
 
 	// 先做纯校验：非法枚举值立即 400，不留任何副作用。
 	if input.TunnelMode != nil {
 		mode, err := normalizeTunnelMode(*input.TunnelMode)
 		if err != nil {
-			return RemoteDesktopDevicePolicyView{}, err
+			return PolicyPatchResult{}, err
 		}
 		policy.TunnelMode = mode
 	}
 	if strings.TrimSpace(policy.TunnelMode) == "" {
 		policy.TunnelMode = TunnelModeAuto
 	}
-	if input.RemoteControlAllowed != nil {
-		policy.RemoteControlAllowed = *input.RemoteControlAllowed
+	afterFeatures := cloneFeatureMap(beforeFeatures)
+	for feature, raw := range input.Features {
+		name := strings.TrimSpace(feature)
+		if name == "" {
+			return PolicyPatchResult{}, fmt.Errorf("%w: feature name must not be empty", ErrInvalidInput)
+		}
+		state := FeatureState(strings.ToLower(strings.TrimSpace(raw)))
+		if !state.Valid() {
+			return PolicyPatchResult{}, fmt.Errorf("%w: feature %q must be allow, deny, or forced", ErrInvalidInput, name)
+		}
+		afterFeatures[name] = string(state)
 	}
+	if input.RemoteControlAllowed != nil && input.Features == nil {
+		// 旧 API 的 bool 映射到新 map：true=allow，false=deny（保持 opt-in 默认）。
+		if *input.RemoteControlAllowed {
+			afterFeatures[FeatureRemoteDesktop] = string(FeatureAllow)
+		} else {
+			afterFeatures[FeatureRemoteDesktop] = string(FeatureDeny)
+		}
+	}
+	// 新 map 是权威字段；旧 bool 始终回显其兼容投影。
+	policy.RemoteControlAllowed = FeatureState(afterFeatures[FeatureRemoteDesktop]).Allowed()
 
 	// 预解析前置条件：把可能失败的检查放在任何写入之前，避免留下半成品。
 	var joinNetwork *uuid.UUID
-	if input.MeshJoined != nil && *input.MeshJoined {
+	meshState := FeatureState(afterFeatures[FeatureMesh])
+	if !meshState.Valid() {
+		meshState = FeatureDeny
+	}
+	if (input.MeshJoined != nil && *input.MeshJoined) || meshState == FeatureForced {
 		member, err := s.isMember(ctx, nodeID)
 		if err != nil {
-			return RemoteDesktopDevicePolicyView{}, err
+			return PolicyPatchResult{}, err
 		}
 		if !member {
 			target, err := s.resolveJoinNetwork(ctx, node, input.MeshNetworkID)
 			if err != nil {
-				return RemoteDesktopDevicePolicyView{}, err
+				return PolicyPatchResult{}, err
 			}
 			joinNetwork = &target
 		}
@@ -183,23 +309,40 @@ func (s *RemoteDesktopPolicyService) Patch(
 	if input.IsolatedTunnelEnabled != nil && *input.IsolatedTunnelEnabled && !policy.IsolatedTunnelEnabled {
 		member, err := s.isMember(ctx, nodeID)
 		if err != nil {
-			return RemoteDesktopDevicePolicyView{}, err
+			return PolicyPatchResult{}, err
 		}
 		if !member {
-			return RemoteDesktopDevicePolicyView{}, fmt.Errorf("%w: 设备未分配虚拟 IP，无法建立单独隧道", ErrInvalidInput)
+			return PolicyPatchResult{}, fmt.Errorf("%w: 设备未分配虚拟 IP，无法建立单独隧道", ErrInvalidInput)
 		}
 	}
 
-	// Mesh 加入/退出：复用现有成员能力。
-	if input.MeshJoined != nil {
-		if *input.MeshJoined {
-			if joinNetwork != nil {
-				if _, err := s.networks.AddMember(ctx, *joinNetwork, &node.TenantID, NetworkMemberInput{NodeID: nodeID}); err != nil {
-					return RemoteDesktopDevicePolicyView{}, err
-				}
+	// Mesh 加入/退出：复用 NetworkService 退出逻辑；deny 立即撤销成员和 peer。
+	networkIDsBefore, err := s.membershipNetworkIDs(ctx, nodeID)
+	if err != nil {
+		return PolicyPatchResult{}, err
+	}
+	switch meshState {
+	case FeatureDeny:
+		if err := s.leaveAllNetworks(ctx, node, nodeID); err != nil {
+			return PolicyPatchResult{}, err
+		}
+	case FeatureForced:
+		if joinNetwork != nil {
+			if _, err := s.networks.addMemberForPolicyUpdate(ctx, *joinNetwork, &node.TenantID, NetworkMemberInput{NodeID: nodeID}); err != nil {
+				return PolicyPatchResult{}, err
 			}
-		} else if err := s.leaveAllNetworks(ctx, node, nodeID); err != nil {
-			return RemoteDesktopDevicePolicyView{}, err
+		}
+	case FeatureAllow:
+		if input.MeshJoined != nil {
+			if *input.MeshJoined {
+				if joinNetwork != nil {
+					if _, err := s.networks.addMemberForPolicyUpdate(ctx, *joinNetwork, &node.TenantID, NetworkMemberInput{NodeID: nodeID}); err != nil {
+						return PolicyPatchResult{}, err
+					}
+				}
+			} else if err := s.leaveAllNetworks(ctx, node, nodeID); err != nil {
+				return PolicyPatchResult{}, err
+			}
 		}
 	}
 
@@ -211,7 +354,7 @@ func (s *RemoteDesktopPolicyService) Patch(
 		case want && !policy.IsolatedTunnelEnabled:
 			rule, err := s.createIsolatedRule(ctx, node)
 			if err != nil {
-				return RemoteDesktopDevicePolicyView{}, err
+				return PolicyPatchResult{}, err
 			}
 			policy.IsolatedTunnelEnabled = true
 			policy.IsolatedStreamRuleID = &rule.ID
@@ -219,7 +362,7 @@ func (s *RemoteDesktopPolicyService) Patch(
 		case !want && policy.IsolatedTunnelEnabled:
 			if policy.IsolatedStreamRuleID != nil {
 				if err := s.streams.Delete(ctx, *policy.IsolatedStreamRuleID, &node.TenantID); err != nil {
-					return RemoteDesktopDevicePolicyView{}, err
+					return PolicyPatchResult{}, err
 				}
 			}
 			policy.IsolatedTunnelEnabled = false
@@ -227,14 +370,55 @@ func (s *RemoteDesktopPolicyService) Patch(
 		}
 	}
 
+	policy.Features = jsonFeatureMap(afterFeatures)
+	policy.UpdatedAt = time.Now().UTC()
+	nextVersion := beforeVersion
+	if exists && (!featureMapEqual(beforeFeatures, afterFeatures) || input.TunnelMode != nil ||
+		input.RemoteControlAllowed != nil || input.IsolatedTunnelEnabled != nil || input.MeshJoined != nil) {
+		nextVersion++
+	}
+	policy.PolicyVersion = nextVersion
 	if err := s.savePolicy(ctx, &policy, exists); err != nil {
 		// 补偿：策略没落库就别留下孤儿转发规则。
 		if createdRuleID != nil {
 			_ = s.streams.Delete(ctx, *createdRuleID, &node.TenantID)
 		}
-		return RemoteDesktopDevicePolicyView{}, err
+		return PolicyPatchResult{}, err
 	}
-	return s.viewForNode(ctx, node, policy)
+	view, err := s.viewForNode(ctx, node, policy)
+	if err != nil {
+		return PolicyPatchResult{}, err
+	}
+	networkIDsAfter, err := s.membershipNetworkIDs(ctx, nodeID)
+	if err != nil {
+		return PolicyPatchResult{}, err
+	}
+	for _, networkID := range unionUUIDs(networkIDsBefore, networkIDsAfter) {
+		if s.configs != nil {
+			if _, err := s.configs.BumpForNetwork(ctx, networkID, "device feature policy updated"); err != nil {
+				return PolicyPatchResult{}, err
+			}
+		}
+	}
+	changes := make(map[string]any)
+	for feature, after := range afterFeatures {
+		if beforeFeatures[feature] != after {
+			changes[feature] = map[string]string{"from": beforeFeatures[feature], "to": after}
+		}
+	}
+	return PolicyPatchResult{
+		Item: view,
+		AuditDetail: map[string]any{
+			"node_id": nodeID.String(),
+			"before": map[string]any{
+				"features": beforeFeatures, "policy_version": beforeVersion, "policy_updated_at": beforeUpdatedAt,
+			},
+			"after": map[string]any{
+				"features": afterFeatures, "policy_version": view.PolicyVersion, "policy_updated_at": view.PolicyUpdatedAt,
+			},
+			"changes": changes,
+		},
+	}, nil
 }
 
 func (s *RemoteDesktopPolicyService) viewForNode(
@@ -251,7 +435,7 @@ func (s *RemoteDesktopPolicyService) viewForNode(
 		return RemoteDesktopDevicePolicyView{}, err
 	}
 	meshState, joined := mesh[node.ID]
-	return buildPolicyView(node.ID, policy, meshState, joined, routes[node.ID]), nil
+	return buildPolicyView(node.ID, policy, meshState, joined, routes[node.ID], node.CreatedAt), nil
 }
 
 // createIsolatedRule 复用 StreamRuleService 建一条该节点专属的端口转发规则。
@@ -329,10 +513,22 @@ func (s *RemoteDesktopPolicyService) leaveAllNetworks(ctx context.Context, node 
 	}
 	for _, member := range members {
 		if err := s.networks.RemoveMember(ctx, member.NetworkID, nodeID, &node.TenantID); err != nil {
+			if errors.Is(err, ErrNotFound) {
+				continue
+			}
 			return err
 		}
 	}
 	return nil
+}
+
+func (s *RemoteDesktopPolicyService) membershipNetworkIDs(ctx context.Context, nodeID uuid.UUID) ([]uuid.UUID, error) {
+	var ids []uuid.UUID
+	if err := s.db.WithContext(ctx).Model(&models.NetworkMember{}).
+		Where("node_id = ?", nodeID).Order("network_id").Pluck("network_id", &ids).Error; err != nil {
+		return nil, fmt.Errorf("load membership network IDs: %w", err)
+	}
+	return ids, nil
 }
 
 func (s *RemoteDesktopPolicyService) getNode(ctx context.Context, id uuid.UUID, tenantID *uuid.UUID) (models.Node, error) {
@@ -449,10 +645,12 @@ func (s *RemoteDesktopPolicyService) savePolicy(ctx context.Context, policy *mod
 			Where("node_id = ?", policy.NodeID).
 			Updates(map[string]any{
 				"remote_control_allowed":  policy.RemoteControlAllowed,
+				"features":                policy.Features,
+				"policy_version":          policy.PolicyVersion,
 				"tunnel_mode":             policy.TunnelMode,
 				"isolated_tunnel_enabled": policy.IsolatedTunnelEnabled,
 				"isolated_stream_rule_id": policy.IsolatedStreamRuleID,
-				"updated_at":              time.Now().UTC(),
+				"updated_at":              policy.UpdatedAt,
 			}).Error; err != nil {
 			return fmt.Errorf("update remote desktop policy: %w", err)
 		}
@@ -470,6 +668,7 @@ func buildPolicyView(
 	mesh nodeMeshState,
 	meshJoined bool,
 	subnetRoutes string,
+	fallbackUpdatedAt time.Time,
 ) RemoteDesktopDevicePolicyView {
 	mode := strings.TrimSpace(policy.TunnelMode)
 	if mode == "" {
@@ -478,8 +677,14 @@ func buildPolicyView(
 	if strings.TrimSpace(subnetRoutes) == "" {
 		subnetRoutes = SubnetRoutesUnavailable
 	}
+	exists := policy.NodeID != uuid.Nil
+	updated := policyUpdatedAt(policy, exists, fallbackUpdatedAt)
 	view := RemoteDesktopDevicePolicyView{
 		NodeID:               nodeID,
+		Features:             featureMap(policy.Features, policy.RemoteControlAllowed),
+		PolicyVersion:        policyVersion(policy, exists),
+		PolicyUpdatedAt:      updated,
+		MinCacheTTLSeconds:   int(PolicyMinCacheTTL / time.Second),
 		RemoteControlAllowed: policy.RemoteControlAllowed,
 		TunnelMode:           mode,
 		IsolatedTunnel: RemoteDesktopIsolatedTunnelView{
@@ -496,6 +701,109 @@ func buildPolicyView(
 		view.Mesh.VirtualIP = &virtualIP
 	}
 	return view
+}
+
+func featureMap(raw map[string]any, legacyRemoteControl bool) map[string]string {
+	result := map[string]string{
+		FeatureMesh:          string(DefaultFeatureState(FeatureMesh)),
+		FeatureRemoteDesktop: string(DefaultFeatureState(FeatureRemoteDesktop)),
+	}
+	if _, exists := raw[FeatureRemoteDesktop]; !exists {
+		if legacyRemoteControl {
+			result[FeatureRemoteDesktop] = string(FeatureAllow)
+		} else {
+			result[FeatureRemoteDesktop] = string(FeatureDeny)
+		}
+	}
+	for feature, value := range raw {
+		name := strings.TrimSpace(feature)
+		if name == "" {
+			continue
+		}
+		state := FeatureState(strings.ToLower(strings.TrimSpace(fmt.Sprint(value))))
+		if !state.Valid() {
+			// 存量脏数据采取安全默认：已知远程能力保持 opt-in，其它能力默认拒绝。
+			state = DefaultFeatureState(name)
+			if name != FeatureMesh && name != FeatureRemoteDesktop {
+				state = FeatureDeny
+			}
+		}
+		result[name] = string(state)
+	}
+	return result
+}
+
+func cloneFeatureMap(input map[string]string) map[string]string {
+	result := make(map[string]string, len(input))
+	for key, value := range input {
+		result[key] = value
+	}
+	return result
+}
+
+func featureMapEqual(left, right map[string]string) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for key, value := range left {
+		if right[key] != value {
+			return false
+		}
+	}
+	return true
+}
+
+func jsonFeatureMap(features map[string]string) map[string]any {
+	result := make(map[string]any, len(features))
+	for key, value := range features {
+		result[key] = value
+	}
+	return result
+}
+
+func policyVersion(policy models.RemoteDesktopDevicePolicy, exists bool) int64 {
+	if !exists || policy.PolicyVersion <= 0 {
+		return 1
+	}
+	return policy.PolicyVersion
+}
+
+func policyUpdatedAt(policy models.RemoteDesktopDevicePolicy, exists bool, fallback time.Time) time.Time {
+	if exists && !policy.UpdatedAt.IsZero() {
+		return policy.UpdatedAt.UTC()
+	}
+	if fallback.IsZero() {
+		return time.Unix(0, 0).UTC()
+	}
+	return fallback.UTC()
+}
+
+func unionUUIDs(left, right []uuid.UUID) []uuid.UUID {
+	seen := make(map[uuid.UUID]struct{}, len(left)+len(right))
+	result := make([]uuid.UUID, 0, len(left)+len(right))
+	for _, ids := range [][]uuid.UUID{left, right} {
+		for _, id := range ids {
+			if _, exists := seen[id]; exists {
+				continue
+			}
+			seen[id] = struct{}{}
+			result = append(result, id)
+		}
+	}
+	sort.Slice(result, func(i, j int) bool { return result[i].String() < result[j].String() })
+	return result
+}
+
+func deviceFeatureState(ctx context.Context, db *gorm.DB, nodeID uuid.UUID, feature string) (FeatureState, error) {
+	policy, _, err := (&RemoteDesktopPolicyService{db: db}).loadPolicy(ctx, nodeID)
+	if err != nil {
+		return FeatureDeny, err
+	}
+	state := FeatureState(featureMap(policy.Features, policy.RemoteControlAllowed)[feature])
+	if !state.Valid() {
+		state = FeatureDeny
+	}
+	return state, nil
 }
 
 func normalizeTunnelMode(value string) (string, error) {

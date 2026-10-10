@@ -226,7 +226,7 @@ func NewWithProxy(
 	}
 	server.tokenUsage = middleware.NewAPITokenUsageTracker(db, logger, middleware.DefaultAPITokenUsageInterval)
 	// 设备授权策略：单独隧道复用 streamRules，Mesh 复用 networks。
-	server.rdPolicies = service.NewRemoteDesktopPolicyService(db, server.streamRules, server.networks)
+	server.rdPolicies = service.NewRemoteDesktopPolicyService(db, server.streamRules, server.networks, server.configs)
 	if opts.RateLimit.Enabled && opts.RateLimit.RPS > 0 && opts.RateLimit.Burst > 0 {
 		server.rateLimiter = middleware.NewLimiter(opts.RateLimit.RPS, opts.RateLimit.Burst)
 	}
@@ -238,6 +238,7 @@ func NewWithProxy(
 	server.registerPublicDownloads(mux)
 	server.registerAccount(mux)
 	server.registerRemoteDesktop(mux)
+	server.registerDevicePolicies(mux)
 
 	mux.HandleFunc("/healthz", server.handleHealth)
 	mux.Handle("/metrics", promMetrics.Handler())

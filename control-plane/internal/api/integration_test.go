@@ -35,6 +35,7 @@ type testApp struct {
 	sweeper *service.NodeSweeper
 	handler http.Handler
 	proxy   *proxy.Builtin
+	logs    *bytes.Buffer
 }
 
 type gormDBAlias = gormDB
@@ -276,7 +277,8 @@ func newTestAppWithOptions(t *testing.T, options api.ProxyOptions) testApp {
 	if err != nil {
 		t.Fatal(err)
 	}
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	logs := &bytes.Buffer{}
+	logger := slog.New(slog.NewTextHandler(logs, nil))
 	nodeService := service.NewNodeService(handle, time.Minute)
 	sweeper := service.NewNodeSweeper(handle, time.Minute, logger)
 	promMetrics := metrics.New(handle)
@@ -290,7 +292,7 @@ func newTestAppWithOptions(t *testing.T, options api.ProxyOptions) testApp {
 			_ = sqlDB.Close()
 		}
 	})
-	return testApp{t: t, server: server, db: handle, sweeper: sweeper, handler: handler, proxy: builtinProxy}
+	return testApp{t: t, server: server, db: handle, sweeper: sweeper, handler: handler, proxy: builtinProxy, logs: logs}
 }
 
 func mustLogin(t *testing.T, app testApp, email, password string) loginResponse {

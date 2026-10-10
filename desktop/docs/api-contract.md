@@ -44,6 +44,10 @@ Authorization: Bearer <token>          # 任何登录用户可读（只读自己
   "items": [
     {
       "node_id": "uuid",
+      "features": {"mesh": "allow|deny|forced", "remote_desktop": "allow|deny|forced"},
+      "policy_version": 3,
+      "policy_updated_at": "2026-10-10T08:00:00Z",
+      "min_cache_ttl_seconds": 60,
       "remote_control_allowed": true,
       "tunnel_mode": "auto",
       "isolated_tunnel": { "enabled": false, "stream_rule_id": null },
@@ -65,6 +69,8 @@ Authorization: Bearer <token>          # 任何登录用户可读（只读自己
 | `isolated_tunnel.stream_rule_id` | `string\|null` | 关联的转发规则 ID |
 | `mesh.joined` / `mesh.network_id` | `bool` / `string\|null` | Mesh 成员身份；`network_id` 为空且未加入时客户端置灰 Mesh 开关并说明「未加入任何虚拟网络」 |
 | `readonly.subnet_routes` | `"ready"`/`"degraded"`/`"unavailable"` | 子网路由状态（只读展示） |
+| `features.*` | `"allow"`/`"deny"`/`"forced"` | 服务端权威三态；`deny` 置灰不可用，`forced` 置灰常开，客户端不得覆盖 |
+| `policy_version` / `policy_updated_at` | number / timestamp | 心跳每轮刷新；携带旧版本或缓存超过 `min_cache_ttl_seconds` 会被拒绝 |
 
 ### 2. 修改单台设备的授权状态
 
@@ -81,6 +87,7 @@ Content-Type: application/json
 { "tunnel_mode": "direct" }
 { "isolated_tunnel_enabled": true }
 { "mesh_joined": true }
+{ "features": {"mesh": "deny", "remote_desktop": "forced"} }
 ```
 
 响应：`{ "item": { ...同 GET 的元素... } }`（客户端也接受直接返回该元素，或 `204`）。
@@ -94,6 +101,10 @@ Content-Type: application/json
 | `403` | 提示「当前账号无权修改该设备授权」 |
 | `404` / `405` / `501` | 提示「后端接口未就绪，暂不可修改」 |
 | `5xx` | 展示后端 `message` |
+
+通用接口 `GET/PATCH /api/v1/device-policies[/{node_id}]` 使用同一 `features` map。远程桌面运行时的
+`POST /api/v1/remote-desktop/register|heartbeat` 必须携带当前 `policy_version` 与 `policy_fetched_at`；
+服务端返回 `403 policy_denied` 或 `409 policy_stale` 时，相关能力立即停止并重新拉取策略。
 
 ### 3. 建议（非阻塞）
 
