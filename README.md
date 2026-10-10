@@ -1,118 +1,168 @@
-# NEILICO — Unified Mesh & Proxy Platform
+# NEILICO
 
-统一的内网穿透 + Mesh 组网后台管理系统。「普通用户用域名访问内网服务」与「技术用户设备间 P2P 直连」共用一套控制面。
+NEILICO 是一套自托管的内网穿透、Mesh 组网、域名反向代理、TCP/UDP 端口转发和远程桌面控制面；它把 API、Dashboard、PostgreSQL 与 RustDesk 服务端（`hbbs`/`hbbr`）放进一个 all-in-one 容器，并用子主机 Agent 应用 WireGuard 配置。
 
-- 📄 需求规格：[docs/NEILICO_SPEC.md](docs/NEILICO_SPEC.md)
-- 🗺️ 执行计划：[PLAN.md](PLAN.md)
-- 🧭 目录导览：[NOTES.md](NOTES.md)
-- 📚 API 文档：[docs/API.md](docs/API.md)
-- 🧑‍💻 用户指南：[docs/USER_GUIDE.md](docs/USER_GUIDE.md)
-- 🛠️ 运维手册：[docs/OPS.md](docs/OPS.md)
-- 🖥️ 远程桌面（自建 RustDesk）：[docs/REMOTE_DESKTOP.md](docs/REMOTE_DESKTOP.md)
+**解决什么问题**：把分散在内网的服务发布成域名或端口入口，把设备组成 WireGuard 虚拟网络，并集中管理设备、策略、代理规则、端口转发和远程桌面接入参数。远程连接本身由 NEILICO 客户端发起，Web 只负责管理。
 
-## 三个平面
+## 架构
 
-| 平面 | 职责 | 关键组件 |
-| :--- | :--- | :--- |
-| 控制面 | 多租户、认证授权、节点管理、配置下发、监控审计 | control-plane (Go/stdlib HTTP + GORM + PostgreSQL) |
-| 穿透代理面 | 公网域名反代、内网穿透、SSL | ProxyProvider（NPS 配置 / 内置反代） |
-| Mesh 组网面 | 虚拟网、P2P、中继、子网路由、ACL | MeshProvider（WireGuard 配置生成 / EasyTier 导出） |
+```mermaid
+flowchart LR
+  U[浏览器 / TCP·UDP 客户端 / NEILICO 客户端] --> C[控制面 all-in-one\\nAPI + Dashboard + PostgreSQL\\n内置 hbbs / hbbr（按需）]
+  C -->|域名反代 / 端口转发| W[WireGuard 虚拟网络]
+  W --> A1[Agent · 子主机]
+  W --> A2[Agent · 子主机]
+  U -->|RustDesk ID / relay| R[hbbs / hbbr\\n远程桌面服务端]
+  R --> W
+```
 
-## 组件状态
+- 控制面单容器提供 API、Dashboard、PostgreSQL；`hbbs`/`hbbr` 由控制面按需拉起，无活动时不监听远程桌面端口。
+- Agent 在子主机注册、心跳、领取版本化配置，并在具备权限和 WireGuard 能力时应用 `wg0`、路由和子网转发。
+- 域名反代处理 HTTP/HTTPS；端口转发发布显式的 TCP/UDP 端口。两者都把目标解析到节点虚拟 IP 或指定地址。
+- 远程桌面服务端提供 RustDesk ID/中继；客户端连接一律由 [NEILICO client](https://github.com/aceneil/neilico-client) 发起。
 
-| 组件/交付物 | 状态 | 说明 |
-| :--- | :--- | :--- |
-| `control-plane/` | ✅ M1–M2b/M4b/V1-R1/V1-R2 | REST API、JWT/RBAC、租户隔离、配置版本、ACME 自动签发/续期、SNI TLS、告警规则引擎、metrics |
-| `agent/` | ✅ M3 | 注册/心跳/配置轮询、WireGuard shell applier、dry-run、指标、Dockerfile |
-| `cli/` | ✅ M3 | `neilicoctl` 登录、节点、网络、域名、状态 |
-| `dashboard/` | ✅ M4/V1-R2 | Vue 3 + Ant Design Vue + ECharts；告警中心与证书剩余天数 |
-| NPS 配置集成 | ✅ MVP | 生成配置；NPS 数据面由外部服务提供 |
-| Mesh 配置生成 | ✅ MVP | WireGuard 配置生成、ACL/子网路由、版本化下发 |
-| relay 数据面 | ⚠️ 占位 | 代码只有 relay 元数据 CRUD；Compose 使用 wg-easy 占位，3478/udp 预留，留给 V1 |
-| all-in-one Docker | ✅ V2-A1 | 单容器 PostgreSQL + control-api + Dashboard；Redis/NATS/nginx/wg-easy 不再部署 |
-| ACME/TLS overlay | ✅ V1-R1 | Pebble RFC 8555 真实 HTTP-01、CA 信任、SNI TLS，`scripts/smoke-acme.sh` |
-| 告警体系 | ✅ V1-R2 | 五条 §15.2 规则、状态机/事件、log/webhook、告警 API 与 Dashboard |
-| 端到端冒烟 | ✅ M5 | `scripts/smoke.sh`，真实 Agent dry-run + builtin 反代 + metrics/audit 断言 |
-| Helm Chart | ✅ V1-R3 | `deploy/helm/neilico`，默认外部 PostgreSQL，含开发依赖开关、Secret/Ingress/HPA/PDB/NetworkPolicy/ServiceMonitor |
+## 目录结构
 
-## 一键启动
+| 目录 | 用途 |
+| :-- | :-- |
+| `control-plane/` | Go API、认证授权、租户/节点/网络/规则/指标/远程桌面控制 |
+| `agent/` | 子主机 Agent、能力探测、WireGuard 应用、路由与转发 |
+| `dashboard/` | Vue 3 Dashboard |
+| `third_party/rustdesk-server/` | vendored RustDesk Server `hbbs`/`hbbr`（AGPL-3.0） |
+| `deploy/` | all-in-one、Agent、Compose、Helm 部署 |
+| `docs/` | 规格、接入、运维、远程桌面和网络边界说明 |
+| `cli/` | `neilicoctl` 命令行 |
+| `scripts/` | 冒烟、TLS、验证和运维脚本 |
 
-本机开发机的 `8080/3000/5432/6379/4222` 已被既有容器占用。V2-A1 单容器使用 `13000`（Dashboard + API）和 `18081`（内置反代）。
+Flutter 设备管理端（原 `desktop/`）和 `rust-core/` 已迁移到 [aceneil/neilico-client](https://github.com/aceneil/neilico-client) 的 `app/`；本仓库保留原目录以便过渡，后续可在迁移和构建验收完成后再删除。
+
+## 快速开始
+
+参考 Compose 是 [`deploy/allinone/docker-compose.yml`](deploy/allinone/docker-compose.yml)，环境变量模板是 [`deploy/allinone/.env.example`](deploy/allinone/.env.example)。数据目录由 Compose 的 `env_file`/挂载配置决定，请使用你选定的持久化路径。
 
 ```bash
 cd deploy/allinone
-./sync-source.sh
-cp .env.example $HOME/Documents/Docker/data/neilico/neilico.env
-# 用密码管理器/openssl rand -hex 32 替换所有 replace-* 占位符
+cp .env.example <your-data-root>/neilico.env
+# 生成并替换 POSTGRES_PASSWORD、NEILICO_AUTH_JWT_SECRET、
+# NEILICO_BOOTSTRAP_ADMIN_EMAIL、NEILICO_BOOTSTRAP_ADMIN_PASSWORD
+chmod 600 <your-data-root>/neilico.env
 docker compose up -d --build
 curl -fsS http://127.0.0.1:13000/healthz
 ```
 
-Dashboard + Control API: `http://127.0.0.1:13000` · Builtin proxy: `http://127.0.0.1:18081`
+访问 `http://127.0.0.1:13000/`（Dashboard + API）。内置反代默认在 `18081`。若未配置 bootstrap 管理员，登录页的「首次使用？注册」会请求 `GET /api/v1/setup/status`；`registration_open=true` 时创建第一个平台管理员并自动登录。系统已有账号后，再次注册会得到 `409 already_initialized`。配置了 `NEILICO_BOOTSTRAP_ADMIN_*` 时会直接种入管理员，密码仍须满足至少 16 字符且包含四类字符中的至少三类。
+
+## 子主机接入
+
+在 Dashboard 创建一次性 enroll token 后，Linux/macOS 和 Windows 都可一行接入：
 
 ```bash
-# 端到端冒烟（退出码即判据）
-bash scripts/smoke.sh
-# ACME/Pebble 真实协议冒烟（只用 Pebble，禁止 LE 生产）
-bash scripts/smoke-acme.sh
-# 破坏性清理（需明确 --yes，会删除 pgdata）
-bash scripts/smoke-down.sh --yes
+curl -fsSL https://<SERVER>/install.sh | sudo bash -s -- --token <TOKEN>
 ```
 
-## 首次登入注册与账号管理
+```powershell
+powershell -ExecutionPolicy Bypass -Command "& ([scriptblock]::Create((irm https://<SERVER>/install.ps1))) -Token <TOKEN>"
+```
 
-### 首次登入 = 注册
-
-- 登录页提供「首次使用？注册」入口，进入 `/register`。
-- 注册页会先请求 `GET /api/v1/setup/status`：
-  - `registration_open=true`（系统还没有任何账号）→ 可创建**第一个平台管理员**，创建成功即自动登录。
-  - 已初始化（`initialized=true`）→ 页面提示「系统已完成初始化」，只能登录。
-- 后端对「已有账号再注册」一律返回 `409 already_initialized`（`POST /api/v1/setup/register`）。
-- **默认强密码不被弱化**：若 env 里配置了 `NEILICO_BOOTSTRAP_ADMIN_EMAIL` / `NEILICO_BOOTSTRAP_ADMIN_PASSWORD`，首启时仍会用它们种入第一个管理员；只有 env **未配置**管理员凭据时，才需要走上面的注册流程（此时 `bootstrap` 不再让服务启动失败）。
-- **密码强度要求**（注册与轮换一致）：长度 ≥ 16 字符，且包含 大写字母 / 小写字母 / 数字 / 符号 中的至少三类。
-
-### 账号管理
-
-登录后侧栏「账号管理」（右上角用户菜单里也有入口）可自助维护当前账号：
-
-- **修改登录邮箱**：需输入**当前密码**；目标邮箱若已被占用返回 `409 conflict`。
-- **轮换登录密码**：需输入**当前密码** + **新密码** + **确认新密码**；成功后**此前的 refresh token 立即失效**，前端会用响应里的新会话保持登录。
-
-接口（均登录后可用；API Token 不能代替本人操作）：`GET /api/v1/account`、`PUT /api/v1/account/email`、`POST /api/v1/account/password/rotate`。
-
-### 如何查询当前管理员密码（方式保持不变）
-
-密码始终从同一个键读取，轮换后**会自动回写**，查询方法不变：
+脚本会按架构下载 Agent、校验 SHA-256、安装服务并保存一次性凭据；可加 `--name`、`--server` 和 `--dry-run`。Docker Agent 也可直接运行或使用 [`deploy/agent/README.md`](deploy/agent/README.md) 的 Compose：
 
 ```bash
-# 唯一的查看入口（值不落文档、不入仓库）
-$HOME/Documents/Docker/data/neilico/show-admin-password.sh
+docker run -d --network host --cap-add NET_ADMIN --device /dev/net/tun \
+  -v neilico-agent-state:/var/lib/neilico-agent \
+  -e NEILICO_TOKEN=<TOKEN> ghcr.io/aceneil/neilico-agent:latest
 ```
 
-- 文件：`$HOME/Documents/Docker/data/neilico/neilico.env`（mode 600）
-- 键：`NEILICO_BOOTSTRAP_ADMIN_PASSWORD`（密码）、`NEILICO_BOOTSTRAP_ADMIN_EMAIL`（邮箱）
-- 在控制台执行「轮换密码 / 修改邮箱」后，控制面会把新值**原子回写**到该 env 文件的同一键（同目录临时文件 + rename、保持 mode 600、只替换目标键、不动其它行），因此 `show-admin-password.sh` 读到的始终是最新值。
-- 容器侧：compose 把该文件以 rw 方式挂载到 `/opt/neilico/bootstrap.env`，并设置 `NEILICO_BOOTSTRAP_ENV_FILE` 指向它（该路径可配置，默认值就是 `/opt/neilico/bootstrap.env`）。
+真实 WireGuard 需要 `NET_ADMIN`（或等价管理员权限）、`/dev/net/tun` 和内核/系统 WireGuard 支持；缺少任一项时 Agent 会如实上报 `mesh`、`subnet_routes` 或 `tunnel` 不可用，不会伪造已连通。
 
-## 截图
+## 远程桌面
 
-- Dashboard 登录页：`docs/assets/dashboard-login.png`（待补）
-- 节点/网络总览：`docs/assets/dashboard-overview.png`（待补）
-- 域名代理规则：`docs/assets/dashboard-proxy.png`（待补）
+服务端 `hbbs`（ID/信令）和 `hbbr`（中继）已编译进 all-in-one，并由控制面按需启动：`on_demand`（默认）无活动不启，空闲超过 `NEILICO_RD_IDLE_TIMEOUT` 回收；也支持 `always_on` / `off`。端口为 `21115-21119`（`21116` 同时 TCP/UDP），未启用时不监听是正常的。
 
-## Kubernetes
+`hbbr` 启动使用 `-k _` 做 RustDesk 协议 Key 校验；这不是 NEILICO 账号/设备白名单。ID/中继入口当前默认接受能到达服务端的客户端注册，公网部署必须自行限制暴露面和访问来源。加密由 RustDesk 协议负责；Web 只管理设备与策略，不提供连接入口。客户端下载与平台状态见 [NEILICO client](https://github.com/aceneil/neilico-client)。
 
-集群部署使用 `deploy/helm/neilico`；安装、外部 PostgreSQL/Redis/NATS、Secret、Ingress/ACME 与生产检查见 [Chart README](deploy/helm/neilico/README.md) 和 [运维手册](docs/OPS.md#kubernetes-部署)。离线断言可运行：
+## 配置速查
+
+| 变量 | 作用 |
+| :-- | :-- |
+| `POSTGRES_PASSWORD`、`NEILICO_AUTH_JWT_SECRET` | 数据库和 JWT 必填秘密；只放在受保护 env 文件 |
+| `NEILICO_BOOTSTRAP_ADMIN_EMAIL` / `_PASSWORD` | 首个管理员；未配置则走首次注册 |
+| `NEILICO_SERVER_PORT` | 容器 API/Dashboard 端口；Compose 映射为 `13000` |
+| `NEILICO_PROXY_LISTEN` | 内置反代监听；Compose 映射为 `18081` |
+| `NEILICO_RD_ENABLED`、`NEILICO_RD_ID_SERVER`、`NEILICO_RD_RELAY_SERVER` | 远程桌面总开关和下发地址 |
+| `NEILICO_RD_SERVER_MODE`、`NEILICO_RD_IDLE_TIMEOUT` | `on_demand`/`always_on`/`off` 与空闲回收 |
+| `NEILICO_RD_KEY_DIR`、`NEILICO_RD_PUBLIC_KEY_FILE` | 服务端密钥目录与只读公钥路径；私钥不出目录 |
+| `NEILICO_RD_PORTS`、`NEILICO_RD_RELAY_PORT`、`NEILICO_RD_UDP_PORT` | hbbs/hbbr 探活与监听端口 |
+| `NEILICO_RD_RELAY_HOST` | 传给 `hbbs -r` 的显式中继主机 |
+| `RUSTDESK_RELAY_HOST` | 公网部署/客户端侧使用的中继主机名；控制面实际读取 `NEILICO_RD_RELAY_HOST`，自动化时请映射两者 |
+| `NEILICO_DOWNLOADS_DIR` | `/downloads/...` 与 `install.sh`/`install.ps1` 的产物目录 |
+| `NEILICO_STREAM_PORT_MIN` / `_MAX` | 端口转发规则允许发布的 TCP/UDP 端口区间 |
+
+## 诚实限制
+
+- 控制面 TLS/mTLS 默认关闭；默认 LAN 访问是明文 HTTP。启用 TLS/mTLS 前阅读 [`docs/OPS.md`](docs/OPS.md)，公网入口必须自行终止 TLS 或显式开启。
+- 当前没有自带 P2P 打洞；NAT 两端都不可达时 WireGuard 建不起来。边界、端口转发和可达性条件见 [`docs/NEILICONET.md`](docs/NEILICONET.md) 与 [`docs/DEPLOY_PUBLIC.md`](docs/DEPLOY_PUBLIC.md)。
+- `/metrics` 的 `neilico_p2p_success_rate` 和 `neilico_relay_bytes` 当前没有真实采集，恒为 0。
+- Agent 能力会按平台和权限如实降级；Windows/macOS 的完整 Mesh 能力需以运行时探测结果为准。
+- `third_party/rustdesk-server` 是 **AGPL-3.0**，原文见 [`third_party/rustdesk-server/LICENSE`](third_party/rustdesk-server/LICENSE)。
+
+## 许可
+
+根目录 [`LICENSE`](LICENSE) 仍为占位文件，**许可待定**，本 README 不替用户选择许可。第三方 RustDesk Server 源码及 vendored Cargo 依赖保留各自许可，见 [`NOTICE`](NOTICE) 和 `third_party/rustdesk-server/`。
+
+---
+
+# English
+
+NEILICO is a self-hosted control plane for NAT traversal, WireGuard mesh networking, domain reverse proxying, TCP/UDP port forwarding, and remote desktop access. An all-in-one container combines API, Dashboard, PostgreSQL, and RustDesk `hbbs`/`hbbr`; agents on sub-hosts apply the generated WireGuard configuration.
+
+It centralizes service publication, virtual networking, devices, policies, proxy rules, stream rules, and remote-desktop connection parameters. Remote connections are initiated by the NEILICO client; the web UI is management-only.
+
+## Architecture
+
+The diagram above is the deployment model: one control-plane container with API, Dashboard, PostgreSQL, and on-demand `hbbs`/`hbbr`; a WireGuard virtual network; and agent-enrolled sub-hosts. The built-in reverse proxy handles HTTP/HTTPS and explicit TCP/UDP stream rules. The RustDesk server handles ID/relay traffic, while the separate client repository contains all client apps.
+
+## Layout
+
+`control-plane/`, `agent/`, `dashboard/`, `third_party/rustdesk-server/`, `deploy/`, `docs/`, `cli/`, and `scripts/` hold the server, agent, web UI, vendored RustDesk server, deployment files, documentation, CLI, and scripts. The former `desktop/` Flutter management app and `rust-core/` skeleton have moved to the `app/` directory in [aceneil/neilico-client](https://github.com/aceneil/neilico-client); the old paths remain temporarily for migration safety.
+
+## Quick start
+
+Use [`deploy/allinone/docker-compose.yml`](deploy/allinone/docker-compose.yml) and [`deploy/allinone/.env.example`](deploy/allinone/.env.example). Choose a persistent data root, copy the template there, replace `POSTGRES_PASSWORD`, `NEILICO_AUTH_JWT_SECRET`, `NEILICO_BOOTSTRAP_ADMIN_EMAIL`, and `NEILICO_BOOTSTRAP_ADMIN_PASSWORD`, then run:
 
 ```bash
-export PATH="$HOME/.local/bin:$PATH"
-cd deploy/helm && bash neilico/ci/verify.sh
+cd deploy/allinone
+docker compose up -d --build
+curl -fsS http://127.0.0.1:13000/healthz
 ```
 
-## 开发状态
+Open `http://127.0.0.1:13000/`. The built-in proxy listens on `18081`. Without bootstrap admin variables, use “First use? Register”; the first account becomes the platform administrator. After initialization, registration returns `409 already_initialized`.
 
-里程碑进度、端口、启动命令和已知坑见 [NOTES.md](NOTES.md#当前状态)。
+## Enrolling sub-hosts
 
-## V1-S 传输安全
+Create an enroll token, then use the one-line installer:
 
-支持内置 PKI、控制面 TLS/mTLS、代理 HTTPS/HSTS/HTTPS 上游、NPS 隧道 crypt/compress 和 WireGuard PSK。默认配置保持历史行为；启用前阅读 `docs/OPS.md` 的 CA 保管、回退和未加密链路说明。真实验证：`bash scripts/smoke-tls.sh`。
+```bash
+curl -fsSL https://<SERVER>/install.sh | sudo bash -s -- --token <TOKEN>
+```
+
+```powershell
+powershell -ExecutionPolicy Bypass -Command "& ([scriptblock]::Create((irm https://<SERVER>/install.ps1))) -Token <TOKEN>"
+```
+
+Docker agents need `NET_ADMIN`, `/dev/net/tun`, and host networking or equivalent access. Missing WireGuard/TUN/privileges are reported honestly as unavailable or degraded.
+
+## Remote desktop
+
+RustDesk `hbbs`/`hbbr` are built into the image and started on demand by default. `hbbr` uses `-k _` for RustDesk protocol-key validation, but there is no NEILICO account/device allowlist for ID/relay registration; restrict public exposure and source access. Encryption is provided by the RustDesk protocol. Ports are `21115-21119`, with `21116` TCP+UDP. Clients come from [aceneil/neilico-client](https://github.com/aceneil/neilico-client).
+
+## Configuration
+
+Set `POSTGRES_PASSWORD`, `NEILICO_AUTH_JWT_SECRET`, `NEILICO_BOOTSTRAP_ADMIN_EMAIL`, `NEILICO_BOOTSTRAP_ADMIN_PASSWORD`, `NEILICO_SERVER_PORT` (published as `13000`), `NEILICO_PROXY_LISTEN` (published as `18081`), `NEILICO_RD_*`, `NEILICO_DOWNLOADS_DIR`, and `NEILICO_STREAM_PORT_MIN`/`_MAX`. `RUSTDESK_RELAY_HOST` is the deployment/client-side relay name; the control plane reads the equivalent `NEILICO_RD_RELAY_HOST` and passes it to `hbbs -r`.
+
+## Honest limitations
+
+TLS and mTLS are disabled by default, so the default LAN HTTP is plaintext. There is no built-in P2P hole punching; see [`docs/NEILICONET.md`](docs/NEILICONET.md). `neilico_p2p_success_rate` and `neilico_relay_bytes` are always zero because real collection is not connected. Agent capabilities are downgraded honestly when platform support or privileges are missing. The vendored `third_party/rustdesk-server` is **AGPL-3.0**.
+
+## License
+
+The root [`LICENSE`](LICENSE) is a placeholder and **the license is pending**; no license is selected here. Third-party RustDesk Server and vendored dependencies retain their own licenses; see [`NOTICE`](NOTICE) and `third_party/rustdesk-server/`.
