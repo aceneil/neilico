@@ -1,0 +1,6 @@
+NEILICO root license: To be determined / 许可：待定
+
+This file is intentionally a placeholder. No license has been selected for the
+NEILICO root repository yet. Third-party components retain their own licenses;
+for example, third_party/rustdesk-server is AGPL-3.0 and its license is kept
+at third_party/rustdesk-server/LICENSE.
