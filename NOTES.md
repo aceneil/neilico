@@ -345,4 +345,16 @@ cd deploy/helm && bash neilico/ci/verify.sh
 - **⚠️ 匿名可拉的判据（别被误导）**：`curl -sI https://ghcr.io/v2/<owner>/<pkg>/manifests/latest` **永远返回 401** —— 那只是 ghcr 的标准 bearer 挑战，公开包也一样。正确做法：先取**匿名 token**
   （`curl -s 'https://ghcr.io/token?service=ghcr.io&scope=repository:<owner>/<pkg>:pull'`）→ token 为空 = **private**；再带该 token 请求 manifest，**200 = 公开可拉**。本机只读脚本：`~/.hermes/cache/ghcr-anon-check.sh <pkg>`（不打印任何令牌）。
 
+## UI 回退到「大屏适配」之前（2026-10-17 真机部署，验收全绿）
+
+- **动作**：`git revert --no-edit c647f8d` → 提交 **`9f0a609`**（唯一改动 `dashboard/src/styles/main.css`，2 212 → 1 857 行，**−355 行**）。其余提交一律保留（服务端策略锁定 `459e6f8`、README/文档、CI 全在）。
+- **产物证据（回退判据）**：回退前线上 `index-DPM_XEKZ.js` + `index-CAs5JOlb.css` → 回退后 **`index-BMdHia78.js` + `index-Ct6jKRtv.css`**，且线上 JS/CSS 与仓库 `dashboard/dist` 构建产物 **sha256 逐字节相同**（JS `54d14905…`、CSS `5d5df8b4…`）。git 级判据：`git diff c647f8d^ HEAD -- dashboard/` **为空**。
+- **部署**：`neilico-allinone:local` 重建为 **`e0a4004543c0`**，容器 `neilico` 重建于 `2026-10-17 02:10:54 CST`，`healthy`，`/healthz` → `{"db":"up","status":"ok","version":"v1-single-20261003"}`（VERSION 参数不变，故版本串未变）。
+- **验收**：`/api/v1/{nodes,proxy-hosts,stream-rules,device-policies}` 带 token **200** / 不带 token **401**；`/remote-desktop/config` → `available:true`（public_key 44B）；深链 `/nodes /certificates /pki /alerts /remote-desktop` → **200**；端口转发规则 1 条 `running`；`dashboard && npm run e2e`（仓库自带 Playwright，含「登录表单哑火」回归护栏）**4/4 PASS**。
+- **⚠️ 教训①：`docker cp` 打补丁的「已上线」不是部署，验收要看镜像**。本轮 manager 先做了 `git revert` + 构建 + 把 dist **`docker cp` 进运行中容器**，线上 `index.html` 立刻指向回退版（肉眼/curl 都像成功 ✗），但 **`docker diff neilico` 会显示 `A /opt/neilico/dashboard/assets/*` = 只是运行层补丁**，容器一重建就回到新 UI ✗。判定口径：**`docker diff <ctr> | grep dashboard` 必须为空**（产物烤进镜像）+ 直接读镜像内 `index.html`。
+- **⚠️ 教训②：本仓的部署路径是「本地 build」，不是 pull**。`docker-compose.neilico.yaml` 里 `app` 只有 `build:`（context=仓库根）+ `image: neilico-allinone:local`，**没有 registry 镜像** → `docker compose pull app` 必然失败；正确动作是 `up -d --build app`（要保留 `args.VERSION`，否则 `/healthz` 的版本串会从 `v1-single-20261003` 变成镜像默认 `dev`）。**RustDesk 那一级（`third_party` vendored cargo build）一旦缓存失效要跑 12m12s**，整轮构建约 14 min。
+- **⚠️ 教训③：远程名是 `public` 不是 `origin`**，且本机无 credential helper、GitHub SSH key 未授权 → `git push` 直接 `could not read Username`。可行路径：`GH_TOKEN`（值在 `~/.hermes/.env`）+ 内联 credential helper（`git -c credential.helper='!f(){ echo username=aceneil; echo "password=$GH_TOKEN"; };f' push public main`），**令牌不进 URL、不回显**。
+- **⚠️ 教训④：两处「假信号」别当真**：`git revert` 若同一提交已被别的会话回退过，会打印 `nothing to commit, working tree clean` + exit 1（**不是失败**，先 `git log` 看有没有 revert 提交）；用 JS 直接写 `input.value` + `dispatchEvent` 后点按钮、看到 0 个 `/api/` 请求，**不等于表单坏了**（AntDV 的 model 未必更新）——判据用仓库自带 `npm run e2e`。
+- 回滚点：要回到「大屏适配」那版 UI，用本机仍留着的 `ghcr.io/aceneil/neilico-allinone:latest`（`4cbfd8ab`，CI 由 `c647f8d` 构建）或从 `c647f8d` 重新 build。
+
 
