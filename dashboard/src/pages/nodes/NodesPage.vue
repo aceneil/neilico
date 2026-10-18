@@ -9,7 +9,6 @@ import {
   CopyOutlined,
   DeleteOutlined,
   DesktopOutlined,
-  EyeOutlined,
   FilterOutlined,
   SafetyCertificateOutlined,
   SearchOutlined
@@ -435,6 +434,11 @@ function openDetail(node: Node) {
   void loadRemote()
 }
 
+// 「操作」列已取消：整行点击即打开详情，删除入口放在详情抽屉里。
+function rowProps(record: Node) {
+  return { onClick: () => openDetail(record) }
+}
+
 watch(detailOpen, (open) => {
   if (!open) {
     nodeMetrics.value = null
@@ -497,6 +501,7 @@ function removeNode(node: Node) {
     async onOk() {
       await nodesApi.remove(node.id)
       message.success('设备已删除')
+      if (selectedNode.value?.id === node.id) detailOpen.value = false
       await loadNow()
     }
   })
@@ -606,9 +611,10 @@ defineExpose({
           :row-key="(record: Node) => record.id"
           :pagination="false"
           size="middle"
-          :scroll="{ x: 1440, y: 'calc(100vh - 470px)' }"
+          :custom-row="rowProps"
+          :scroll="{ y: 'calc(100vh - 470px)' }"
         >
-          <a-table-column title="名称" data-index="name" :width="180" fixed="left">
+          <a-table-column title="名称" data-index="name" :width="180">
             <template #default="{ record }">
               <div class="node-name"><DesktopOutlined /><strong>{{ record.name }}</strong></div>
             </template>
@@ -656,20 +662,12 @@ defineExpose({
             <template #default="{ record }">{{ record.os }} / {{ record.arch }}</template>
           </a-table-column>
           <a-table-column title="版本" data-index="version" :width="110" />
-          <a-table-column title="标签" :width="200">
+          <a-table-column title="标签" :width="200" ellipsis>
             <template #default="{ record }">
               <a-space v-if="record.tags?.length" wrap size="small">
                 <a-tag v-for="tag in record.tags" :key="tag" color="blue">{{ tag }}</a-tag>
               </a-space>
               <span v-else>—</span>
-            </template>
-          </a-table-column>
-          <a-table-column title="操作" :width="145" fixed="right">
-            <template #default="{ record }">
-              <a-space>
-                <a-button size="small" @click="openDetail(record)"><EyeOutlined /> 详情</a-button>
-                <a-button v-if="canWrite" danger size="small" @click="removeNode(record)"><DeleteOutlined /></a-button>
-              </a-space>
             </template>
           </a-table-column>
           </a-table>
@@ -696,6 +694,16 @@ defineExpose({
       width="560"
       class="detail-drawer"
     >
+      <template #extra>
+        <a-button
+          v-if="canWrite && selectedNode"
+          danger
+          size="small"
+          @click="removeNode(selectedNode)"
+        >
+          <DeleteOutlined /> 删除设备
+        </a-button>
+      </template>
       <template v-if="selectedNode">
         <a-descriptions bordered :column="1" size="small">
           <a-descriptions-item label="节点 ID">{{ selectedNode.id }}</a-descriptions-item>
@@ -981,6 +989,11 @@ defineExpose({
 <style scoped>
 .nodes-panel {
   min-height: 0;
+}
+
+/* 整行可点：点击任意单元格打开设备详情（删除入口在详情抽屉右上角） */
+.nodes-table-panel :deep(.ant-table-tbody > tr) {
+  cursor: pointer;
 }
 
 /* 「接入能力」列的远程授权图标（Web 不提供连接入口，连接由客户端发起） */
