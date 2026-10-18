@@ -370,5 +370,6 @@ cd deploy/helm && bash neilico/ci/verify.sh
 - **踩坑**：Codex（glm-5.3，cc-switch 本地代理）在验证阶段被 upstream 400（`messages.content.type 参数非法`）打断 exit=1 —— 代码与 953 审计已落盘，构建/复验/部署由 manager 接手完成。
 - **遗留**：`/favicon.ico` 仍 404（控制台唯一报错，缺 favicon 资源，不影响功能）。
 - 复验脚本（可复用）：`~/.hermes/cache/scratch/neilico-ui-audit.cjs`（真登录 → 量盒模型 → 截图；`AUDIT_W/AUDIT_H/AUDIT_DARK` 可调；凭据只从 `data/neilico/neilico.env` 读，不打印）；同源待部署验收服务 `serve-dist.cjs`。
+- **追加（`c38be86`，用户要求对齐告警中心）**：`.dashboard-page` 增加左右各 `20px` 内边距（与 `.panel-heading` 的 20px 一致），内容边缘由 248/1920 收到 **268/1900**；只影响仪表盘，其它页面不动。实测间距仍 14/14/14、底部死白 20px。
 
 
