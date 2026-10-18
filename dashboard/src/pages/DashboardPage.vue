@@ -131,20 +131,35 @@ const cards = computed(() => [
   }
 ])
 
-const heartbeatTrend = computed<EChartsOption>(() => {
-  const buckets = Array.from({ length: 8 }, (_, index) => dayjs().subtract((7 - index) * 3, 'hour').startOf('hour'))
-  const values = buckets.map((bucket) =>
-    (data.value?.nodes || []).filter((node) =>
-      node.last_seen && dayjs(node.last_seen).isAfter(bucket) && dayjs(node.last_seen).isBefore(bucket.add(3, 'hour'))
-    ).length
+const heartbeatBuckets = computed(() => {
+  const now = dayjs()
+  return Array.from({ length: 8 }, (_, index) => ({
+    start: now.subtract((8 - index) * 3, 'hour'),
+    end: index === 7 ? now : now.subtract((7 - index) * 3, 'hour')
+  }))
+})
+
+const heartbeatValues = computed(() =>
+  heartbeatBuckets.value.map((bucket) =>
+    (data.value?.nodes || []).filter((node) => {
+      const lastSeen = node.last_seen ? dayjs(node.last_seen) : null
+      return Boolean(lastSeen && !lastSeen.isBefore(bucket.start) && lastSeen.isBefore(bucket.end))
+    }).length
   )
+)
+
+const heartbeatHasSamples = computed(() => heartbeatValues.value.filter((value) => value > 0).length >= 2)
+
+const heartbeatTrend = computed<EChartsOption>(() => {
+  const buckets = heartbeatBuckets.value
+  const values = heartbeatValues.value
   return {
-    tooltip: { trigger: 'axis' },
-    grid: { left: 42, right: 18, top: 24, bottom: 34 },
+    tooltip: { trigger: 'axis', confine: true },
+    grid: { left: 44, right: 20, top: 28, bottom: 36, containLabel: false },
     xAxis: {
       type: 'category',
       boundaryGap: false,
-      data: buckets.map((bucket) => bucket.format('HH:mm')),
+      data: buckets.map((bucket) => bucket.start.format('HH:mm')),
       axisLine: { lineStyle: { color: theme.resolved === 'dark' ? '#455066' : '#c8d0dc' } },
       axisLabel: { color: theme.resolved === 'dark' ? '#aebbd0' : '#526072' }
     },
@@ -155,7 +170,7 @@ const heartbeatTrend = computed<EChartsOption>(() => {
       axisLabel: { color: theme.resolved === 'dark' ? '#aebbd0' : '#526072' }
     },
     series: [{
-      name: '心跳节点',
+      name: '心跳节点（按节点最后心跳时间回填）',
       type: 'line',
       smooth: true,
       symbolSize: 7,
@@ -168,16 +183,20 @@ const heartbeatTrend = computed<EChartsOption>(() => {
 })
 
 const trafficChart = computed<EChartsOption>(() => {
-  const buckets = Array.from({ length: 6 }, (_, index) => dayjs().subtract((5 - index) * 4, 'hour').startOf('hour'))
+  const now = dayjs()
+  const buckets = Array.from({ length: 6 }, (_, index) => ({
+    start: now.subtract((6 - index) * 4, 'hour'),
+    end: index === 5 ? now : now.subtract((5 - index) * 4, 'hour')
+  }))
   const incoming = buckets.map((bucket) => sumTraffic('in', bucket))
   const outgoing = buckets.map((bucket) => sumTraffic('out', bucket))
   return {
-    tooltip: { trigger: 'axis', valueFormatter: (value) => `${Number(value).toFixed(1)} MB` },
+    tooltip: { trigger: 'axis', confine: true, valueFormatter: (value) => `${Number(value).toFixed(1)} MB` },
     legend: { top: 0, textStyle: { color: theme.resolved === 'dark' ? '#c7d0df' : '#435066' } },
     grid: { left: 50, right: 18, top: 42, bottom: 34 },
     xAxis: {
       type: 'category',
-      data: buckets.map((bucket) => bucket.format('HH:mm')),
+      data: buckets.map((bucket) => bucket.start.format('HH:mm')),
       axisLabel: { color: theme.resolved === 'dark' ? '#aebbd0' : '#526072' }
     },
     yAxis: {
@@ -192,24 +211,38 @@ const trafficChart = computed<EChartsOption>(() => {
   }
 })
 
-function sumTraffic(direction: string, bucket: dayjs.Dayjs) {
+function sumTraffic(direction: string, bucket: { start: dayjs.Dayjs; end: dayjs.Dayjs }) {
   const bytes = (data.value?.traffic || [])
-    .filter((item) => item.direction === direction && dayjs(item.created_at).isAfter(bucket) && dayjs(item.created_at).isBefore(bucket.add(4, 'hour')))
+    .filter((item) => {
+      const createdAt = dayjs(item.created_at)
+      return item.direction === direction && !createdAt.isBefore(bucket.start) && createdAt.isBefore(bucket.end)
+    })
     .reduce((sum, item) => sum + item.bytes, 0)
   return Number((bytes / 1024 / 1024).toFixed(2))
 }
 
+const trafficHasData = computed(() => (data.value?.traffic || []).some((item) => item.bytes > 0))
+
 const protocolChart = computed<EChartsOption>(() => {
   const counts = new Map<string, number>()
-  data.value?.traffic.forEach((item) => counts.set(item.protocol, (counts.get(item.protocol) || 0) + item.bytes))
+  ;(data.value?.traffic || []).forEach((item) => {
+    if (item.bytes > 0) counts.set(item.protocol, (counts.get(item.protocol) || 0) + item.bytes)
+  })
   return {
-    tooltip: { trigger: 'item' },
-    legend: { bottom: 0, textStyle: { color: theme.resolved === 'dark' ? '#c7d0df' : '#435066' } },
+    tooltip: { trigger: 'item', confine: true },
+    legend: {
+      orient: 'vertical',
+      right: 0,
+      top: 'middle',
+      itemGap: 12,
+      textStyle: { color: theme.resolved === 'dark' ? '#c7d0df' : '#435066' }
+    },
     series: [{
       type: 'pie',
-      radius: ['44%', '72%'],
-      center: ['50%', '45%'],
-      label: { color: theme.resolved === 'dark' ? '#c7d0df' : '#435066' },
+      radius: ['42%', '68%'],
+      center: ['34%', '50%'],
+      label: { show: false },
+      labelLine: { show: false },
       data: Array.from(counts, ([name, value]) => ({ name, value }))
     }]
   }
@@ -247,11 +280,14 @@ const alertSummaryCards = computed(() => [
           class="alert-summary-card"
           :class="`alert-summary-card--${card.key}`"
           type="button"
+          :aria-label="`查看${card.label}：${card.value} 条`"
           @click="router.push('/alerts')"
         >
           <component :is="card.icon" />
-          <span>{{ card.label }}</span>
-          <strong>{{ card.value }}</strong>
+          <div>
+            <span>{{ card.label }}</span>
+            <strong>{{ card.value }}</strong>
+          </div>
         </button>
       </section>
 
@@ -271,23 +307,26 @@ const alertSummaryCards = computed(() => [
       <section class="dashboard-charts">
         <article class="panel chart-panel">
           <div class="panel-heading">
-            <div><h2>节点在线趋势</h2><p>基于最后心跳时间按 3 小时聚合</p></div>
+            <div><h2>节点在线趋势</h2><p>过去 24 小时，按 3 小时边界聚合</p></div>
             <a-tag color="blue">最近 24 小时</a-tag>
           </div>
-          <EChart :option="heartbeatTrend" :dark="theme.resolved === 'dark'" height="clamp(180px, 20vh, 300px)" />
+          <EChart v-if="heartbeatHasSamples" :option="heartbeatTrend" :dark="theme.resolved === 'dark'" height="100%" />
+          <div v-else class="chart-empty" role="status">仅在节点心跳变化时记录，历史区间暂无采样</div>
         </article>
         <article class="panel chart-panel">
           <div class="panel-heading">
-            <div><h2>流量 in / out</h2><p>最近流量记录按 4 小时聚合</p></div>
+            <div><h2>流量 in / out</h2><p>过去 24 小时，按 4 小时边界聚合</p></div>
             <a-tag>单位 MB</a-tag>
           </div>
-          <EChart :option="trafficChart" :dark="theme.resolved === 'dark'" height="clamp(180px, 20vh, 300px)" />
+          <EChart v-if="trafficHasData" :option="trafficChart" :dark="theme.resolved === 'dark'" height="100%" />
+          <div v-else class="chart-empty" role="status">暂无流量数据</div>
         </article>
         <article class="panel chart-panel chart-panel--small">
           <div class="panel-heading">
             <div><h2>协议分布</h2><p>按流量字节数统计</p></div>
           </div>
-          <EChart :option="protocolChart" :dark="theme.resolved === 'dark'" height="clamp(180px, 20vh, 300px)" />
+          <EChart v-if="trafficHasData" :option="protocolChart" :dark="theme.resolved === 'dark'" height="100%" />
+          <div v-else class="chart-empty" role="status">暂无流量数据</div>
         </article>
       </section>
 
