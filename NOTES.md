@@ -372,5 +372,6 @@ cd deploy/helm && bash neilico/ci/verify.sh
 - 复验脚本（可复用）：`~/.hermes/cache/scratch/neilico-ui-audit.cjs`（真登录 → 量盒模型 → 截图；`AUDIT_W/AUDIT_H/AUDIT_DARK` 可调；凭据只从 `data/neilico/neilico.env` 读，不打印）；同源待部署验收服务 `serve-dist.cjs`。
 - **追加（`c38be86`，用户要求对齐告警中心）**：`.dashboard-page` 增加左右各 `20px` 内边距（与 `.panel-heading` 的 20px 一致），内容边缘由 248/1920 收到 **268/1900**；只影响仪表盘，其它页面不动。实测间距仍 14/14/14、底部死白 20px。
 - **追加（`d1c2132`，设备管理「接入能力」列）**：徽标文案改为能力名 **Tunnel / Subnet Routes / Mesh**（此顺序），去掉 `ready/degraded/unavailable` 后缀与下方「原因：…」整行；**状态与 Agent 上报的 reason 移入徽标 tooltip**（`capabilityTitle()`），颜色仍表示在线且就绪（绿）/ 其余（灰）。表格与详情抽屉同步。
+- **追加（`43d6841` + `d29a9d3`，设备列表）**：删掉「最后心跳」列（状态徽标 tooltip 已含 `last_seen` 与陈旧判定）；删掉整列「操作」——**单击任意一行直接打开详情抽屉**（`customRow` + 行 `cursor:pointer`），**删除设备按钮移到抽屉右上角**（`#extra`，仅 `canWrite` 可见，删除成功后自动关抽屉）。表格去掉 `scroll.x`/`fixed=left` 以免留出无列区域。
 
 
