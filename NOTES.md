@@ -357,4 +357,18 @@ cd deploy/helm && bash neilico/ci/verify.sh
 - **⚠️ 教训④：两处「假信号」别当真**：`git revert` 若同一提交已被别的会话回退过，会打印 `nothing to commit, working tree clean` + exit 1（**不是失败**，先 `git log` 看有没有 revert 提交）；用 JS 直接写 `input.value` + `dispatchEvent` 后点按钮、看到 0 个 `/api/` 请求，**不等于表单坏了**（AntDV 的 model 未必更新）——判据用仓库自带 `npm run e2e`。
 - 回滚点：要回到「大屏适配」那版 UI，用本机仍留着的 `ghcr.io/aceneil/neilico-allinone:latest`（`4cbfd8ab`，CI 由 `c647f8d` 构建）或从 `c647f8d` 重新 build。
 
+## 仪表盘首页大屏布局修复（2026-10-19，Codex 执行 + manager 复验并部署）
+
+- **症状**（用户截图，1920×953 CSS @DPR2）：四行区块之间 **0 间距**（告警卡下边框直接压指标卡上边框）；底部 **143px 死白**；三张图 618×191（宽高比 3.2:1）过扁；环形图图例压在环上；4 列告警卡（407px）与 6 列指标卡（267px）网格基准不一致；「节点在线趋势」只有末桶有值，画出"曲棍球杆"假曲线。
+- **修复**（`69f9748` + `8f2534e`，只改 `pages/DashboardPage.vue` 与 `styles/main.css`）：
+  - `.dashboard-scroll` 由 flex 改 grid：`76px 112px minmax(260px,1fr) minmax(180px,200px)` + `gap:14px` —— 解决贴死与死白，图表吃掉剩余高度。
+  - 图表面板 `flex column` + `EChart height="100%"`，绘图区 547×266（**2.06:1**）。
+  - 告警概览改成**一条紧凑状态条**（4 段 + 分隔线，与指标行同宽）；标签在上、数字在下（两者原本是 inline，会挤成「紧急告警0」）。
+  - 协议分布图例右置竖排、隐去标签线；心跳/流量/协议在样本不足时显示**空状态**（不再画 0 基线的假趋势）。
+  - `≥1600px` 视口小字 12→13、卡片数字 29→32（**不用 html zoom**，避免打乱 AntDV 弹层定位）。
+- **实测**（DPR2，1920×953 / 1920×1080 / 2560×1080 / 3840×1600）：行间距 **14/14/14**、底部死白 **20px**、无页面级滚动、无裁切、`npm run e2e` **4/4**；镜像内 bundle 与 `dashboard/dist` 同名同源，`docker diff neilico | grep dashboard` 为空。
+- **踩坑**：Codex（glm-5.3，cc-switch 本地代理）在验证阶段被 upstream 400（`messages.content.type 参数非法`）打断 exit=1 —— 代码与 953 审计已落盘，构建/复验/部署由 manager 接手完成。
+- **遗留**：`/favicon.ico` 仍 404（控制台唯一报错，缺 favicon 资源，不影响功能）。
+- 复验脚本（可复用）：`~/.hermes/cache/scratch/neilico-ui-audit.cjs`（真登录 → 量盒模型 → 截图；`AUDIT_W/AUDIT_H/AUDIT_DARK` 可调；凭据只从 `data/neilico/neilico.env` 读，不打印）；同源待部署验收服务 `serve-dist.cjs`。
+
 
