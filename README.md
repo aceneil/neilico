@@ -2,9 +2,34 @@
 
 # NEILICO
 
-NEILICO is a self-hosted control plane for NAT traversal, WireGuard mesh networking, domain reverse proxying, TCP/UDP port forwarding, and remote desktop access. One all-in-one container combines the API, Dashboard, PostgreSQL, and RustDesk `hbbs`/`hbbr`, while agents on sub-hosts apply the generated WireGuard configuration.
+NEILICO is a self-hosted control plane for NAT traversal and mesh networking: **domain reverse proxying**, **TCP/UDP port forwarding**, **WireGuard virtual networks**, **subnet routing**, and **remote desktop** (RustDesk) managed from one web console. The control plane, Dashboard, PostgreSQL, and the RustDesk `hbbs`/`hbbr` servers ship as a **single all-in-one container**; each sub-host runs an agent that receives and applies its WireGuard configuration.
 
-It centralizes service publication, virtual networking, devices, policies, proxy and stream rules, and remote-desktop connection parameters. Remote connections are initiated by the NEILICO client; the web UI is for management only.
+Remote sessions are initiated by the separate [NEILICO client](https://github.com/aceneil/neilico-client); the web UI is for management and observability only.
+
+## Contents
+
+- [What it does](#what-it-does)
+- [Architecture](#architecture)
+- [Device capabilities: Mesh / subnet routes / tunnel](#device-capabilities-mesh--subnet-routes--tunnel)
+- [Repository layout](#repository-layout)
+- [Quick start](#quick-start)
+- [Enrolling sub-hosts](#enrolling-sub-hosts)
+- [Remote desktop](#remote-desktop)
+- [Configuration quick reference](#configuration-quick-reference)
+- [Documentation](#documentation)
+- [Honest limitations](#honest-limitations)
+- [License](#license)
+
+## What it does
+
+| Capability | Problem it solves | Where |
+| :-- | :-- | :-- |
+| **Domain reverse proxy** | Point `nas.example.com` at a port on an internal machine — one NPM-style form creates one proxy host | Domains & proxy → Reverse proxy |
+| **Port forwarding** | Publish **any TCP/UDP** service (SSH, databases, game servers, DNS). Only the explicitly configured port is exposed, never the whole virtual network | Domains & proxy → Streams |
+| **Mesh networking** | Give machines on different networks stable virtual IPs (`100.64.0.0/10`) so they behave like one LAN | Virtual networks / Devices |
+| **Subnet routes** | Let other nodes reach the **entire LAN behind** a node, not just that node's virtual IP | Virtual networks → Subnet routes |
+| **Remote desktop** | Self-hosted RustDesk `hbbs`/`hbbr`, started on demand and reclaimed when idle; devices and policies managed in the UI | Remote desktop |
+| **Access & governance** | One-time enroll tokens with one-line installers (Docker / Linux / macOS / Windows), API tokens with scopes, RBAC and tenant isolation, audit log, alerting, certificates and PKI | Devices / API tokens / Alerts / PKI |
 
 ## Architecture
 
@@ -14,14 +39,64 @@ flowchart LR
   C -->|Domain reverse proxy / port forwarding| W[WireGuard virtual network]
   W --> A1[Agent - sub-host]
   W --> A2[Agent - sub-host]
+  A1 -.subnet route.-> L1[LAN behind the sub-host]
   U -->|RustDesk ID / relay| R[hbbs / hbbr<br/>remote desktop server]
   R --> W
 ```
 
-- The control-plane container provides the API, Dashboard, and PostgreSQL. The control plane starts `hbbs` and `hbbr` on demand, so no remote-desktop ports are listened on while the service is inactive.
-- Agents enroll, send heartbeats, and receive versioned configuration. When platform support and privileges are available, they apply `wg0`, routes, and subnet forwarding.
-- The domain reverse proxy handles HTTP/HTTPS, while stream rules publish explicit TCP/UDP ports. Both resolve targets to node virtual IPs or configured addresses.
-- The RustDesk server supplies ID and relay service. Connections are always initiated by the separate [NEILICO client](https://github.com/aceneil/neilico-client).
+- **Control plane** (one container): REST API + Dashboard + PostgreSQL. It decides *what* each agent should run and pushes versioned configuration.
+- **Agent** (sub-host): enrolls, sends heartbeats, reports capabilities, pulls configuration, and — where the platform and privileges allow — creates `wg0`, installs peer routes, and adds subnet routes.
+- **Proxy and forwarding** both run inside the control plane: domain proxying handles HTTP/HTTPS, stream rules handle arbitrary TCP/UDP. Targets can be a node virtual IP, an internal physical address, or a node UUID.
+- **RustDesk** ID/signaling and relay are compiled into the same image and started on demand.
+
+## Device capabilities: Mesh / subnet routes / tunnel
+
+Every device shows three badges — **Mesh**, **Subnet routes**, **Tunnel**. They are the agent's **honest self-report** of what the host can do, refreshed on enrollment and on every heartbeat. They are not proof that traffic flows: **online (heartbeat) does not mean the tunnel works**.
+
+### What each badge means
+
+| Badge | Field | `ready` means | How the agent decides | Effect when not `ready` |
+| :-- | :-- | :-- | :-- | :-- |
+| **Mesh** | `capabilities.mesh` | The host can join a virtual network: create `wg0`, receive a virtual IP, and exchange peer traffic | Linux: `wg` tool + `/dev/net/tun` + admin rights. Components present but no privilege → `degraded`; missing `wg` or TUN → `unavailable` | Mesh configuration is not applied, even if the UI lists the node as a network member |
+| **Subnet routes** | `capabilities.subnet_routes` | The host can route **other networks** into the tunnel: traffic to `192.168.1.0/24` goes via `ip route ... dev wg0`, not just `100.64.0.x` | Requires the `ip` tool and admin rights to change routes | The LAN behind that node is unreachable from other nodes; only virtual IPs work |
+| **Tunnel** | `capabilities.tunnel` | The host can actually create a WireGuard interface — the lowest-level and **authoritative** signal | On Linux, a real, reversible probe: create and delete a throwaway interface `neilico-p<pid>`. Failures put the underlying error into `reason` | The agent refuses to apply mesh configuration (dry-run only); no `wg0` appears on the host |
+
+### Why you need all three
+
+A working tunnel = **can create the interface (tunnel)** + **can configure address and peers (mesh)** + **can route networks into it (subnet routes)**.
+If any one is missing, the control plane does not consider the configuration applicable (`MeshApplicable()` requires all three `ready`). That is why the device view also exposes `effective_mesh`: **`tunnel` is authoritative and the most pessimistic value wins**, so `mesh=ready` with `tunnel=unavailable` can never be shown as green.
+
+> Historical pitfall: an earlier build decided "tunnel" by looking for an external client binary (`neilico-tunnel`/`npc`). Hosts that could create kernel WireGuard interfaces were reported unavailable, the agent skipped applying configuration, **`wg0` never appeared — and the UI stayed green**. Tunnel capability is now decided only by "can it really be created".
+
+### Platform matrix (current implementation)
+
+| Platform / condition | Mesh | Tunnel | Subnet routes |
+| :-- | :-- | :-- | :-- |
+| Linux + root or `CAP_NET_ADMIN` + `/dev/net/tun` | `ready` | `ready` (real interface probe passes) | `ready` |
+| Linux without privileges | `degraded` | `unavailable` (probe fails with the real error) | `unavailable` |
+| macOS | `degraded` (WireGuard component found, but this agent has no interface-creation adapter for macOS) | `unavailable` | `unavailable` |
+| Windows | `degraded` (same) | `unavailable` | `unavailable` |
+
+### Making them green
+
+```bash
+# The two flags that matter: capabilities and device access
+docker run -d --network host --cap-add NET_ADMIN --device /dev/net/tun \
+  -v neilico-agent-state:/var/lib/neilico-agent \
+  -e NEILICO_TOKEN=<TOKEN> ghcr.io/aceneil/neilico-agent:latest
+```
+
+- No `NET_ADMIN` → handshakes may pass but no interface and no route changes;
+- No `/dev/net/tun` → no interface;
+- Kernel without WireGuard → interface creation fails, and `reason` carries the error;
+- The container also needs the `ip` tool (present in the official agent image).
+
+When a badge looks wrong, check in this order: `ip -brief addr show wg0` → `ip route | grep 100.64` → `docker inspect <agent> --format '{{.Config.Image}} {{.Image}}'` (did the image actually change?) → look for `local mesh state drift detected; re-applying` in the agent log.
+
+### Where to see it
+
+- **Dashboard → Devices**: the "capabilities" column, and the detail drawer with badges and reasons;
+- **API**: `GET /api/v1/nodes` returns `capabilities` (`mesh` / `subnet_routes` / `tunnel` / `reason`), `effective_mesh`, `capabilities_note`, `heartbeat_stale`, and `last_seen`.
 
 ## Repository layout
 
@@ -29,7 +104,7 @@ flowchart LR
 | :-- | :-- |
 | `control-plane/` | Go API, authentication and authorization, tenants, nodes, networks, rules, metrics, and remote-desktop control |
 | `agent/` | Sub-host agent, capability detection, WireGuard setup, routing, and forwarding |
-| `dashboard/` | Vue 3 Dashboard |
+| `dashboard/` | Vue 3 + Ant Design Vue Dashboard |
 | `third_party/rustdesk-server/` | Vendored RustDesk Server `hbbs`/`hbbr` (AGPL-3.0) |
 | `deploy/` | All-in-one, agent, Compose, and Helm deployment files |
 | [`docs/`](docs/README.md) | Specifications, enrollment, operations, remote desktop, and network-boundary documentation |
@@ -68,15 +143,9 @@ curl -fsSL https://<SERVER>/install.sh | sudo bash -s -- --token <TOKEN>
 powershell -ExecutionPolicy Bypass -Command "& ([scriptblock]::Create((irm https://<SERVER>/install.ps1))) -Token <TOKEN>"
 ```
 
-The installers download the matching agent, verify SHA-256, install a service, and store the one-time credentials. They also support `--name`, `--server`, and `--dry-run`. A Docker agent can run directly or through the Compose example in [`deploy/agent/README.md`](deploy/agent/README.md):
+The installers download the matching agent, verify SHA-256, install a service, and store the one-time credentials. They also support `--name`, `--server`, and `--dry-run`. The Docker agent example is in [`deploy/agent/README.md`](deploy/agent/README.md) — the same command shown in the capabilities section above.
 
-```bash
-docker run -d --network host --cap-add NET_ADMIN --device /dev/net/tun \
-  -v neilico-agent-state:/var/lib/neilico-agent \
-  -e NEILICO_TOKEN=<TOKEN> ghcr.io/aceneil/neilico-agent:latest
-```
-
-Real WireGuard operation requires `NET_ADMIN` or equivalent administrator rights, `/dev/net/tun`, and kernel or system WireGuard support. If any requirement is missing, the agent reports `mesh`, `subnet_routes`, or `tunnel` as unavailable instead of claiming connectivity.
+Real WireGuard operation requires `NET_ADMIN` or equivalent administrator rights, `/dev/net/tun`, and kernel or system WireGuard support. If a requirement is missing, the agent reports `mesh`, `subnet_routes`, or `tunnel` as unavailable (with the reason) instead of claiming connectivity.
 
 ## Remote desktop
 
@@ -103,14 +172,14 @@ RustDesk `hbbs` for ID/signaling and `hbbr` for relay are compiled into the all-
 
 ## Documentation
 
-Start with the bilingual [documentation index](docs/README.md). The main references are the [Control API](docs/API.md), [agent enrollment](docs/AGENT_ENROLL.md), [operations guide](docs/OPS.md), [remote-desktop integration](docs/REMOTE_DESKTOP.md), [public deployment checklist](docs/DEPLOY_PUBLIC.md), and [NEILICONET feasibility analysis](docs/NEILICONET.md).
+Start with the bilingual [documentation index](docs/README.md). The main references are the [Control API](docs/API.md), [agent enrollment](docs/AGENT_ENROLL.md), [four-platform agent acceptance checklist](docs/AGENT_ACCEPTANCE.md), [operations guide](docs/OPS.md), [remote-desktop integration](docs/REMOTE_DESKTOP.md), [public deployment checklist](docs/DEPLOY_PUBLIC.md), and [NEILICONET feasibility analysis](docs/NEILICONET.md).
 
 ## Honest limitations
 
 - Control-plane TLS and mTLS are disabled by default, so the default LAN HTTP endpoint is plaintext. Read [`docs/OPS.md`](docs/OPS.md) before enabling TLS or mTLS. A public entry point must terminate TLS elsewhere or explicitly enable it.
 - There is no built-in P2P hole punching. WireGuard cannot establish a path when both NAT endpoints are unreachable. See [`docs/NEILICONET.md`](docs/NEILICONET.md) and [`docs/DEPLOY_PUBLIC.md`](docs/DEPLOY_PUBLIC.md) for boundaries and reachability requirements.
 - `/metrics` has no real collection for `neilico_p2p_success_rate` or `neilico_relay_bytes`; both metrics are always `0`.
-- Agent capabilities are downgraded honestly based on platform support and privileges. Full Mesh capability on Windows and macOS must be determined by runtime detection.
+- Agent capabilities are downgraded honestly based on platform support and privileges. macOS and Windows currently lack interface-creation and routing adapters, so they report `degraded`/`unavailable` rather than a false green.
 - `third_party/rustdesk-server` is **AGPL-3.0**; see [`third_party/rustdesk-server/LICENSE`](third_party/rustdesk-server/LICENSE).
 
 ## License
