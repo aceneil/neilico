@@ -108,11 +108,11 @@ const filteredNodes = computed(() => {
 type CapabilityKey = Exclude<keyof NodeCapabilities, 'reason'>
 
 const capabilityLabels: Record<CapabilityKey, string> = {
-  mesh: 'Mesh',
-  subnet_routes: '子网路由',
-  tunnel: '隧道'
+  tunnel: 'Tunnel',
+  subnet_routes: 'Subnet Routes',
+  mesh: 'Mesh'
 }
-const capabilityKeys: CapabilityKey[] = ['mesh', 'subnet_routes', 'tunnel']
+const capabilityKeys: CapabilityKey[] = ['tunnel', 'subnet_routes', 'mesh']
 
 function capabilitiesFor(node: Node): NodeCapabilities {
   return node.capabilities || {}
@@ -134,6 +134,14 @@ function capabilityLabel(value: string): string {
 
 function capabilityReason(node: Node): string {
   return capabilitiesFor(node).reason?.trim() || '未提供原因'
+}
+
+// 徽标只显示能力名；状态与原因放进 tooltip，避免表格里多出两行文字。
+function capabilityTitle(node: Node, key: CapabilityKey): string {
+  const value = capabilityValue(node, key)
+  const base = `${capabilityLabels[key]}：${capabilityLabel(value)}`
+  if (value === 'ready') return base
+  return `${base}\n原因：${capabilityReason(node)}`
 }
 
 // 心跳是否已超时（服务端按 last_seen 与心跳超时时间推算）。
@@ -619,14 +627,18 @@ defineExpose({
             <template #default="{ record }">
               <div class="capability-list">
                 <a-space wrap size="small">
-                  <a-tag
+                  <a-tooltip
                     v-for="key in capabilityKeys"
                     :key="key"
-                    class="capability-badge"
-                    :class="`capability-badge--${capabilityTone(record, key)}`"
+                    :title="capabilityTitle(record, key)"
                   >
-                    {{ capabilityLabels[key] }} {{ capabilityLabel(capabilityValue(record, key)) }}
-                  </a-tag>
+                    <a-tag
+                      class="capability-badge"
+                      :class="`capability-badge--${capabilityTone(record, key)}`"
+                    >
+                      {{ capabilityLabels[key] }}
+                    </a-tag>
+                  </a-tooltip>
                   <a-tooltip :title="remoteIconTooltip(record)">
                     <span
                       class="remote-indicator"
@@ -637,7 +649,6 @@ defineExpose({
                     </span>
                   </a-tooltip>
                 </a-space>
-                <div class="capability-reason">原因：{{ capabilityReason(record) }}</div>
               </div>
             </template>
           </a-table-column>
@@ -717,16 +728,19 @@ defineExpose({
           <a-descriptions-item label="接入能力">
             <div class="capability-list">
               <a-space wrap size="small">
-                <a-tag
+                <a-tooltip
                   v-for="key in capabilityKeys"
                   :key="key"
-                  class="capability-badge"
-                  :class="`capability-badge--${capabilityTone(selectedNode, key)}`"
+                  :title="capabilityTitle(selectedNode, key)"
                 >
-                  {{ capabilityLabels[key] }} {{ capabilityLabel(capabilityValue(selectedNode, key)) }}
-                </a-tag>
+                  <a-tag
+                    class="capability-badge"
+                    :class="`capability-badge--${capabilityTone(selectedNode, key)}`"
+                  >
+                    {{ capabilityLabels[key] }}
+                  </a-tag>
+                </a-tooltip>
               </a-space>
-              <div class="capability-reason">原因：{{ capabilityReason(selectedNode) }}</div>
               <div v-if="selectedNode.capabilities_note" class="capability-note">
                 {{ selectedNode.capabilities_note }}
               </div>
