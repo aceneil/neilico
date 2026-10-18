@@ -664,20 +664,6 @@ defineExpose({
               <span v-else>—</span>
             </template>
           </a-table-column>
-          <a-table-column title="最后心跳" :width="210">
-            <template #header>
-              <a-tooltip title="以 last_seen 为时效依据：超过心跳超时时间未上报即标为「陈旧」，陈旧的节点其「在线」不再可信">
-                <span>最后心跳</span>
-              </a-tooltip>
-            </template>
-            <template #default="{ record }">
-              <span class="last-seen">
-                {{ formatTime(record.last_seen) }}
-                <a-tag v-if="isStale(record)" color="warning">陈旧</a-tag>
-                <a-tag v-else-if="record.status === 'online'" color="green">在线</a-tag>
-              </span>
-            </template>
-          </a-table-column>
           <a-table-column title="操作" :width="145" fixed="right">
             <template #default="{ record }">
               <a-space>
