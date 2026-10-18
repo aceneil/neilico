@@ -1606,6 +1606,10 @@ pre {
 
 .dashboard-page {
   overflow: hidden;
+  /* 页面左右留白，取 20px 与告警中心面板内边距（.panel-heading 的 20px）对齐；
+     只作用于仪表盘，不影响其它页面。 */
+  padding-left: 20px;
+  padding-right: 20px;
 }
 
 .dashboard-scroll {
