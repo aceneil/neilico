@@ -115,6 +115,12 @@ const router = createRouter({
           meta: { title: 'API Token', icon: 'key', roles: ['platform_admin', 'tenant_admin', 'ops', 'readonly'] }
         },
         {
+          path: 'proxy',
+          name: 'web-proxy',
+          component: () => import('@/pages/settings/ReverseProxyPage.vue'),
+          meta: { title: '反向代理', icon: 'swap', roles: ['platform_admin', 'tenant_admin', 'ops', 'readonly'] }
+        },
+        {
           path: 'settings',
           name: 'settings',
           component: () => import('@/pages/settings/SettingsPage.vue'),

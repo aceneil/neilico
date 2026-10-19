@@ -192,6 +192,26 @@ if [[ -d "$seed_dir" ]]; then
     log "seeded agent downloads into $NEILICO_DOWNLOADS_DIR"
 fi
 
+# ── 可选：宿主 docker.sock 访问 ────────────────────────────────────────────
+# 「反向代理」页需要读 Docker 里的 nginx/caddy 才能接管。服务以非 root 用户运行，
+# 而 socket 通常属于 root:docker(660)，因此这里把 socket 的 GID 建成组并加入控制面用户。
+# 未挂载 socket 时整段自动跳过。
+docker_sock="${NEILICO_DOCKER_SOCKET:-/var/run/docker.sock}"
+if [[ -S "$docker_sock" ]]; then
+    sock_gid="$(stat -c %g "$docker_sock" 2>/dev/null || true)"
+    if [[ -n "$sock_gid" ]]; then
+        grp="$(grep -E "^[^:]*:[^:]*:${sock_gid}:" /etc/group 2>/dev/null | head -n1 | cut -d: -f1 || true)"
+        if [[ -z "$grp" ]]; then
+            addgroup -g "$sock_gid" dockersock >/dev/null 2>&1 || true
+            grp="dockersock"
+        fi
+        if [[ -n "$grp" ]] && ! id -nG "$CONTROL_USER" 2>/dev/null | grep -qw "$grp"; then
+            adduser "$CONTROL_USER" "$grp" >/dev/null 2>&1 || true
+        fi
+        log "docker socket access prepared for $CONTROL_USER (gid $sock_gid)"
+    fi
+fi
+
 log "starting NEILICO control API and dashboard"
 # 轮换密码时控制面要往 /opt/neilico/bootstrap.env 原子回写（临时文件 + rename），
 # 而 rename 需要目标【目录】可写：把 /opt/neilico 交给控制面运行用户，否则会

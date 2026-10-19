@@ -72,6 +72,9 @@ services:
       - "21116:21116/udp"
       - "21117:21117/tcp"       # RustDesk 中继
     volumes:
+      # 可选：让「反向代理」页能检测/管理 Docker 里已有的 nginx/caddy。
+      # entrypoint 会自动把 socket 的 GID 建成组并加入运行用户，普通挂载即可。
+      # - /var/run/docker.sock:/var/run/docker.sock:ro
       - neilico_pg:/var/lib/postgresql/data
       - neilico_state:/var/lib/neilico
       - neilico_rd:/var/lib/neilico-rd

@@ -322,6 +322,7 @@ func NewWithProxy(
 	mux.HandleFunc("/api/v1/auth/refresh", server.handleRefresh)
 
 	server.registerAlerts(mux)
+	server.registerWebProxy(mux)
 	server.registerAPITokens(mux)
 	mux.Handle("/api/v1/tenants", server.requireRole(server.handleTenants, auth.RolePlatformAdmin))
 	mux.Handle("/api/v1/tenants/", server.requireRole(server.handleTenantItem, auth.RolePlatformAdmin))

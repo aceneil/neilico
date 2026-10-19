@@ -434,3 +434,11 @@ cd deploy/helm && bash neilico/ci/verify.sh
 - 控制面 `enrollCommands` 增加 `client` 字段：`neilico://enroll?server=<base>&token=<token>`（base 取 `enroll.public_url`，未配置时是请求 Host）。
 - 前端 `EnrollDeviceModal.vue` 末尾新增「客户端」页签：Windows 包下载（`/downloads/neilico-client-windows-x64.zip`，白名单早已放行）+ 接入链接 + 各平台打开命令；macOS/Linux 标「构建中」。
 - **未完成**：客户端本身尚未实现 `neilico://enroll` 处理器，也没有「用令牌换控制面身份」的接口（需要 `POST /api/v1/client/enroll` + 客户端心跳）。当前链接只是把地址与令牌带过去，落地页是空的。
+
+## 宿主反向代理接管（2026-10-19）
+
+- 后端 `internal/webproxy`：探测（docker.sock 直连 API，无需 docker CLI；回退 docker ps；原生 nginx/caddy 看二进制+配置目录）→ 渲染（nginx server 块 / caddy site 块）→ 校验（`nginx -t` / `caddy validate`，docker 走 exec）→ 热重载（`nginx -s reload` / `caddy reload`）。
+- 安全：默认 dry-run（临时文件校验后删除）；真正写盘 + reload 需 `NEILICO_WEBPROXY_WRITE=1` 且请求 `dry_run=false`；写审计 `web_proxy.apply`。
+- API：`GET /api/v1/web-proxy/detect`、`POST /preview`、`POST /apply`。
+- 前端：`/proxy`「反向代理」页（内置代理状态 + 外部代理列表 + 域名表单 + 预览/校验/写入）。
+- **权限坑**：控制面以 `neilico` 非 root 用户运行，读不了 `root:docker(660)` 的 socket。entrypoint 现在会按 socket 的 GID 建组并把运行用户加进去（实测 `docker socket access prepared for neilico (gid 116)`），挂载 socket 即可，无需 group_add。
