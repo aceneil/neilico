@@ -123,8 +123,8 @@ ENV PGDATA=/var/lib/postgresql/data \
 
 VOLUME ["/var/lib/postgresql/data"]
 # 21115-21119：自托管 hbbs/hbbr 端口（按需模式下未启用时这些端口不监听属正常）。
-EXPOSE 8080 8081 5002 8443 21115 21116 21116/udp 21117 21118 21119
+EXPOSE 11333 8081 5002 8443 21115 21116 21116/udp 21117 21118 21119
 HEALTHCHECK --interval=10s --timeout=3s --start-period=30s --retries=10 \
-    CMD curl -fsS "http://127.0.0.1:${NEILICO_SERVER_PORT:-8080}/healthz" >/dev/null || exit 1
+    CMD curl -fsS "http://127.0.0.1:${NEILICO_SERVER_PORT:-11333}/healthz" >/dev/null || exit 1
 
 ENTRYPOINT ["/sbin/tini", "--", "/usr/local/bin/neilico-entrypoint.sh"]

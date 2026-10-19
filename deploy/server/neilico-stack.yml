@@ -1,9 +1,9 @@
-# NEILICO — 精简部署（一个端口 11333）
+# NEILICO — 单容器部署（面板直接监听 11333）
 # ---------------------------------------------------------------------------
 #   docker compose -f neilico-stack.yml up -d
 #   面板：http://<IP>:11333
 #
-# 只留 3 项真正需要填的设置，其余全部走镜像内置默认值。
+# 不拆分第二个容器：面板进程本身监听 11333，端口映射 1:1，容器内外都是 11333。
 # 数据在具名卷 neilico_pg，删容器不丢；**不要 down -v**。
 # ---------------------------------------------------------------------------
 name: neilico
@@ -13,9 +13,8 @@ services:
     image: ghcr.io/aceneil/neilico-server:latest
     container_name: neilico
     restart: unless-stopped
-    expose:
-      - "8080"
-      - "8081"
+    ports:
+      - "11333:11333"
     environment:
       # ① 必填：数据库密码，缺了容器直接退出
       POSTGRES_PASSWORD: "neilico"
@@ -29,37 +28,11 @@ services:
       - neilico_pg:/var/lib/postgresql/data
       - neilico_state:/var/lib/neilico
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8080/healthz >/dev/null"]
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:11333/healthz >/dev/null"]
       interval: 10s
       timeout: 3s
       retries: 10
       start_period: 40s
-
-  caddy:
-    image: caddy:2-alpine
-    container_name: neilico-caddy
-    restart: unless-stopped
-    depends_on:
-      server:
-        condition: service_healthy
-    ports:
-      - "11333:11333"
-    configs:
-      - source: caddyfile
-        target: /etc/caddy/Caddyfile
-
-configs:
-  caddyfile:
-    content: |
-      :11333 {
-        # 有业务域名要反代时，把下面三行注释放开并改成你的域名
-        # @biz host app.example.com
-        # handle @biz { reverse_proxy server:8081 }
-
-        handle {
-          reverse_proxy server:8080
-        }
-      }
 
 volumes:
   neilico_pg:
@@ -67,12 +40,15 @@ volumes:
 
 # ── 需要下面这些功能时再加，不加不影响启动 ────────────────────────────────
 #    ports:
+#      - "11333:11333"
+#      - "8081:8081"           # 域名反代（业务域名走这个端口）
 #      - "20000:20000/tcp"     # 端口转发
 #      - "20000:20000/udp"
 #      - "21116:21116/tcp"     # 远程桌面信令
 #      - "21116:21116/udp"
 #      - "21117:21117/tcp"     # 远程桌面中继
 #    environment:
+#      NEILICO_PROXY_LISTEN: ":8081"
 #      NEILICO_STREAM_PORT_MIN: "20000"   # 必须与上面端口段一致
 #      NEILICO_STREAM_PORT_MAX: "20000"
 #      NEILICO_RD_ID_SERVER: "your-ip-or-domain"

@@ -1,7 +1,8 @@
 # NEILICO 服务端部署
 
-单容器：PostgreSQL + 控制面 API + 内置反代 + Dashboard 全在一个镜像里。
-**部署只有一个文件**：[`neilico-stack.yml`](neilico-stack.yml)（控制面 + Caddy，对外只开 `11333`）。
+单容器：PostgreSQL + 控制面 API + 内置反代 + Dashboard 全在一个镜像里，
+**面板进程直接监听 `11333`**（无前置代理、无第二个容器）。
+部署只有一个文件：[`neilico-stack.yml`](neilico-stack.yml)。
 
 ## 快速开始
 
@@ -18,11 +19,10 @@ curl -fsS http://<IP>:11333/healthz
 
 | 端口 | 用途 | 是否必须 |
 | :--- | :--- | :--- |
-| `11333/tcp` | Caddy 单入口：面板 / API / 业务域名反代 | ✅ |
+| `11333/tcp` | 面板 + `/api/v1`（镜像默认监听端口） | ✅ |
+| `8081/tcp` | 业务域名反代 | 用才开 |
 | `20000` tcp+udp | 端口转发 | 用才开 |
 | `21116` tcp+udp、`21117/tcp` | 自托管 RustDesk | 用才开 |
-
-`8080` / `8081` 只在 docker 网络内暴露，不映射到公网。
 
 ## 要填的设置
 
@@ -32,52 +32,43 @@ curl -fsS http://<IP>:11333/healthz
 | `NEILICO_ENROLL_PUBLIC_URL` | 设备接入命令里回连的地址，必须是用户实际访问的地址 |
 | `NEILICO_BOOTSTRAP_ADMIN_EMAIL` / `_PASSWORD` | 留空 = 首次注册；填了就用它建首个管理员 |
 
-其余（数据库驱动、监听端口、Dashboard 目录、日志格式、下载目录）镜像内已有默认值。
+监听端口、数据库驱动、Dashboard 目录、日志格式、下载目录都写在镜像里，**不需要在 compose 里重复**。
 
 ## 业务域名反代
 
-在 `neilico-stack.yml` 的 `configs.caddyfile` 里放开并改成你的域名，然后重新 `up -d`：
-
-```
-:biz host app.example.com nas.example.com
-```
-
-新域名同时要在控制台「域名与代理」里登记，否则内置反代无规则会 404。
-
-## 复用宿主已有的 Nginx
-
-不跑 Caddy 时：删掉 `caddy` 服务与 `configs` 段，把 `server` 的 `expose` 换成只绑回环：
+反代在容器内监听 `8081`，需要就把端口映射出来：
 
 ```yaml
     ports:
-      - "127.0.0.1:8080:8080"    # 面板 + /api/v1
-      - "127.0.0.1:8081:8081"    # 业务域名反代
+      - "11333:11333"
+      - "8081:8081"
+```
+
+然后在控制台「域名与代理」登记域名 + 规则（目标填 `节点ID:端口`）。
+
+## 复用宿主已有的 Nginx
+
+把面板只绑回环，交给宿主 Nginx 终止 TLS：
+
+```yaml
+    ports:
+      - "127.0.0.1:11333:11333"    # 面板 + /api/v1
+      - "127.0.0.1:8081:8081"      # 业务域名反代（可选）
 ```
 
 Nginx 侧（`Host` 必须原样透传，反代规则按 Host 匹配）：
 
 ```nginx
-upstream neilico_panel { server 127.0.0.1:8080; }
-upstream neilico_proxy { server 127.0.0.1:8081; }
-
 server {
-    listen 443 ssl; server_name neilico.example.com;
+    listen 443 ssl;
+    server_name neilico.example.com;
     location / {
-        proxy_pass http://neilico_panel;
+        proxy_pass http://127.0.0.1:11333;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_buffering off; proxy_read_timeout 3600s;
-    }
-}
-server {
-    listen 443 ssl; server_name app.example.com;
-    location / {
-        proxy_pass http://neilico_proxy;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_buffering off; proxy_read_timeout 3600s;
+        proxy_buffering off;
+        proxy_read_timeout 3600s;
     }
 }
 ```
