@@ -376,4 +376,29 @@ cd deploy/helm && bash neilico/ci/verify.sh
 - **追加（`841eb37`，设备管理页头）**：**自动刷新改为常开**（去掉了页头开关与 `autoRefresh` 状态，10s 轮询 + 回到前台立即刷一次，逻辑无条件执行）；**删除「手动注册」**（按钮、表单、注册凭据弹窗、`registerNode()` 全移除；接入只剩 enroll token 的「接入设备」）。页头操作行现为：刷新 / 接入设备 / 远程桌面设置。
 - **追加（`b7d79bc`，详情抽屉改名 + 心跳合并）**：后端新增 **`PATCH /api/v1/nodes/{id}`**（`{name}`，trim 后 1–255 字符，租户隔离，审计 `node.update`；`NodeService.Update` + `TestNodeRenameFlow` 覆盖 200/400/404/401 与审计落库）；前端抽屉标题旁加铅笔 → 改名弹窗（列表行同步、无需整表重载）；**「最后心跳」行删除，合并进「状态」单元格的 tooltip**（`detailStatusTooltip`：`最后心跳：…` + 超时说明）。真机验证：改名 PATCH 200 → 标题即时更新 → 改回原名，DB 已复原 `NAS-E125`。
 
+## 子网路由主备与「同一局域网」自动识别（2026-10-19，`b7d3f3f`）
+
+**目标**：同一实体局域网放多台节点做冗余（不知道哪台常通电）；主路由不可用时自动切到备用；**默认全自动**，同时保留手动纠错。
+
+**为什么不能只看 CIDR**：私网段在不同场地大量重复（两个办公室都用 `192.168.1.0/24`）；Docker bridge / VM NAT 里看到的网段根本不是宿主机 LAN。
+
+**判定（自动 + 可手动覆盖）**
+- Agent 每次心跳上报 `network`: `environment(host|container|vm)` + `gateway_ip` + `gateway_mac` + `gateway_on_physical`（默认路由是否走物理网卡）。
+- 站点键 `NodeSiteKey`：**默认网关 MAC 相同 = 同一台路由器 = 同一 LAN** → `gw:<mac>`；否则 `node:<id>`（宁可不合并不误合并）。
+  - 容器、非物理网卡、拿不到 MAC、以及 QEMU slirp(`52:55:0a:00:02:02`)/libvirt(`52:54:00:12:34:56`) 这类 NAT 网关 MAC 一律不参与自动合并。
+- **手动站点优先**：路由上的 `site` 非空时用 `manual:<label>`，可人工纠正误判（同组路由都填同一个站点名）。
+- 冲突规则：同一 `(site, cidr)` 可挂多节点（主备）；**不同 site 复用同一 CIDR → 409 `route_conflict`**（WireGuard AllowedIPs 同一前缀只能指向一个 peer）。
+
+**选择与传播**
+- `SelectActiveRoutes`：可用候选里 priority 最小者生效（同优先级按 node_id 稳定排序）；整组都不可用时**回退到优先级最高那条**（避免心跳抖动导致 AllowedIPs 反复增删）。
+- 可用 = `status=online` 且 Mesh 能力可用；**从未上报能力的老 Agent 视为未知→可用**（`Capabilities.Unreported()`），否则升级后路由会全灭。
+- `buildNetworkConfig` 只把当前生效 owner 的 CIDR 写进对应 peer 的 AllowedIPs。
+- `StartRouteOwnerReconcile` 每 **15s** 比对「CIDR→owner」签名，变化才 `BumpForNetwork` → Agent 下一轮轮询换路（检测窗 = 心跳超时 60s + 轮询间隔）。
+
+**已验证**
+- 单测：`TestSelectActiveRoutes*`（优先级/接管/回退/停用/平局）、`NodeSiteKey` 相关。
+- 集成：`TestSubnetRouteRedundancyAndFailover`（同网关自动成组、主掉线备用接管、跨站点同网段 409、手动站点强制合并）。
+- 真机：把两台节点写成同一 `gateway_mac` → 同一 CIDR 两条路由均 **201**；列表 `effective_site=gw:aa:bb:cc:dd:ee:01`，离线 NAS（prio 10）`active=false`、在线本机（prio 20）`active=true`；测试路由已清理。
+- ⚠️ **自动识别依赖新版 Agent**：现网 `neilico-agent` 容器仍是旧镜像（不上报 `network`），在它升级前站点会退化成 `node:<id>`（不自动合并，但也不出错）。需要重建并发布 agent 镜像（`ghcr.io/aceneil/neilico-agent`）后才真正"无感"。
+
 
