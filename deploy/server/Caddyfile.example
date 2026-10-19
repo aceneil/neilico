@@ -1,0 +1,25 @@
+# NEILICO 公网部署 Caddyfile
+# ---------------------------------------------------------------------------
+# 1) 把 neilico.example.com 换成控制面域名（A 记录指向本机公网 IP）
+# 2) 业务域名（要被反代到内网节点的）在下面逐条添加，每个域名一段
+# 3) Caddy 自动申请/续期证书（需要 80 端口可达，DNS 先解析好）
+# ---------------------------------------------------------------------------
+{
+	# ACME 通知邮箱，换成你自己的
+	email admin@example.com
+}
+
+# ── 控制面（Dashboard + API）────────────────────────────────────────────────
+neilico.example.com {
+	encode zstd gzip
+	reverse_proxy server:8080 {
+		# 保留真实客户端 IP 给控制面审计日志
+		header_up X-Real-IP {remote_host}
+	}
+}
+
+# ── 业务域名（示例；一个域名一段，反代到内置反代 8081）──────────────────────
+# app.example.com {
+# 	encode zstd gzip
+# 	reverse_proxy server:8081
+# }
