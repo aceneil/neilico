@@ -8,6 +8,7 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import {
   DeleteOutlined,
   DesktopOutlined,
+  EditOutlined,
   FilterOutlined,
   SearchOutlined
 } from '@ant-design/icons-vue'
@@ -47,6 +48,9 @@ const filters = reactive({ status: undefined as string | undefined, tag: '', key
 const filtersCollapsed = ref(false)
 const selectedNode = ref<Node | null>(null)
 const detailOpen = ref(false)
+const renameOpen = ref(false)
+const renameName = ref('')
+const renaming = ref(false)
 const enrollOpen = ref(false)
 const nodeMetrics = ref<NodeMetrics | null>(null)
 const mtlsCertificate = ref<NodeCertificate | null>(null)
@@ -390,6 +394,48 @@ async function loadNodeMTLS() {
   }
 }
 
+// 详情抽屉标题旁的改名入口：只改名称，其余字段仍由 Agent/控制面维护。
+function openRename() {
+  if (!selectedNode.value) return
+  renameName.value = selectedNode.value.name
+  renameOpen.value = true
+}
+
+async function submitRename() {
+  const node = selectedNode.value
+  const name = renameName.value.trim()
+  if (!node) return
+  if (!name) {
+    message.warning('名称不能为空')
+    return
+  }
+  if (name === node.name) {
+    renameOpen.value = false
+    return
+  }
+  renaming.value = true
+  try {
+    const updated = await nodesApi.update(node.id, { name })
+    selectedNode.value = updated
+    // 列表行同步（避免为一次改名整表重载）
+    const row = nodes.value.find((item) => item.id === node.id)
+    if (row) row.name = updated.name
+    renameOpen.value = false
+    message.success('名称已更新')
+  } catch (cause) {
+    message.error(apiErrorMessage(cause))
+  } finally {
+    renaming.value = false
+  }
+}
+
+// 状态气泡：把「最后心跳」并进状态列，不再单独占一行。
+function detailStatusTooltip(node: Node): string {
+  const heartbeat = node.last_seen ? formatTime(node.last_seen) : '尚未上报'
+  if (isStale(node)) return `最后心跳：${heartbeat}（已超过心跳阈值，在线状态不可信）`
+  return `最后心跳：${heartbeat}`
+}
+
 function openDetail(node: Node) {
   selectedNode.value = node
   nodeMetrics.value = null
@@ -607,10 +653,26 @@ defineExpose({
 
     <a-drawer
       v-model:open="detailOpen"
-      :title="selectedNode?.name"
       width="560"
       class="detail-drawer"
     >
+      <template #title>
+        <span class="drawer-title">
+          <span class="drawer-title__name">{{ selectedNode?.name }}</span>
+          <a-tooltip title="修改名称">
+            <a-button
+              v-if="canWrite && selectedNode"
+              type="text"
+              size="small"
+              class="drawer-title__edit"
+              aria-label="修改设备名称"
+              @click="openRename"
+            >
+              <EditOutlined />
+            </a-button>
+          </a-tooltip>
+        </span>
+      </template>
       <template #extra>
         <a-button
           v-if="canWrite && selectedNode"
@@ -625,12 +687,12 @@ defineExpose({
         <a-descriptions bordered :column="1" size="small">
           <a-descriptions-item label="节点 ID">{{ selectedNode.id }}</a-descriptions-item>
           <a-descriptions-item label="状态">
-            <a-badge :status="nodeStatus(selectedNode).badge" :text="nodeStatus(selectedNode).label" />
-            <span v-if="isStale(selectedNode)" class="detail-muted">（心跳已超时，在线状态不可信）</span>
-          </a-descriptions-item>
-          <a-descriptions-item label="最后心跳">
-            {{ formatTime(selectedNode.last_seen) }}
-            <a-tag v-if="isStale(selectedNode)" color="warning">陈旧</a-tag>
+            <a-tooltip :title="detailStatusTooltip(selectedNode)">
+              <span class="status-cell">
+                <a-badge :status="nodeStatus(selectedNode).badge" :text="nodeStatus(selectedNode).label" />
+                <span v-if="isStale(selectedNode)" class="detail-muted">（心跳已超时，在线状态不可信）</span>
+              </span>
+            </a-tooltip>
           </a-descriptions-item>
           <a-descriptions-item label="WireGuard 虚拟 IP">{{ selectedNode.virtual_ip || '—' }}</a-descriptions-item>
           <a-descriptions-item v-if="selectedNode.network_id" label="所属网络 ID">
@@ -816,6 +878,22 @@ defineExpose({
       </template>
     </a-drawer>
 
+    <a-modal
+      v-model:open="renameOpen"
+      title="修改设备名称"
+      :confirm-loading="renaming"
+      ok-text="保存"
+      cancel-text="取消"
+      @ok="submitRename"
+    >
+      <a-input
+        v-model:value="renameName"
+        :maxlength="255"
+        placeholder="例如 edge-shanghai-01"
+        @press-enter="submitRename"
+      />
+    </a-modal>
+
     <EnrollDeviceModal
       v-model:open="enrollOpen"
       @enrolled="reloadSilently()"
@@ -827,6 +905,27 @@ defineExpose({
 <style scoped>
 .nodes-panel {
   min-height: 0;
+}
+
+.drawer-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.drawer-title__name {
+  font-weight: 600;
+}
+
+.drawer-title__edit {
+  color: var(--text-secondary);
+}
+
+.status-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: default;
 }
 
 /* 整行可点：点击任意单元格打开设备详情（删除入口在详情抽屉右上角） */

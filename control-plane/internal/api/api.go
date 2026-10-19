@@ -640,6 +640,24 @@ func (s *Server) handleNodeItem(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeJSON(w, http.StatusOK, node)
+	case http.MethodPatch:
+		if !roleAllowed(r.Context(), principal, auth.RolePlatformAdmin, auth.RoleTenantAdmin, auth.RoleOps) {
+			writeError(w, http.StatusForbidden, "forbidden", "insufficient role")
+			return
+		}
+		var input service.NodeUpdateInput
+		if !s.decodeRequest(w, r, &input) {
+			return
+		}
+		node, err := s.nodes.Update(r.Context(), id, tenantID, input)
+		if err != nil {
+			s.serviceError(w, err)
+			return
+		}
+		middleware.SetAuditAction(r.Context(), "node.update", "/api/v1/nodes/"+id.String(), map[string]any{
+			"name": node.Name,
+		})
+		writeJSON(w, http.StatusOK, node)
 	case http.MethodDelete:
 		if !roleAllowed(r.Context(), principal, auth.RolePlatformAdmin, auth.RoleTenantAdmin, auth.RoleOps) {
 			writeError(w, http.StatusForbidden, "forbidden", "insufficient role")
@@ -651,7 +669,7 @@ func (s *Server) handleNodeItem(w http.ResponseWriter, r *http.Request) {
 		}
 		w.WriteHeader(http.StatusNoContent)
 	default:
-		s.methodNotAllowed(w, http.MethodGet, http.MethodDelete)
+		s.methodNotAllowed(w, http.MethodGet, http.MethodPatch, http.MethodDelete)
 	}
 }
 

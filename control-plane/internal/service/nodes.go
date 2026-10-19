@@ -493,6 +493,34 @@ func (s *NodeService) attachMembership(ctx context.Context, nodes ...*models.Nod
 	return nil
 }
 
+// NodeUpdateInput 是节点可编辑属性的补丁；目前只允许改名称。
+type NodeUpdateInput struct {
+	Name *string `json:"name"`
+}
+
+// Update 修改节点名称（租户隔离，允许重名）。
+func (s *NodeService) Update(ctx context.Context, id uuid.UUID, tenantID *uuid.UUID, input NodeUpdateInput) (models.Node, error) {
+	if input.Name == nil {
+		return models.Node{}, fmt.Errorf("%w: nothing to update", ErrInvalidInput)
+	}
+	name := strings.TrimSpace(*input.Name)
+	if name == "" {
+		return models.Node{}, fmt.Errorf("%w: name is required", ErrInvalidInput)
+	}
+	if len([]rune(name)) > 255 {
+		return models.Node{}, fmt.Errorf("%w: name must be at most 255 characters", ErrInvalidInput)
+	}
+	query := s.db.WithContext(ctx).Model(&models.Node{}).Where("id = ?", id)
+	if tenantID != nil {
+		query = query.Where("tenant_id = ?", *tenantID)
+	}
+	if err := query.Update("name", name).Error; err != nil {
+		return models.Node{}, fmt.Errorf("update node: %w", err)
+	}
+	// Get 同时完成「不存在 → ErrNotFound」与读取边界字段（network_id/effective_mesh…）的填充。
+	return s.Get(ctx, id, tenantID)
+}
+
 func (s *NodeService) Delete(ctx context.Context, id uuid.UUID, tenantID *uuid.UUID) error {
 	node, err := s.Get(ctx, id, tenantID)
 	if err != nil {

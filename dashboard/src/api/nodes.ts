@@ -46,6 +46,9 @@ export const nodesApi = {
   register(input: NodeRegisterInput) {
     return http.post<NodeRegisterResult>('/nodes/register', input).then((response) => response.data)
   },
+  update(id: string, input: { name: string }) {
+    return http.patch<Node>(`/nodes/${id}`, input).then((response) => response.data)
+  },
   remove(id: string) {
     return http.delete<void>(`/nodes/${id}`)
   }
