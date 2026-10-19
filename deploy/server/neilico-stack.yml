@@ -29,6 +29,9 @@ services:
       # 相对 docker-compose.yml 所在目录；首次启动会自动建目录并修正属主
       - ./neilico/data:/var/lib/postgresql/data
       - ./neilico/state:/var/lib/neilico
+      # 「反向代理」页要识别 Docker 里已有的 nginx/caddy，必须能看到 docker.sock；
+      # 只读即可探测，写入/热重载需要可写 + NEILICO_WEBPROXY_WRITE=1
+      - /var/run/docker.sock:/var/run/docker.sock:ro
 
 # ── 需要下面这些功能时再加，不加不影响启动 ────────────────────────────────
 #    ports:
@@ -45,5 +48,3 @@ services:
 #      NEILICO_STREAM_PORT_MAX: "20000"
 #      NEILICO_RD_ID_SERVER: "your-ip-or-domain"
 #      NEILICO_RD_RELAY_SERVER: "your-ip-or-domain"
-#    volumes:
-#      - /var/run/docker.sock:/var/run/docker.sock:ro   # 反向代理页识别宿主 nginx/caddy
