@@ -117,19 +117,18 @@ Flutter 设备管理端（原 `desktop/`）和 `rust-core/` 骨架已迁移到 [
 
 ## 快速开始
 
-使用参考 Compose 文件 [`deploy/server/docker-compose.yml`](deploy/server/docker-compose.yml) 和环境变量模板 [`deploy/server/.env.example`](deploy/server/.env.example)。启动前把 Compose 的 `env_file` 和持久卷指向你选定的数据目录。
+部署只有一个文件：[`deploy/server/neilico-stack.yml`](deploy/server/neilico-stack.yml)
+（控制面 + Caddy，对外一个端口）。细节见 [`deploy/server/README.md`](deploy/server/README.md)，简版：
 
 ```bash
-cd deploy/server
-cp .env.example <your-data-root>/neilico.env
-# 生成并替换 POSTGRES_PASSWORD、NEILICO_AUTH_JWT_SECRET、
-# NEILICO_BOOTSTRAP_ADMIN_EMAIL 和 NEILICO_BOOTSTRAP_ADMIN_PASSWORD。
-chmod 600 <your-data-root>/neilico.env
-docker compose up -d --build
-curl -fsS http://127.0.0.1:13000/healthz
+curl -fsSLo neilico-stack.yml \
+  https://raw.githubusercontent.com/aceneil/neilico/main/deploy/server/neilico-stack.yml
+# 先改 POSTGRES_PASSWORD 与 NEILICO_ENROLL_PUBLIC_URL
+docker compose -f neilico-stack.yml up -d
+curl -fsS http://127.0.0.1:11333/healthz
 ```
 
-访问 `http://127.0.0.1:13000/` 使用 Dashboard 和 API。内置反代默认监听 `18081`。
+打开 `http://<主机>:11333` 注册首个管理员。内置反代在容器内监听 `8081`，通过同一端口对外。
 
 首次登录有两种方式：配置 `NEILICO_BOOTSTRAP_ADMIN_*`；或者不配置它们，在登录页使用「首次使用？注册」。注册表单会请求 `GET /api/v1/setup/status`，`registration_open=true` 时首个账号成为平台管理员并自动登录；系统已有账号后再次注册会返回 `409 already_initialized`。bootstrap 密码必须至少 16 个字符，并包含四类字符中的至少三类。
 

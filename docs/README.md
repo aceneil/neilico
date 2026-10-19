@@ -11,7 +11,7 @@ This index links every Markdown document currently stored in `docs/`. Descriptio
 | [AGENT_ACCEPTANCE.md](AGENT_ACCEPTANCE.md) | Acceptance checklist for real-agent enrollment across Docker, Linux, macOS, and Windows. | Docker、Linux、macOS、Windows Agent 真机接入与验收清单。 |
 | [AGENT_ENROLL.md](AGENT_ENROLL.md) | Enrollment guide covering tokens, one-line installers, Docker agents, credentials, failures, and dry runs. | 接入指南：令牌、一键安装、Docker Agent、凭据、失败排查和 dry-run。 |
 | [API.md](API.md) | Control API reference for authentication, tenants, nodes, networks, rules, metrics, and remote desktop. | Control API 参考：认证、租户、节点、网络、规则、指标和远程桌面。 |
-| [DEPLOY_PUBLIC.md](DEPLOY_PUBLIC.md) | Checklist for public single-host deployment with a real domain, TLS, and Mesh. | 公网单机部署清单：真实域名、TLS 和 Mesh。 |
+| [deploy/server/README.md](../deploy/server/README.md) | Single-file deployment (control plane + Caddy, one port), TLS and reverse-proxy coexistence. | 单文件部署（控制面 + Caddy，单端口）、TLS 与已有反代共存。 |
 | [NEILICONET.md](NEILICONET.md) | Evidence-based feasibility analysis of NEILICONET, NAT reachability, forwarding, and proposed boundaries. | NEILICONET 可行性分析：NAT 可达性、转发、证据和能力边界。 |
 | [NEILICO_SPEC.md](NEILICO_SPEC.md) | Product and implementation specification covering architecture, data, APIs, workflows, and acceptance criteria. | 产品与实现规格：架构、数据、接口、流程和验收标准。 |
 | [OPS.md](OPS.md) | Operations guide for Docker/Compose, TLS, secrets, backups, upgrades, monitoring, and troubleshooting. | 运维手册：Docker/Compose、TLS、秘密、备份、升级、监控和故障排查。 |

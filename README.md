@@ -117,19 +117,19 @@ The Flutter device-management app, formerly under `desktop/`, and the `rust-core
 
 ## Quick start
 
-Use the reference Compose file [`deploy/server/docker-compose.yml`](deploy/server/docker-compose.yml) and environment template [`deploy/server/.env.example`](deploy/server/.env.example). Point the Compose `env_file` and persistent volumes at a data directory of your choice before starting.
+Deployment is a single file: [`deploy/server/neilico-stack.yml`](deploy/server/neilico-stack.yml)
+(control plane + Caddy, one public port). See [`deploy/server/README.md`](deploy/server/README.md) for
+details; the short version:
 
 ```bash
-cd deploy/server
-cp .env.example <your-data-root>/neilico.env
-# Generate and replace POSTGRES_PASSWORD, NEILICO_AUTH_JWT_SECRET,
-# NEILICO_BOOTSTRAP_ADMIN_EMAIL, and NEILICO_BOOTSTRAP_ADMIN_PASSWORD.
-chmod 600 <your-data-root>/neilico.env
-docker compose up -d --build
-curl -fsS http://127.0.0.1:13000/healthz
+curl -fsSLo neilico-stack.yml \
+  https://raw.githubusercontent.com/aceneil/neilico/main/deploy/server/neilico-stack.yml
+docker compose -f neilico-stack.yml up -d      # edit POSTGRES_PASSWORD + NEILICO_ENROLL_PUBLIC_URL first
+curl -fsS http://127.0.0.1:11333/healthz
 ```
 
-Open `http://127.0.0.1:13000/` for the Dashboard and API. The built-in reverse proxy listens on `18081` by default.
+Open `http://<host>:11333` and register the first administrator. The built-in reverse proxy listens
+on `8081` inside the container and is reached through the same port.
 
 For the first login, either configure `NEILICO_BOOTSTRAP_ADMIN_*`, or leave them unset and use **First use? Register**. That form calls `GET /api/v1/setup/status`; when `registration_open=true`, the first account becomes the platform administrator and is signed in automatically. Later attempts return `409 already_initialized`. A configured bootstrap password must be at least 16 characters and contain at least three of four character classes.
 

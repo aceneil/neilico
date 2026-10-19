@@ -1,24 +1,12 @@
-# NEILICO — 单端口入口（Caddy 按 Host 分流）
+# NEILICO — 精简部署（一个端口 11333）
 # ---------------------------------------------------------------------------
 #   docker compose -f neilico-stack.yml up -d
-#   面板：http://<IP 或域名>:11333
+#   面板：http://<IP>:11333
 #
-# 对外只开一个 TCP 端口：
-#   11333 → Caddy
-#           ├─ 命中「业务域名」列表 → server:8081（内置反代）
-#           └─ 其它（含 IP 直连）   → server:8080（面板 + /api/v1）
-#
-# 远程桌面只有原生客户端（21116/21117），不占 Web 端口；
-# /webclient 不做（按你说的：远程桌面只做设置，不在网页里开）。
-# 组网：agent 主动出站连控制面，本机不需要额外 UDP 入站。
+# 只留 3 项真正需要填的设置，其余全部走镜像内置默认值。
+# 数据在具名卷 neilico_pg，删容器不丢；**不要 down -v**。
 # ---------------------------------------------------------------------------
 name: neilico
-
-x-logging: &default-logging
-  driver: json-file
-  options:
-    max-size: "10m"
-    max-file: "3"
 
 services:
   server:
@@ -29,62 +17,23 @@ services:
       - "8080"
       - "8081"
     environment:
-      PGDATA: /var/lib/postgresql/data
-      POSTGRES_DB: neilico
-      POSTGRES_USER: neilico
-      POSTGRES_PASSWORD: "neilico"          # 必填，缺了容器直接退出
-
-      NEILICO_DATABASE_DRIVER: postgres
-      NEILICO_SERVER_HOST: 0.0.0.0
-      NEILICO_SERVER_DASHBOARD_DIR: /opt/neilico/dashboard
-      NEILICO_SERVER_DASHBOARD_SPA: "true"
-      NEILICO_DOWNLOADS_DIR: /usr/local/share/neilico/downloads
-
-      # 用户实际访问的地址；换成域名/IP 后接入命令才回得来
-      NEILICO_ENROLL_PUBLIC_URL: "http://neilico.example.com:11333"
-
-      # 内置反代（域名 → 节点虚拟 IP）
-      NEILICO_PROXY_KIND: builtin
-      NEILICO_PROXY_LISTEN: ":8081"
-
-      # 端口转发区间（与 ports 段一致；不用就一起删）
-      NEILICO_STREAM_PORT_MIN: "20000"
-      NEILICO_STREAM_PORT_MAX: "20000"
-
-      # 自托管 RustDesk（原生客户端用）
-      NEILICO_RD_ID_SERVER: "neilico.example.com"
-      NEILICO_RD_RELAY_SERVER: "neilico.example.com"
-      NEILICO_RD_KEY_DIR: /var/lib/neilico-rd
-      NEILICO_RD_SERVER_MODE: on_demand
-      NEILICO_RD_IDLE_TIMEOUT: 10m
-
-      NEILICO_LOG_LEVEL: info
-      NEILICO_LOG_FORMAT: json
-
-      # 留空 = 首次注册管理员；不写就用镜像内置的 admin@example.com 占位账号
+      # ① 必填：数据库密码，缺了容器直接退出
+      POSTGRES_PASSWORD: "neilico"
+      # ② 设备接入命令里回连的地址（换成你的 IP 或域名）
+      NEILICO_ENROLL_PUBLIC_URL: "http://your-ip-or-domain:11333"
+      # ③ 留空 = 首次打开页面时注册管理员
+      #    （不写这两行会用镜像内置的 admin@example.com 占位账号）
       NEILICO_BOOTSTRAP_ADMIN_EMAIL: ""
       NEILICO_BOOTSTRAP_ADMIN_PASSWORD: ""
-    ports:
-      # 只有「非 HTTP」能力需要独立端口；不用就删
-      - "20000:20000/tcp"       # 端口转发
-      - "20000:20000/udp"
-      - "21116:21116/tcp"       # RustDesk 信令
-      - "21116:21116/udp"
-      - "21117:21117/tcp"       # RustDesk 中继
     volumes:
-      # 可选：让「反向代理」页能检测/管理 Docker 里已有的 nginx/caddy。
-      # entrypoint 会自动把 socket 的 GID 建成组并加入运行用户，普通挂载即可。
-      # - /var/run/docker.sock:/var/run/docker.sock:ro
       - neilico_pg:/var/lib/postgresql/data
       - neilico_state:/var/lib/neilico
-      - neilico_rd:/var/lib/neilico-rd
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8080/healthz >/dev/null"]
       interval: 10s
       timeout: 3s
       retries: 10
       start_period: 40s
-    logging: *default-logging
 
   caddy:
     image: caddy:2-alpine
@@ -98,25 +47,16 @@ services:
     configs:
       - source: caddyfile
         target: /etc/caddy/Caddyfile
-    logging: *default-logging
 
 configs:
   caddyfile:
     content: |
-      # 单端口按 Host 分流
       :11333 {
-        # 业务域名（走域名反代的）写在这里；多个域名用空格分隔
-        @biz host app.example.com
-        # @biz host app.example.com nas.example.com
+        # 有业务域名要反代时，把下面三行注释放开并改成你的域名
+        # @biz host app.example.com
+        # handle @biz { reverse_proxy server:8081 }
 
-        handle @biz {
-          encode zstd gzip
-          reverse_proxy server:8081
-        }
-
-        # 其它一律进控制面：IP 直连、面板域名、/api/v1 都走这里
         handle {
-          encode zstd gzip
           reverse_proxy server:8080
         }
       }
@@ -124,4 +64,18 @@ configs:
 volumes:
   neilico_pg:
   neilico_state:
-  neilico_rd:
+
+# ── 需要下面这些功能时再加，不加不影响启动 ────────────────────────────────
+#    ports:
+#      - "20000:20000/tcp"     # 端口转发
+#      - "20000:20000/udp"
+#      - "21116:21116/tcp"     # 远程桌面信令
+#      - "21116:21116/udp"
+#      - "21117:21117/tcp"     # 远程桌面中继
+#    environment:
+#      NEILICO_STREAM_PORT_MIN: "20000"   # 必须与上面端口段一致
+#      NEILICO_STREAM_PORT_MAX: "20000"
+#      NEILICO_RD_ID_SERVER: "your-ip-or-domain"
+#      NEILICO_RD_RELAY_SERVER: "your-ip-or-domain"
+#    volumes:
+#      - /var/run/docker.sock:/var/run/docker.sock:ro   # 反向代理页识别宿主 nginx/caddy
