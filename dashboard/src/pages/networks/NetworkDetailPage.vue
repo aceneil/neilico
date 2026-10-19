@@ -45,7 +45,7 @@ const configError = ref('')
 
 const memberForm = reactive({ node_id: '', virtual_ip: '', role: 'member' })
 const aclForm = reactive({ src: '', dst: '', action: 'allow', protocol: 'any', ports: 'any', priority: 100 })
-const routeForm = reactive({ node_id: '', cidr: '', enabled: true })
+const routeForm = reactive({ node_id: '', cidr: '', site: '', priority: 100, enabled: true })
 
 const nodeName = (id: string) => nodes.value.find((node) => node.id === id)?.name || id
 const memberOptions = computed(() =>
@@ -166,6 +166,21 @@ function removeAcl(rule: AclRule) {
   })
 }
 
+// 站点展示：手动站点显示原值；自动识别显示网关/单节点，鼠标悬停给出完整键。
+function siteLabel(route: SubnetRoute): string {
+  if (route.site) return '手动指定'
+  const key = route.effective_site || ''
+  if (key.startsWith('gw:')) return '同一网关 · ' + key.slice(3)
+  return '单节点'
+}
+
+function siteTooltip(route: SubnetRoute): string {
+  const key = route.effective_site || ''
+  if (route.site) return `手动指定站点：${route.site}`
+  if (key.startsWith('gw:')) return `按默认网关 MAC 自动识别：${key.slice(3)}`
+  return '未识别到可信的同一局域网（容器/虚拟机或拿不到网关 MAC），按单节点成站'
+}
+
 async function addRoute() {
   if (!routeForm.node_id || !routeForm.cidr.trim()) {
     message.warning('请选择出口节点并填写 CIDR')
@@ -174,6 +189,8 @@ async function addRoute() {
   await networksApi.addRoute(networkId.value, {
     node_id: routeForm.node_id,
     cidr: routeForm.cidr.trim(),
+    site: routeForm.site.trim() || undefined,
+    priority: Number(routeForm.priority) || 100,
     enabled: routeForm.enabled
   })
   message.success('子网路由已添加')
@@ -185,6 +202,8 @@ async function toggleRoute(route: SubnetRoute, enabled: boolean) {
   await networksApi.updateRoute(networkId.value, route.id, {
     node_id: route.node_id,
     cidr: route.cidr,
+    site: route.site || undefined,
+    priority: route.priority ?? 100,
     enabled
   })
   message.success(enabled ? '路由已启用' : '路由已停用')
@@ -289,6 +308,26 @@ void load()
           <a-table :data-source="routes" row-key="id" :pagination="false" :scroll="{ x: 820 }">
             <a-table-column title="子网" data-index="cidr" :width="220">
               <template #default="{ record }"><code>{{ record.cidr }}</code></template>
+            </a-table-column>
+            <a-table-column title="站点" :width="190">
+              <template #default="{ record }">
+                <a-tag :color="record.site ? 'blue' : 'default'">
+                  {{ record.site || '自动' }}
+                </a-tag>
+                <a-tooltip :title="siteTooltip(record)">
+                  <span class="detail-muted site-hint">{{ siteLabel(record) }}</span>
+                </a-tooltip>
+              </template>
+            </a-table-column>
+            <a-table-column title="优先级" :width="90">
+              <template #default="{ record }">{{ record.priority ?? 100 }}</template>
+            </a-table-column>
+            <a-table-column title="生效" :width="110">
+              <template #default="{ record }">
+                <a-tag v-if="record.active" color="green">主用</a-tag>
+                <a-tag v-else-if="record.enabled" color="default">备用</a-tag>
+                <a-tag v-else color="default">已停用</a-tag>
+              </template>
             </a-table-column>
             <a-table-column title="出口节点" :width="230">
               <template #default="{ record }">{{ nodeName(record.node_id) }}</template>
@@ -410,6 +449,20 @@ void load()
         <a-form-item label="子网 CIDR" required>
           <a-input v-model:value="routeForm.cidr" placeholder="192.168.10.0/24" />
         </a-form-item>
+        <div class="form-grid">
+          <a-form-item label="站点（同一实体局域网）">
+            <a-input v-model:value="routeForm.site" placeholder="留空 = 自动识别（同一默认网关自动归组）" :maxlength="64" />
+          </a-form-item>
+          <a-form-item label="优先级（越小越优先）">
+            <a-input-number v-model:value="routeForm.priority" :min="1" :max="999" style="width: 100%" />
+          </a-form-item>
+        </div>
+        <a-alert
+          type="info"
+          show-icon
+          message="同一站点 + 同一网段可挂多台节点做主备：优先级最小的在线节点生效，掉线后自动切换到下一台。站点默认按「默认网关 MAC」自动识别；识别不准时在站点栏手动填写同名站点即可纠正。"
+          style="margin-bottom: 12px"
+        />
         <a-form-item>
           <a-checkbox v-model:checked="routeForm.enabled">立即启用</a-checkbox>
         </a-form-item>

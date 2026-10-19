@@ -32,21 +32,25 @@ import (
 const maxRequestBody = 1 << 20
 
 type Server struct {
-	db               *gorm.DB
-	auth             *auth.Manager
-	tenants          *service.TenantService
-	users            *service.UserService
-	nodes            *service.NodeService
-	domains          *service.DomainService
-	certs            *service.CertificateService
-	proxyRules       *service.ProxyRuleService
-	proxyHosts       *service.ProxyHostService
-	auditLogs        *service.AuditLogService
-	relays           *service.RelayServerService
-	observability    *service.ObservabilityService
-	traffic          *service.TrafficService
-	networks         *service.NetworkService
-	configs          *configservice.Manager
+	db            *gorm.DB
+	auth          *auth.Manager
+	tenants       *service.TenantService
+	users         *service.UserService
+	nodes         *service.NodeService
+	domains       *service.DomainService
+	certs         *service.CertificateService
+	proxyRules    *service.ProxyRuleService
+	proxyHosts    *service.ProxyHostService
+	auditLogs     *service.AuditLogService
+	relays        *service.RelayServerService
+	observability *service.ObservabilityService
+	traffic       *service.TrafficService
+	networks      *service.NetworkService
+	configs       *configservice.Manager
+	// routeOwners 记录每个网络上一次「CIDR → 主路由节点」的签名，用来在归属变化时
+	// bump 配置版本（主备切换的唯一触发点）。
+	routeOwners      map[uuid.UUID]string
+	routeOwnersMu    sync.Mutex
 	pki              *pki.Service
 	apiTokens        *service.APITokenService
 	enrollTokens     *service.NodeEnrollTokenService
@@ -89,6 +93,74 @@ func (h *Handler) StartCertificateLifecycle(ctx context.Context) {
 
 func (h *Handler) StartAlertEvaluation(ctx context.Context) {
 	h.server.alertEngine.Run(ctx)
+}
+
+// StartRouteOwnerReconcile 周期性核对「每个 CIDR 的主路由归属」。归属变化（主节点掉线、
+// 恢复、优先级改动）时 bump 该网络的配置版本，所有 Agent 下一次轮询即可拿到新的
+// AllowedIPs —— 这是主备切换唯一的传播机制（不做定时全量重推）。
+func (h *Handler) StartRouteOwnerReconcile(ctx context.Context) {
+	ticker := time.NewTicker(15 * time.Second)
+	defer ticker.Stop()
+	h.server.reconcileRouteOwners(ctx)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			h.server.reconcileRouteOwners(ctx)
+		}
+	}
+}
+
+func (s *Server) reconcileRouteOwners(ctx context.Context) {
+	var networks []models.VirtualNetwork
+	if err := s.db.WithContext(ctx).Find(&networks).Error; err != nil {
+		s.logger.Error("route owner reconcile: load networks failed", "error", err)
+		return
+	}
+	for _, network := range networks {
+		var routes []models.SubnetRoute
+		if err := s.db.WithContext(ctx).Where("network_id = ?", network.ID).Find(&routes).Error; err != nil {
+			s.logger.Error("route owner reconcile: load routes failed", "network_id", network.ID, "error", err)
+			continue
+		}
+		nodeIDs := make([]uuid.UUID, 0, len(routes))
+		seen := make(map[uuid.UUID]bool, len(routes))
+		for _, route := range routes {
+			if !seen[route.NodeID] {
+				seen[route.NodeID] = true
+				nodeIDs = append(nodeIDs, route.NodeID)
+			}
+		}
+		available := make(map[uuid.UUID]bool, len(nodeIDs))
+		if len(nodeIDs) > 0 {
+			var nodes []models.Node
+			if err := s.db.WithContext(ctx).Where("id IN ?", nodeIDs).Find(&nodes).Error; err != nil {
+				s.logger.Error("route owner reconcile: load nodes failed", "network_id", network.ID, "error", err)
+				continue
+			}
+			for _, node := range nodes {
+				available[node.ID] = service.NodeAvailableForRouting(node)
+			}
+		}
+		signature := service.ActiveRouteSignature(service.SelectActiveRoutes(routes, func(nodeID uuid.UUID) bool {
+			return available[nodeID]
+		}))
+
+		s.routeOwnersMu.Lock()
+		previous, known := s.routeOwners[network.ID]
+		s.routeOwners[network.ID] = signature
+		s.routeOwnersMu.Unlock()
+
+		if !known || previous == signature {
+			continue // 第一次只记录；没变化就不打扰 Agent
+		}
+		if _, err := s.configs.BumpForNetwork(ctx, network.ID, "subnet route owner changed"); err != nil {
+			s.logger.Error("route owner reconcile: bump config failed", "network_id", network.ID, "error", err)
+			continue
+		}
+		s.logger.Info("subnet route owner changed; bumped network config", "network_id", network.ID)
+	}
 }
 
 // StartRemoteDesktopServer 运行 hbbs/hbbr 的生命周期 watchdog（always_on 时会立即拉起，
@@ -207,6 +279,7 @@ func NewWithProxy(
 		traffic:          service.NewTrafficService(db),
 		networks:         service.NewNetworkService(db, certificateCrypto),
 		configs:          configManager,
+		routeOwners:      map[uuid.UUID]string{},
 		pki:              pkiService,
 		apiTokens:        service.NewAPITokenService(db),
 		enrollTokens:     service.NewNodeEnrollTokenService(db, enrollSigningKey(authManager, opts.Enroll.SigningKey)),
@@ -749,6 +822,11 @@ func (s *Server) serviceError(w http.ResponseWriter, err error) {
 	}
 	if errors.Is(err, service.ErrOrderInFlight) {
 		writeError(w, http.StatusConflict, "order_in_flight", err.Error())
+		return
+	}
+	var routeConflict *service.RouteConflictError
+	if errors.As(err, &routeConflict) {
+		writeError(w, http.StatusConflict, "route_conflict", routeConflict.Reason)
 		return
 	}
 	var acmeErr *acmeclient.Error

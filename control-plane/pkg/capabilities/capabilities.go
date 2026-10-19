@@ -86,6 +86,16 @@ func (c Capabilities) HasUnavailable() bool {
 	return c.Mesh != MeshReady || c.SubnetRoutes != Ready || c.Tunnel != Ready
 }
 
+// Unreported 报告这份快照是否只是「从未上报」的占位（老版本 Agent / 刚注册未心跳）。
+// Normalize 会把空值补成 unavailable 并写上「尚未上报」，因此必须靠 reason 区分：
+// 不能把「还不知道」当成「明确不可用」，否则老 Agent 会被判成不能承担任何子网路由。
+func (c Capabilities) Unreported() bool {
+	if c.Mesh == "" {
+		return true
+	}
+	return strings.TrimSpace(c.Reason) == "尚未上报"
+}
+
 // MeshApplicable 报告该节点是否真的可以应用 mesh 配置：三项承载能力都必须 ready。
 // tunnel 由 agent 的真实建接口探测得出，是权威信号——tunnel 不可用时即便 mesh 自报
 // ready 也不得应用（那正是「宿主上永远没有 wg0」的根因）。

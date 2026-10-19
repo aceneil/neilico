@@ -90,9 +90,18 @@ func validateVirtualIP(value string) error {
 	return nil
 }
 
+// NetworkFacts 是 Agent 上报的运行环境与默认网关（用于站点自动识别）。
+type NetworkFacts struct {
+	Environment       string `json:"environment"`
+	GatewayIP         string `json:"gateway_ip"`
+	GatewayMAC        string `json:"gateway_mac"`
+	GatewayOnPhysical bool   `json:"gateway_on_physical"`
+}
+
 type HeartbeatInput struct {
 	Version      string                     `json:"version"`
 	Capabilities *capabilities.Capabilities `json:"capabilities,omitempty"`
+	Network      *NetworkFacts              `json:"network,omitempty"`
 }
 
 func (s *NodeService) Register(ctx context.Context, tenantID uuid.UUID, input NodeRegisterInput) (NodeRegisterOutput, error) {
@@ -349,6 +358,12 @@ func (s *NodeService) Heartbeat(ctx context.Context, nodeID uuid.UUID, agentToke
 			node.Capabilities = datatypes.NewJSONType(caps)
 		}
 	}
+	if input.Network != nil {
+		node.Environment = normalizeEnvironment(input.Network.Environment)
+		node.GatewayIP = strings.TrimSpace(input.Network.GatewayIP)
+		node.GatewayMAC = strings.ToLower(strings.TrimSpace(input.Network.GatewayMAC))
+		node.GatewayOnPhysical = input.Network.GatewayOnPhysical
+	}
 	if err := s.db.WithContext(ctx).Save(&node).Error; err != nil {
 		return models.Node{}, fmt.Errorf("record heartbeat: %w", err)
 	}
@@ -547,6 +562,15 @@ func (s *NodeService) Delete(ctx context.Context, id uuid.UUID, tenantID *uuid.U
 		}
 		return nil
 	})
+}
+
+func normalizeEnvironment(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "host", "container", "vm":
+		return strings.ToLower(strings.TrimSpace(value))
+	default:
+		return ""
+	}
 }
 
 func IsHeartbeatExpired(lastSeen *time.Time, timeout time.Duration, now time.Time) bool {

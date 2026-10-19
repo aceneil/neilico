@@ -197,6 +197,7 @@ func run() error {
 	}
 	go handler.StartCertificateLifecycle(ctx)
 	go handler.StartAlertEvaluation(ctx)
+	go handler.StartRouteOwnerReconcile(ctx)
 	// 自托管 hbbs/hbbr：on_demand 空闲回收 watchdog / always_on 立即拉起（mode=off 时 no-op）。
 	go handler.StartRemoteDesktopServer(ctx)
 	if cfg.ACME.Enabled {

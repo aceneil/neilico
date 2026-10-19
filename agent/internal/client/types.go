@@ -2,6 +2,7 @@ package client
 
 import (
 	"encoding/json"
+	"neilico/agent/internal/netinfo"
 
 	"neilico/control-plane/pkg/capabilities"
 )
@@ -27,6 +28,8 @@ type RegisterResponse struct {
 type HeartbeatRequest struct {
 	Version      string                     `json:"version"`
 	Capabilities *capabilities.Capabilities `json:"capabilities,omitempty"`
+	// Network 描述本机的运行环境与默认网关，用于控制面判断「是否同一实体局域网」。
+	Network *netinfo.Info `json:"network,omitempty"`
 }
 
 type HeartbeatResponse struct {

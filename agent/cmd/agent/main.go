@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"neilico/agent/internal/netinfo"
 	"net/http"
 	"os"
 	"os/signal"
@@ -126,7 +127,7 @@ func run(args []string, stdout, stderr io.Writer) error {
 	go func() {
 		defer wg.Done()
 		heartbeat.Run(ctx, time.Duration(cfg.HeartbeatInterval), func(ctx context.Context) (time.Duration, error) {
-			response, err := apiClient.HeartbeatWithCapabilities(ctx, identity.NodeID, version, capabilitySnapshot())
+			response, err := apiClient.HeartbeatWithReport(ctx, identity.NodeID, version, capabilitySnapshot(), networkInfo())
 			if err != nil {
 				return 0, err
 			}
@@ -624,6 +625,13 @@ func hasNetAdmin() bool {
 func capabilitySnapshot() *capabilities.Capabilities {
 	reported := agentcapabilities.Detect()
 	return &reported
+}
+
+// networkInfo 采集「运行环境 + 默认网关」，随心跳上报给控制面做站点自动识别。
+// 采集失败只会让字段留空（不影响心跳），控制面会退化成「该节点独立成站」。
+func networkInfo() *netinfo.Info {
+	info := netinfo.Detect()
+	return &info
 }
 
 // shouldDryRun 决定是否只演练、不落盘网络配置。

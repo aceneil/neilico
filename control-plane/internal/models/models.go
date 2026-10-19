@@ -48,17 +48,22 @@ type Node struct {
 	// 因为公网出口在 NAT/代理后经常互相不可达（实测导致 mesh 起不来）。
 	LocalAddresses datatypes.JSONSlice[string] `gorm:"type:jsonb;not null;default:'[]'" json:"local_addresses"`
 	// ListenPort 是节点 WireGuard 的监听端口；对端拼内网 endpoint 时要用它。
-	ListenPort     int                                           `gorm:"not null;default:51820" json:"listen_port"`
-	OS             string                                        `gorm:"type:varchar(64);not null" json:"os"`
-	Arch           string                                        `gorm:"type:varchar(64);not null" json:"arch"`
-	Version        string                                        `gorm:"type:varchar(64);not null" json:"version"`
-	Status         string                                        `gorm:"type:varchar(32);not null;default:offline;index" json:"status"`
-	LastSeen       *time.Time                                    `gorm:"type:timestamp" json:"last_seen"`
-	Tags           datatypes.JSONSlice[string]                   `gorm:"type:jsonb;not null" json:"tags"`
-	Capabilities   datatypes.JSONType[capabilities.Capabilities] `gorm:"type:jsonb;not null;default:'{}'" json:"capabilities"`
-	AgentTokenHash string                                        `gorm:"type:char(64);not null;uniqueIndex" json:"-"`
-	CreatedAt      time.Time                                     `gorm:"type:timestamp;not null;index" json:"created_at"`
-	NetworkID      *uuid.UUID                                    `gorm:"-" json:"network_id,omitempty"`
+	ListenPort int    `gorm:"not null;default:51820" json:"listen_port"`
+	OS         string `gorm:"type:varchar(64);not null" json:"os"`
+	Arch       string `gorm:"type:varchar(64);not null" json:"arch"`
+	Version    string `gorm:"type:varchar(64);not null" json:"version"`
+	Status     string `gorm:"type:varchar(32);not null;default:offline;index" json:"status"`
+	// 运行环境与默认网关（Agent 心跳上报），用于自动识别「同一个实体局域网」。
+	Environment       string                                        `gorm:"type:varchar(16);not null;default:''" json:"environment"`
+	GatewayIP         string                                        `gorm:"type:varchar(64);not null;default:''" json:"gateway_ip"`
+	GatewayMAC        string                                        `gorm:"type:varchar(32);not null;default:''" json:"gateway_mac"`
+	GatewayOnPhysical bool                                          `gorm:"not null;default:false" json:"gateway_on_physical"`
+	LastSeen          *time.Time                                    `gorm:"type:timestamp" json:"last_seen"`
+	Tags              datatypes.JSONSlice[string]                   `gorm:"type:jsonb;not null" json:"tags"`
+	Capabilities      datatypes.JSONType[capabilities.Capabilities] `gorm:"type:jsonb;not null;default:'{}'" json:"capabilities"`
+	AgentTokenHash    string                                        `gorm:"type:char(64);not null;uniqueIndex" json:"-"`
+	CreatedAt         time.Time                                     `gorm:"type:timestamp;not null;index" json:"created_at"`
+	NetworkID         *uuid.UUID                                    `gorm:"-" json:"network_id,omitempty"`
 
 	// 以下为读取边界计算出的展示字段，不落库（gorm:"-"）：
 	// 有效 Mesh 状态以 tunnel 为权威信号，避免 mesh=ready 掩盖隧道故障；
@@ -284,6 +289,14 @@ type SubnetRoute struct {
 	NodeID    uuid.UUID `gorm:"type:uuid;not null;index" json:"node_id"`
 	CIDR      string    `gorm:"column:cidr;type:cidr;not null" json:"cidr"`
 	Enabled   bool      `gorm:"not null;default:true" json:"enabled"`
+	// Site 是「同一个实体局域网」的显式标识（操作者声明）。同一 site + 同一 CIDR
+	// 的多条记录互为备份；不同 site 不允许使用同一个 CIDR（WireGuard 的 AllowedIPs
+	// 同一前缀只能指向一个目的地）。留空时按节点 ID 视为独立站点。
+	Site string `gorm:"type:varchar(64);not null;default:''" json:"site"`
+	// Priority 决定同一 CIDR 有多个宣告节点时的接管顺序：数字越小越优先（主用）。
+	// 同一条 CIDR 允许出现在多个节点上（同一实体局域网的冗余），但同一时刻只有
+	// 一台「健康」的节点会被写进其它节点的 AllowedIPs（见 service.SelectActiveRoutes）。
+	Priority int `gorm:"not null;default:100" json:"priority"`
 
 	Network *VirtualNetwork `gorm:"foreignKey:NetworkID;constraint:OnDelete:RESTRICT,OnUpdate:CASCADE" json:"-"`
 	Node    *Node           `gorm:"foreignKey:NodeID;constraint:OnDelete:RESTRICT,OnUpdate:CASCADE" json:"-"`

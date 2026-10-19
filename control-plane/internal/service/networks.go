@@ -487,14 +487,25 @@ func aclReferenceID(expression string) uuid.UUID {
 }
 
 type RouteInput struct {
-	NodeID  uuid.UUID `json:"node_id"`
-	CIDR    string    `json:"cidr"`
-	Enabled *bool     `json:"enabled,omitempty"`
+	NodeID uuid.UUID `json:"node_id"`
+	CIDR   string    `json:"cidr"`
+	// Site 是操作者声明的「同一个实体局域网」标识；留空按节点 ID 单独成站（不与他人合并）。
+	Site     *string `json:"site,omitempty"`
+	Enabled  *bool   `json:"enabled,omitempty"`
+	Priority *int    `json:"priority,omitempty"`
+}
+
+// RouteView 在路由本体上附加「此刻是否生效」，供 UI 标出主用/备用。
+type RouteView struct {
+	models.SubnetRoute
+	Active bool `json:"active"`
+	// EffectiveSite 是自动/手动解析后的站点归属，UI 用它展示主备分组。
+	EffectiveSite string `json:"effective_site"`
 }
 
 type RouteList struct {
-	Items []models.SubnetRoute `json:"items"`
-	Total int64                `json:"total"`
+	Items []RouteView `json:"items"`
+	Total int64       `json:"total"`
 }
 
 func (s *NetworkService) ListRoutes(ctx context.Context, networkID uuid.UUID, tenantID *uuid.UUID) (RouteList, error) {
@@ -503,10 +514,40 @@ func (s *NetworkService) ListRoutes(ctx context.Context, networkID uuid.UUID, te
 		return RouteList{}, err
 	}
 	var items []models.SubnetRoute
-	if err := s.db.WithContext(ctx).Where("network_id = ?", network.ID).Order("cidr ASC, node_id ASC, id ASC").Find(&items).Error; err != nil {
+	if err := s.db.WithContext(ctx).Where("network_id = ?", network.ID).Order("cidr ASC, priority ASC, id ASC").Find(&items).Error; err != nil {
 		return RouteList{}, fmt.Errorf("list subnet routes: %w", err)
 	}
-	return RouteList{Items: items, Total: int64(len(items))}, nil
+	nodeIDs := make([]uuid.UUID, 0, len(items))
+	seen := map[uuid.UUID]bool{}
+	for _, item := range items {
+		if !seen[item.NodeID] {
+			seen[item.NodeID] = true
+			nodeIDs = append(nodeIDs, item.NodeID)
+		}
+	}
+	available := map[uuid.UUID]bool{}
+	nodeByID := map[uuid.UUID]models.Node{}
+	if len(nodeIDs) > 0 {
+		var nodes []models.Node
+		if err := s.db.WithContext(ctx).Where("id IN ?", nodeIDs).Find(&nodes).Error; err != nil {
+			return RouteList{}, fmt.Errorf("load subnet route nodes: %w", err)
+		}
+		for _, node := range nodes {
+			available[node.ID] = NodeAvailableForRouting(node)
+			nodeByID[node.ID] = node
+		}
+	}
+	active := SelectActiveRoutes(items, func(nodeID uuid.UUID) bool { return available[nodeID] })
+	views := make([]RouteView, 0, len(items))
+	for _, item := range items {
+		winner, ok := active[item.CIDR]
+		views = append(views, RouteView{
+			SubnetRoute:   item,
+			Active:        ok && winner.ID == item.ID,
+			EffectiveSite: ResolveSite(item.Site, nodeByID[item.NodeID]),
+		})
+	}
+	return RouteList{Items: views, Total: int64(len(views))}, nil
 }
 
 func (s *NetworkService) CreateRoute(ctx context.Context, networkID uuid.UUID, tenantID *uuid.UUID, input RouteInput) (models.SubnetRoute, error) {
@@ -514,7 +555,7 @@ func (s *NetworkService) CreateRoute(ctx context.Context, networkID uuid.UUID, t
 	if err != nil {
 		return models.SubnetRoute{}, err
 	}
-	item, err := s.newRoute(ctx, network.ID, input)
+	item, err := s.newRoute(ctx, network.ID, uuid.Nil, input)
 	if err != nil {
 		return models.SubnetRoute{}, err
 	}
@@ -540,7 +581,7 @@ func (s *NetworkService) UpdateRoute(ctx context.Context, networkID, routeID uui
 	if err != nil {
 		return models.SubnetRoute{}, fmt.Errorf("get subnet route: %w", err)
 	}
-	item, err := s.newRoute(ctx, network.ID, input)
+	item, err := s.newRoute(ctx, network.ID, existing.ID, input)
 	if err != nil {
 		return models.SubnetRoute{}, err
 	}
@@ -554,10 +595,36 @@ func (s *NetworkService) UpdateRoute(ctx context.Context, networkID, routeID uui
 	return item, nil
 }
 
-func (s *NetworkService) newRoute(ctx context.Context, networkID uuid.UUID, input RouteInput) (models.SubnetRoute, error) {
+// newRoute 归一化并校验一条子网路由。
+//
+// 冗余语义：**同一条 CIDR 允许挂在多台节点上**（同一实体局域网的多台设备互为备份），
+// 但同一节点重复宣告同一 CIDR 没有意义；不同 CIDR 之间也不允许重叠（/24 与 /16 会让
+// 最长前缀匹配把流量劈成两半）。
+func (s *NetworkService) newRoute(ctx context.Context, networkID uuid.UUID, excludeID uuid.UUID, input RouteInput) (models.SubnetRoute, error) {
 	prefix, err := validation.RouteCIDR(input.CIDR)
 	if err != nil {
 		return models.SubnetRoute{}, fmt.Errorf("%w: %v", ErrInvalidInput, err)
+	}
+	priority := DefaultRoutePriority
+	if input.Priority != nil {
+		priority = *input.Priority
+	}
+	site := ""
+	if input.Site != nil {
+		site = strings.TrimSpace(*input.Site)
+	}
+	if len([]rune(site)) > 64 {
+		return models.SubnetRoute{}, fmt.Errorf("%w: site must be at most 64 characters", ErrInvalidInput)
+	}
+	if priority < MinRoutePriority || priority > MaxRoutePriority {
+		return models.SubnetRoute{}, fmt.Errorf("%w: priority must be between %d and %d", ErrInvalidInput, MinRoutePriority, MaxRoutePriority)
+	}
+	var candidateNode models.Node
+	if err := s.db.WithContext(ctx).First(&candidateNode, "id = ?", input.NodeID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return models.SubnetRoute{}, ErrNotFound
+		}
+		return models.SubnetRoute{}, fmt.Errorf("load subnet route node: %w", err)
 	}
 	var count int64
 	if err := s.db.WithContext(ctx).Model(&models.NetworkMember{}).
@@ -566,6 +633,39 @@ func (s *NetworkService) newRoute(ctx context.Context, networkID uuid.UUID, inpu
 	}
 	if count == 0 {
 		return models.SubnetRoute{}, ErrNotFound
+	}
+	candidateSite := ResolveSite(site, candidateNode)
+	var existing []models.SubnetRoute
+	if err := s.db.WithContext(ctx).Where("network_id = ?", networkID).Find(&existing).Error; err != nil {
+		return models.SubnetRoute{}, fmt.Errorf("load existing subnet routes: %w", err)
+	}
+	for _, item := range existing {
+		if item.ID == excludeID {
+			continue
+		}
+		if item.CIDR == prefix.String() {
+			var existingNode models.Node
+			if err := s.db.WithContext(ctx).First(&existingNode, "id = ?", item.NodeID).Error; err != nil {
+				continue
+			}
+			existingSite := ResolveSite(item.Site, existingNode)
+			if existingSite != candidateSite {
+				// 不同站点用同一网段：主备会互相串，直接拒绝并说明。
+				return models.SubnetRoute{}, &RouteConflictError{Reason: fmt.Sprintf(
+					"%s 已被站点「%s」使用；同一虚拟网络里同一网段只能属于一个站点（要么改网段，要么放进不同网络）", prefix, existingSite)}
+			}
+			if item.NodeID == input.NodeID {
+				return models.SubnetRoute{}, &RouteConflictError{Reason: fmt.Sprintf("该节点已经宣告了 %s", prefix)}
+			}
+			continue
+		}
+		other, parseErr := netip.ParsePrefix(item.CIDR)
+		if parseErr != nil {
+			continue
+		}
+		if other.Overlaps(prefix) {
+			return models.SubnetRoute{}, &RouteConflictError{Reason: fmt.Sprintf("%s 与已有路由 %s 重叠，请改用不重叠的网段", prefix, item.CIDR)}
+		}
 	}
 	enabled := true
 	if input.Enabled != nil {
@@ -576,7 +676,9 @@ func (s *NetworkService) newRoute(ctx context.Context, networkID uuid.UUID, inpu
 		NetworkID: networkID,
 		NodeID:    input.NodeID,
 		CIDR:      prefix.String(),
+		Site:      site,
 		Enabled:   enabled,
+		Priority:  priority,
 	}, nil
 }
 

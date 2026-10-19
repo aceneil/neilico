@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"neilico/agent/internal/netinfo"
 	"net/http"
 	"net/url"
 	"os"
@@ -114,9 +115,14 @@ func (c *Client) Heartbeat(ctx context.Context, nodeID string, version string) (
 }
 
 func (c *Client) HeartbeatWithCapabilities(ctx context.Context, nodeID, version string, reported *capabilities.Capabilities) (HeartbeatResponse, error) {
+	return c.HeartbeatWithReport(ctx, nodeID, version, reported, nil)
+}
+
+// HeartbeatWithReport 额外携带运行环境/网关信息（用于站点自动识别）。
+func (c *Client) HeartbeatWithReport(ctx context.Context, nodeID, version string, reported *capabilities.Capabilities, network *netinfo.Info) (HeartbeatResponse, error) {
 	var output HeartbeatResponse
 	path := "/api/v1/nodes/" + url.PathEscape(nodeID) + "/heartbeat"
-	request := HeartbeatRequest{Version: version, Capabilities: reported}
+	request := HeartbeatRequest{Version: version, Capabilities: reported, Network: network}
 	if err := c.do(ctx, http.MethodPost, path, request, &output); err != nil {
 		return HeartbeatResponse{}, err
 	}

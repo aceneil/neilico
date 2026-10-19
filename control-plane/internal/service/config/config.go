@@ -378,12 +378,20 @@ func (m *Manager) buildNetworkConfig(ctx context.Context, db *gorm.DB, network m
 		}
 	}
 	peers := make([]Peer, 0, len(members))
+	// 同一个实体局域网可能有多台节点宣告同一条 CIDR（冗余）。这里先按健康度与优先级
+	// 选出每条 CIDR 当前唯一的「主路由」，只把它写进对应 peer 的 AllowedIPs——
+	// WireGuard 的 AllowedIPs 不允许同一前缀属于两个 peer（后写覆盖先写）。
+	available := func(nodeID uuid.UUID) bool {
+		node, ok := nodes[nodeID]
+		return ok && service.NodeAvailableForRouting(node)
+	}
+	activeRoutes := service.SelectActiveRoutes(routes, available)
 	for _, member := range members {
 		node := nodes[member.NodeID]
 		allowed := []string{member.VirtualIP + "/32"}
-		for _, route := range routes {
-			if route.Enabled && route.NodeID == member.NodeID {
-				allowed = append(allowed, route.CIDR)
+		for cidr, route := range activeRoutes {
+			if route.NodeID == member.NodeID {
+				allowed = append(allowed, cidr)
 			}
 		}
 		sort.Strings(allowed)

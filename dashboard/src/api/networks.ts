@@ -19,7 +19,7 @@ export interface AclInput {
   ports: string
   priority: number
 }
-export interface RouteInput { node_id: string; cidr: string; enabled: boolean }
+export interface RouteInput { node_id: string; cidr: string; enabled: boolean; site?: string; priority?: number }
 
 export const networksApi = {
   list() {

@@ -237,6 +237,14 @@ export interface SubnetRoute {
   node_id: string
   cidr: string
   enabled: boolean
+  /** 同一实体局域网的站点标识；留空表示该节点单独成站。 */
+  site?: string
+  /** 同一站点同一 CIDR 的主备顺序：数字越小越优先。 */
+  priority?: number
+  /** 服务端计算：此刻是否为该 CIDR 的生效出口。 */
+  active?: boolean
+  /** 服务端计算：站点归属（gw:<网关MAC> / node:<id> / manual:<label>）。 */
+  effective_site?: string
 }
 
 export interface Certificate {
