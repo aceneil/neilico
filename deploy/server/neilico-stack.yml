@@ -27,12 +27,6 @@ services:
     volumes:
       - neilico_pg:/var/lib/postgresql/data
       - neilico_state:/var/lib/neilico
-    healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:11333/healthz >/dev/null"]
-      interval: 10s
-      timeout: 3s
-      retries: 10
-      start_period: 40s
 
 volumes:
   neilico_pg:
