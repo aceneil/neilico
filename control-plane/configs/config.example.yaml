@@ -51,7 +51,7 @@ ratelimit:
   burst: 40
 
 # 「远程桌面」：自托管 RustDesk 服务端（hbbs 信令 + hbbr 中继）的接入与生命周期参数。
-# hbbs/hbbr 由 allinone 镜像从本仓 vendored 源码自编译，控制面作为进程监管者**按需**拉起/回收。
+# hbbs/hbbr 由 server 镜像从本仓 vendored 源码自编译，控制面作为进程监管者**按需**拉起/回收。
 # 控制面只读取 public_key_file（或 key_dir 派生的 **公钥** id_ed25519.pub），绝不下发私钥。
 # 所有值均可用环境变量覆盖：NEILICO_RD_ENABLED / NEILICO_RD_ID_SERVER /
 # NEILICO_RD_RELAY_SERVER / NEILICO_RD_PUBLIC_KEY_FILE / NEILICO_RD_PORTS /
@@ -70,7 +70,7 @@ remote_desktop:
   server_mode: "on_demand"
   # on_demand 模式下的空闲回收阈值（无远程桌面活动超过该时长即自动停止）。
   idle_timeout: 10m
-  # 自编译二进制路径（allinone 镜像装到 /usr/local/bin）。
+  # 自编译二进制路径（server 镜像装到 /usr/local/bin）。
   hbbs_path: "/usr/local/bin/hbbs"
   hbbr_path: "/usr/local/bin/hbbr"
   # hbbr 中继端口 / hbbs 的 UDP 端口（默认 21117 / 21116；一般无需改）。

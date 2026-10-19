@@ -1,8 +1,8 @@
-# NEILICO all-in-one container
+# NEILICO single-container container
 
 该形态把 PostgreSQL 16、`neilico-control-api` 与 Dashboard 静态资源合并为 **一个容器**。API、Dashboard、内置反代和 ACME 监听器都由同一个 Go 进程提供；PostgreSQL 是容器内唯一额外服务。`redis`、`nats`、nginx `dashboard`、wg-easy `relay` 均不再部署。
 
-构建上下文是**仓库根**（见下方命令），镜像名 `neilico-allinone:local`。修改仓库源码后不需要任何快照/打包步骤 —— 重新 `docker compose ... up -d --build` 即从当前源码构建。
+构建上下文是**仓库根**（见下方命令），镜像名 `neilico-server:local`。修改仓库源码后不需要任何快照/打包步骤 —— 重新 `docker compose ... up -d --build` 即从当前源码构建。
 
 ## 构建与运行
 
@@ -10,7 +10,7 @@
 
 ```bash
 cd $HOME/Documents/Projects/neilico          # ← 仓库根，不是本目录
-docker build -f deploy/allinone/Dockerfile -t neilico-allinone:local .
+docker build -f deploy/server/Dockerfile -t neilico-server:local .
 ```
 
 **常驻部署**用 Docker 目录下的 compose（顶层 `name: neilico`，单服务 `app`，`container_name: neilico`），
@@ -19,7 +19,7 @@ docker build -f deploy/allinone/Dockerfile -t neilico-allinone:local .
 ```bash
 cd $HOME/Documents/Docker
 mkdir -p data/neilico/pg
-cp $HOME/Documents/Projects/neilico/deploy/allinone/.env.example data/neilico/neilico.env
+cp $HOME/Documents/Projects/neilico/deploy/server/.env.example data/neilico/neilico.env
 chmod 600 data/neilico/neilico.env            # 编辑该文件，替换全部密码/密钥占位符
 docker compose -f docker-compose.neilico.yaml up -d --build
 ```
@@ -49,7 +49,7 @@ docker exec neilico pg_dump --username=neilico --format=custom --dbname=neilico 
 升级时保持数据目录不变：
 
 ```bash
-cd $HOME/Documents/Projects/neilico/deploy/allinone
+cd $HOME/Documents/Projects/neilico/deploy/server
 docker compose build --pull app
 docker compose up -d
 docker inspect --format '{{.State.Health.Status}}' neilico

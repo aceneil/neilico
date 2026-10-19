@@ -1,7 +1,7 @@
 # NEILICO 对 rustdesk-server 的 vendoring 说明
 
 本目录是 [`rustdesk/rustdesk-server`](https://github.com/rustdesk/rustdesk-server) 的**源码副本**，
-由 NEILICO 的 allinone 镜像**自行编译**出 `hbbs`（ID/信令）与 `hbbr`（中继）两个二进制，
+由 NEILICO 的 server 镜像**自行编译**出 `hbbs`（ID/信令）与 `hbbr`（中继）两个二进制，
 不再依赖外部容器或外部镜像（旧的外部 `rustdesk/rustdesk-server:1` compose 仅作回滚保留）。
 
 ## 来源与版本（可复现）
@@ -36,7 +36,7 @@ tar -xzf vendor.tar.gz          # 得到 vendor/（约 765MB）
 cargo build --release --offline --bin hbbs --bin hbbr
 ```
 
-allinone 的 `deploy/allinone/Dockerfile` 已在 Rust 构建阶段自动完成上述解压与离线编译，
+server 的 `deploy/server/Dockerfile` 已在 Rust 构建阶段自动完成上述解压与离线编译，
 并把二进制装到最终镜像的 `/usr/local/bin/{hbbs,hbbr}`。
 
 > 安全：`hbbr` 以 `-k _` 启动（从工作目录 `id_ed25519` 取 Key 强制校验），私钥只存在于控制面数据目录，

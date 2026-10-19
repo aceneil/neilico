@@ -77,8 +77,8 @@ jobs:
             echo "- Digest: \`$DIGEST\`"
           } >> "$GITHUB_STEP_SUMMARY"
 
-  build-allinone:
-    name: Build neilico-allinone
+  build-server:
+    name: Build neilico-server
     runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:
@@ -90,8 +90,8 @@ jobs:
           set -euo pipefail
           test -f third_party/rustdesk-server/vendor.tar.gz
           test -f third_party/rustdesk-server/.cargo/config.toml
-          grep -Fq 'ENV CARGO_NET_OFFLINE=true' deploy/allinone/Dockerfile
-          grep -Fq 'cargo build --release --offline' deploy/allinone/Dockerfile
+          grep -Fq 'ENV CARGO_NET_OFFLINE=true' deploy/server/Dockerfile
+          grep -Fq 'cargo build --release --offline' deploy/server/Dockerfile
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -107,33 +107,33 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/aceneil/neilico-allinone
+          images: ghcr.io/aceneil/neilico-server
           flavor: latest=false
           tags: |
             type=raw,value=latest
             type=sha,format=short,prefix=sha-
 
-      - name: Build and push neilico-allinone
+      - name: Build and push neilico-server
         id: build
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: deploy/allinone/Dockerfile
+          file: deploy/server/Dockerfile
           platforms: linux/amd64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           annotations: ${{ steps.meta.outputs.annotations }}
-          cache-from: type=gha,scope=neilico-allinone
-          cache-to: type=gha,scope=neilico-allinone,mode=max
+          cache-from: type=gha,scope=neilico-server
+          cache-to: type=gha,scope=neilico-server,mode=max
 
-      - name: Write neilico-allinone digest to summary
+      - name: Write neilico-server digest to summary
         env:
           DIGEST: ${{ steps.build.outputs.digest }}
         run: |
           {
-            echo "## neilico-allinone image"
+            echo "## neilico-server image"
             echo
-            echo "- Image: \`ghcr.io/aceneil/neilico-allinone:latest\`"
+            echo "- Image: \`ghcr.io/aceneil/neilico-server:latest\`"
             echo "- Digest: \`$DIGEST\`"
           } >> "$GITHUB_STEP_SUMMARY"

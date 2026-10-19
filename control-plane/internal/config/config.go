@@ -128,7 +128,7 @@ type PKI struct {
 // 控制面**只读取并下发公钥**（id_ed25519.pub），绝不下发/读取私钥；实际值均可由
 // 环境变量（NEILICO_RD_*）或 YAML 覆盖，便于与 P1 的部署参数对接。
 //
-// 自托管（本轮新增）：hbbs/hbbr 已 vendored 进本仓并由 allinone 镜像自行编译，控制面作为
+// 自托管（本轮新增）：hbbs/hbbr 已 vendored 进本仓并由 server 镜像自行编译，控制面作为
 // 进程监管者按需拉起/回收，不再依赖外部容器或外部镜像。
 type RemoteDesktop struct {
 	Enabled       bool   `yaml:"enabled"`
@@ -142,7 +142,7 @@ type RemoteDesktop struct {
 	IdleTimeout time.Duration `yaml:"idle_timeout"`
 	// KeyDir 是服务端密钥目录（id_ed25519 私钥 + .pub 公钥），控制面会在其中启动子进程。
 	KeyDir string `yaml:"key_dir"`
-	// HBBSPath / HBBRPath 是自编译二进制的路径（allinone 镜像装到 /usr/local/bin）。
+	// HBBSPath / HBBRPath 是自编译二进制的路径（server 镜像装到 /usr/local/bin）。
 	HBBSPath string `yaml:"hbbs_path"`
 	HBBRPath string `yaml:"hbbr_path"`
 	// RelayHost 非空时以 `-r <relay>` 下发给 hbbs。
@@ -161,7 +161,7 @@ const (
 	DefaultRemoteDesktopPublicKeyFile = ""
 	// DefaultRemoteDesktopServerMode：默认按需启动（无活动不监听、进程数 0）。
 	DefaultRemoteDesktopServerMode = "on_demand"
-	// DefaultRemoteDesktopKeyDir：默认密钥目录落在数据目录下（allinone 的数据卷为 /var/lib/neilico）。
+	// DefaultRemoteDesktopKeyDir：默认密钥目录落在数据目录下（server 的数据卷为 /var/lib/neilico）。
 	DefaultRemoteDesktopKeyDir = "/var/lib/neilico/rustdesk"
 	// DefaultRemoteDesktopHBBSPath / HBBRPath：自编译二进制的镜像内安装路径。
 	DefaultRemoteDesktopHBBSPath = "/usr/local/bin/hbbs"

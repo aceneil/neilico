@@ -19,7 +19,7 @@ NEILICO（Unified Mesh & Proxy Platform）：统一「内网穿透 + Mesh 组网
 | `cli/` | `neilicoctl` 命令行 |
 | `dashboard/` | Vue3 + Vite + Ant Design Vue 管理后台 |
 | `deploy/agent/` | Agent 最小 Docker 镜像与 README（入口 `neilico-agent run`，读 `NEILICO_TOKEN`） |
-| `deploy/allinone/` | **现行形态**：单容器（PostgreSQL + 控制面 API + 内置反代 + Dashboard 同容器），构建上下文=仓库根 |
+| `deploy/server/` | **现行形态**：单容器（PostgreSQL + 控制面 API + 内置反代 + Dashboard 同容器），构建上下文=仓库根 |
 | `deploy/docker-compose/` | 历史测试栈（6 容器 postgres/redis/nats/control-api/dashboard/relay），**非现行形态** |
 | `deploy/helm/neilico/` | Kubernetes Helm Chart（默认外部 PostgreSQL，含开发依赖/relay 占位） |
 | `scripts/` | `smoke.sh`、`smoke-down.sh`，退出码即判据 |
@@ -46,7 +46,7 @@ NEILICO（Unified Mesh & Proxy Platform）：统一「内网穿透 + Mesh 组网
 | **V1-R3 Helm Chart** | ✅ | （未提交） | `deploy/helm/neilico`：control-api/dashboard Deployment、外部 PG 默认、开发 PG/Redis/NATS StatefulSet、relay 占位、Secret/Ingress/HPA/PDB/NetworkPolicy/ServiceMonitor；`ci/verify.sh` 离线断言 |
 | **V1-R4 API Token/Scope/限流** | ✅ | （未提交） | migration `000008`、API Token 哈希/轮换/撤销、角色→scope 兼容表、`RequireScope`、按 Token/user 令牌桶、CLI token 命令、Dashboard 真实 Token 页面 |
 | **改名 UMPP→NEILICO** | ✅ | `1e42e4f` | Go 模块、容器名、compose 项目名、`UMPP_→NEILICO_` 环境变量前缀、文档全量改名 |
-| **V2A1 单容器打包** | ✅ | `21c8450` | 6 容器 → 1（`deploy/allinone/`）；Go 二进制同源直接服务前端，去掉 nginx |
+| **V2A1 单容器打包** | ✅ | `21c8450` | 6 容器 → 1（`deploy/server/`）；Go 二进制同源直接服务前端，去掉 nginx |
 | **E1 节点一键接入（CF Tunnel 式）** | ✅ | `9abbb7f` + `25dfc15` | 自包含签名令牌、无鉴权自注册、`/install.sh`、`/downloads/agent-*`、Agent `enroll`/`NEILICO_TOKEN`、`deploy/agent/Dockerfile`；**manager 实测 26/26 通过**（含原样执行接口给的 docker 命令 → 节点 online + VIP + wg0 + 心跳） |
 | **E2 跨平台连接器 + 能力上报** | ✅ | `4a75dc4` | `install.ps1`（New-Service/sha256/管理员检查/-DryRun）、`install.sh` 增 Darwin/launchd 分支、6 个平台二进制分发、`nodes.capabilities` 如实上报、补上节点详情 VIP；**过程中修掉一个升级崩溃 bug** |
 | **E3 四平台接入界面** | ✅ | `ef57a82` | 设备页「接入设备」两步弹窗（Docker/Linux/macOS/Windows 四页签 + 一键复制 + 倒计时 + 重新生成）、令牌管理（状态/撤销）、列表与详情显示 VIP + 能力徽标 + 原因；命令严格取自接口 `commands.*`。manager 真浏览器 3840×2160 复验通过 |
@@ -55,11 +55,11 @@ NEILICO（Unified Mesh & Proxy Platform）：统一「内网穿透 + Mesh 组网
 
 ### 常驻部署（生产用 Docker 目录那份；2026-10-03 改为**单容器**）
 > **仓库内 `deploy/docker-compose/`（6 容器：postgres/redis/nats/control-api/dashboard/relay）仅供历史上的测试栈**（项目名 `neilico-m5`、命名卷、固定端口），**不是现行形态**。
-> **现行形态 = `deploy/allinone/`（单容器）**，由 `$HOME/Documents/Docker/docker-compose.neilico.yaml`（顶层 `name: neilico`）常驻，按本机目录约定维护。
+> **现行形态 = `deploy/server/`（单容器）**，由 `$HOME/Documents/Docker/docker-compose.neilico.yaml`（顶层 `name: neilico`）常驻，按本机目录约定维护。
 
 - 形态：**1 个容器 `neilico`** = PostgreSQL 16 + 控制面 API + 内置反代 + Dashboard 静态资源（Go 二进制直接服务前端，**同源、无 nginx**）
 - 部署文件：`$HOME/Documents/Docker/docker-compose.neilico.yaml`
-  （`build.context` = 仓库根 `$HOME/Documents/Projects/neilico` 绝对路径，`dockerfile: deploy/allinone/Dockerfile`，`image: neilico-allinone:local`）
+  （`build.context` = 仓库根 `$HOME/Documents/Projects/neilico` 绝对路径，`dockerfile: deploy/server/Dockerfile`，`image: neilico-server:local`）
 - 持久数据：`$HOME/Documents/Docker/data/neilico/pg`（宿主目录绑定到容器 `/var/lib/postgresql/data`）
 - 秘密：`$HOME/Documents/Docker/data/neilico/neilico.env`（mode 600，非仓库；管理员邮箱 `admin@neilico.local`）
   查看管理员密码（值不入文档）：`$HOME/Documents/Docker/data/neilico/show-admin-password.sh`
@@ -247,7 +247,7 @@ cd deploy/helm && bash neilico/ci/verify.sh
 
 ## 自建 hbbs/hbbr 并入项目 + 按需加载（2026-10-09 真机验收）
 
-- **不再依赖外部容器**：`rustdesk/rustdesk-server`（tag `1.1.16`）源码 **vendored** 进 `third_party/rustdesk-server/`（含 `vendor.tar.gz` 全量 crates，可**完全离线**编译；AGPL `LICENSE` 原文保留 + 根 `NOTICE` 记来源/commit/改动）。`deploy/allinone/Dockerfile` 新增 `rustdesk-build` 阶段，从 vendored 源编出 `hbbs`/`hbbr` 装进**同一个 allinone 镜像**（仍是单容器）。证据：容器内 `hbbs -h` → `hbbs 1.1.16` ✓。
+- **不再依赖外部容器**：`rustdesk/rustdesk-server`（tag `1.1.16`）源码 **vendored** 进 `third_party/rustdesk-server/`（含 `vendor.tar.gz` 全量 crates，可**完全离线**编译；AGPL `LICENSE` 原文保留 + 根 `NOTICE` 记来源/commit/改动）。`deploy/server/Dockerfile` 新增 `rustdesk-build` 阶段，从 vendored 源编出 `hbbs`/`hbbr` 装进**同一个 server 镜像**（仍是单容器）。证据：容器内 `hbbs -h` → `hbbs 1.1.16` ✓。
 - **定位（用户明确）**：**"我们只是借助它的能力"** ✓ —— 源码**保持上游原样**、不改其内部逻辑（不做 fork 式改造，升级只换 tag 重编）；"控制"体现在**部署与治理层**：何时启动、端口、密钥位置、是否启用、界面展示全在 NEILICO 侧。
 - **按需生命周期**（`internal/service/rustdesk_server.go`，默认 `on_demand`）：无远程桌面活动**不启动** → 容器内 `hbbs`/`hbbr` **进程数 0**、不占 CPU/内存 ✓；有活动自动拉起；空闲超时自动停；另有 `always_on`/`off` 模式。接口 `GET /api/v1/remote-desktop/server-status`、`POST .../server/{start|stop}`（admin）。真机实测：idle `running=false`/进程 0 → start 后进程 2 且宿主 `0.0.0.0:21115/21116` 真监听、TCP 可连 → stop 后回 0 ✓✓。
   - ⚠️ **判据修正（诚实记录）**：`ports:` 发布模式下，宿主端口由 **docker-proxy** 常驻监听（6 端口 × v4/v6 = 12 条 ✓ 约 2MB/个、不占 CPU ✓）→ 所以"idle 时宿主零监听"**做不到** ✗；真正的按需收益是**服务进程不启动**（0 进程 ✓）。要连端口都不出现，只能 `network_mode: host` ✗（牺牲隔离 ✓）——按现状取舍：保留发布端口 ✓。
@@ -333,13 +333,13 @@ cd deploy/helm && bash neilico/ci/verify.sh
 
 - **症状**：`.github/workflows/images.yml` 在 main 上连续两次失败（run `38018583890`、`38019953711`），报错分别是
   `Build neilico-agent → failed to push ghcr.io/aceneil/neilico-agent:latest: denied: permission_denied: write_package` 与
-  `Build neilico-allinone → failed to push ghcr.io/aceneil/neilico-allinone:latest: denied: permission_denied: read_package`。
+  `Build neilico-server → failed to push ghcr.io/aceneil/neilico-server:latest: denied: permission_denied: read_package`。
   workflow 自身的 `permissions: packages: write` 与 `docker/login-action` 用 `${{ secrets.GITHUB_TOKEN }}` 都正确 —— **不是 workflow 的问题**。
-- **根因**：这两个 ghcr 包是**早先由个人 PAT 手工推送**创建的（`neilico-agent` 当时甚至挂在**另一个仓库** `aceneil/neilico-agent` 名下），包所有者是用户账号而不是仓库 → 仓库级 `GITHUB_TOKEN` 对它们**没有写权限**（`allinone` 连读都被拒）。
+- **根因**：这两个 ghcr 包是**早先由个人 PAT 手工推送**创建的（`neilico-agent` 当时甚至挂在**另一个仓库** `aceneil/neilico-agent` 名下），包所有者是用户账号而不是仓库 → 仓库级 `GITHUB_TOKEN` 对它们**没有写权限**（`server` 连读都被拒）。
 - **修复（方案 A，已执行）**：删掉这两个旧包 → 再 `gh workflow run images.yml` 由仓库自带 token 重建。用户命名空间下的容器包可以**直接整包删除**（`DELETE /user/packages/container/<name>` 会连版本一起删，不必逐个删版本；删除需要 classic PAT 带 `delete:packages`）。新包**继承仓库可见性**并自动链接到 `aceneil/neilico`。
-- **结果**：run [`38030400273`](https://github.com/aceneil/neilico/actions/runs/38030400273) **success** —— `Build neilico-agent` 1m42s、`Build neilico-allinone` 7m45s，两个 job 全绿。
+- **结果**：run [`38030400273`](https://github.com/aceneil/neilico/actions/runs/38030400273) **success** —— `Build neilico-agent` 1m42s、`Build neilico-server` 7m45s，两个 job 全绿。
   - `ghcr.io/aceneil/neilico-agent:latest` = `sha256:7dde59c8ec4d544e2756f3150c90bb628f67791288e675875eb79504eb14ea56`（public ✓ 匿名可拉 ✓，repo=`aceneil/neilico`）
-  - `ghcr.io/aceneil/neilico-allinone:latest` = `sha256:f43710b9eb16e5a21275a63d89d47c774c0b8aee9ae119d2410d439c6941f738`（**重建后变为 public** —— 删包重建 + 公开仓库的必然结果，原先为 private）
+  - `ghcr.io/aceneil/neilico-server:latest` = `sha256:f43710b9eb16e5a21275a63d89d47c774c0b8aee9ae119d2410d439c6941f738`（**重建后变为 public** —— 删包重建 + 公开仓库的必然结果，原先为 private）
   - 两个包都同时带 `sha-1133c2a` 与 `latest` 标签（1133c2a = 触发时的 main HEAD）。
 - **⚠️ 判据（下次直接用）**：**包的创建方式决定写权限** —— 用 PAT 建的包，仓库 `GITHUB_TOKEN` 写不进去（会报 `permission_denied: write_package` / `read_package`）；要修只能删包让 CI 重建，或改由公开仓库的 workflow 发布。另：`gh api -X PATCH /user/packages/... -f visibility=public` 对用户命名空间的容器包**无效**，可见性只能靠「从公开仓库发布」或网页 UI。
 - **⚠️ 匿名可拉的判据（别被误导）**：`curl -sI https://ghcr.io/v2/<owner>/<pkg>/manifests/latest` **永远返回 401** —— 那只是 ghcr 的标准 bearer 挑战，公开包也一样。正确做法：先取**匿名 token**
@@ -349,13 +349,13 @@ cd deploy/helm && bash neilico/ci/verify.sh
 
 - **动作**：`git revert --no-edit c647f8d` → 提交 **`9f0a609`**（唯一改动 `dashboard/src/styles/main.css`，2 212 → 1 857 行，**−355 行**）。其余提交一律保留（服务端策略锁定 `459e6f8`、README/文档、CI 全在）。
 - **产物证据（回退判据）**：回退前线上 `index-DPM_XEKZ.js` + `index-CAs5JOlb.css` → 回退后 **`index-BMdHia78.js` + `index-Ct6jKRtv.css`**，且线上 JS/CSS 与仓库 `dashboard/dist` 构建产物 **sha256 逐字节相同**（JS `54d14905…`、CSS `5d5df8b4…`）。git 级判据：`git diff c647f8d^ HEAD -- dashboard/` **为空**。
-- **部署**：`neilico-allinone:local` 重建为 **`e0a4004543c0`**，容器 `neilico` 重建于 `2026-10-17 02:10:54 CST`，`healthy`，`/healthz` → `{"db":"up","status":"ok","version":"v1-single-20261003"}`（VERSION 参数不变，故版本串未变）。
+- **部署**：`neilico-server:local` 重建为 **`e0a4004543c0`**，容器 `neilico` 重建于 `2026-10-17 02:10:54 CST`，`healthy`，`/healthz` → `{"db":"up","status":"ok","version":"v1-single-20261003"}`（VERSION 参数不变，故版本串未变）。
 - **验收**：`/api/v1/{nodes,proxy-hosts,stream-rules,device-policies}` 带 token **200** / 不带 token **401**；`/remote-desktop/config` → `available:true`（public_key 44B）；深链 `/nodes /certificates /pki /alerts /remote-desktop` → **200**；端口转发规则 1 条 `running`；`dashboard && npm run e2e`（仓库自带 Playwright，含「登录表单哑火」回归护栏）**4/4 PASS**。
 - **⚠️ 教训①：`docker cp` 打补丁的「已上线」不是部署，验收要看镜像**。本轮 manager 先做了 `git revert` + 构建 + 把 dist **`docker cp` 进运行中容器**，线上 `index.html` 立刻指向回退版（肉眼/curl 都像成功 ✗），但 **`docker diff neilico` 会显示 `A /opt/neilico/dashboard/assets/*` = 只是运行层补丁**，容器一重建就回到新 UI ✗。判定口径：**`docker diff <ctr> | grep dashboard` 必须为空**（产物烤进镜像）+ 直接读镜像内 `index.html`。
-- **⚠️ 教训②：本仓的部署路径是「本地 build」，不是 pull**。`docker-compose.neilico.yaml` 里 `app` 只有 `build:`（context=仓库根）+ `image: neilico-allinone:local`，**没有 registry 镜像** → `docker compose pull app` 必然失败；正确动作是 `up -d --build app`（要保留 `args.VERSION`，否则 `/healthz` 的版本串会从 `v1-single-20261003` 变成镜像默认 `dev`）。**RustDesk 那一级（`third_party` vendored cargo build）一旦缓存失效要跑 12m12s**，整轮构建约 14 min。
+- **⚠️ 教训②：本仓的部署路径是「本地 build」，不是 pull**。`docker-compose.neilico.yaml` 里 `app` 只有 `build:`（context=仓库根）+ `image: neilico-server:local`，**没有 registry 镜像** → `docker compose pull app` 必然失败；正确动作是 `up -d --build app`（要保留 `args.VERSION`，否则 `/healthz` 的版本串会从 `v1-single-20261003` 变成镜像默认 `dev`）。**RustDesk 那一级（`third_party` vendored cargo build）一旦缓存失效要跑 12m12s**，整轮构建约 14 min。
 - **⚠️ 教训③：远程名是 `public` 不是 `origin`**，且本机无 credential helper、GitHub SSH key 未授权 → `git push` 直接 `could not read Username`。可行路径：`GH_TOKEN`（值在 `~/.hermes/.env`）+ 内联 credential helper（`git -c credential.helper='!f(){ echo username=aceneil; echo "password=$GH_TOKEN"; };f' push public main`），**令牌不进 URL、不回显**。
 - **⚠️ 教训④：两处「假信号」别当真**：`git revert` 若同一提交已被别的会话回退过，会打印 `nothing to commit, working tree clean` + exit 1（**不是失败**，先 `git log` 看有没有 revert 提交）；用 JS 直接写 `input.value` + `dispatchEvent` 后点按钮、看到 0 个 `/api/` 请求，**不等于表单坏了**（AntDV 的 model 未必更新）——判据用仓库自带 `npm run e2e`。
-- 回滚点：要回到「大屏适配」那版 UI，用本机仍留着的 `ghcr.io/aceneil/neilico-allinone:latest`（`4cbfd8ab`，CI 由 `c647f8d` 构建）或从 `c647f8d` 重新 build。
+- 回滚点：要回到「大屏适配」那版 UI，用本机仍留着的 `ghcr.io/aceneil/neilico-server:latest`（`4cbfd8ab`，CI 由 `c647f8d` 构建）或从 `c647f8d` 重新 build。
 
 ## 仪表盘首页大屏布局修复（2026-10-19，Codex 执行 + manager 复验并部署）
 
@@ -405,3 +405,14 @@ cd deploy/helm && bash neilico/ci/verify.sh
 - 推送脚本：`~/.hermes/cache/scratch/push-agent-image.sh`（令牌经 stdin 传给 `docker login`，不回显）。
 
 
+
+## 命名统一：allinone → server（2026-10-19）
+
+- **原因**：对外不要出现 "allinone" 字样；统一叫 **server**（单容器控制面）。
+- **改动**（全仓 16 个文件 + 部署目录）：
+  - 目录 `deploy/allinone/` → **`deploy/server/`**（`git mv`，Dockerfile/entrypoint/compose/env 示例一并移动）；
+  - 镜像 `neilico-allinone` → **`neilico-server`**；本地 tag `neilico-server:local`；
+  - CI job / cache scope / 摘要 / `ghcr.io/aceneil/neilico-allinone` → **`ghcr.io/aceneil/neilico-server`**；
+  - 文案里的 "all-in-one" 统一为 "single-container"/「单容器」，entrypoint 日志前缀 `[neilico-server]`。
+- **部署侧同步**：`$HOME/Documents/Docker/docker-compose.neilico.yaml` 的 `dockerfile:` 与 `image:` 已改（改前备份 `.bak-<时间戳>`，并用 YAML 解析断言 dockerfile/image/container_name 三项）；
+- ⚠️ ghcr 上会**新建** `neilico-server` 包（旧的 `neilico-allinone` 不会被自动删除，可手动删）；新包由公开仓库 CI 构建 → 默认 public。

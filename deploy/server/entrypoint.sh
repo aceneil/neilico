@@ -11,11 +11,11 @@ POSTGRES_LOG="${POSTGRES_LOG:-/var/log/neilico/postgres.log}"
 export PGDATA PGHOST PGPORT POSTGRES_DB POSTGRES_USER
 
 log() {
-    printf '[neilico-allinone] %s\n' "$*"
+    printf '[neilico-server] %s\n' "$*"
 }
 
 fail() {
-    printf '[neilico-allinone] ERROR: %s\n' "$*" >&2
+    printf '[neilico-server] ERROR: %s\n' "$*" >&2
     exit 1
 }
 

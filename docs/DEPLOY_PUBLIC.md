@@ -8,13 +8,14 @@
 
 | 件 | 位置 / 说明 |
 | :--- | :--- |
-| 控制面镜像 | `ghcr.io/aceneil/neilico-allinone:latest`（单容器，内含控制面+内嵌 agent+前端） |
+| 控制面镜像 | `ghcr.io/aceneil/neilico-server:latest`（单容器，内含控制面+内嵌 agent+前端） |
 | 数据卷 | Postgres 数据目录（本机为 `Docker/data/neilico/pg`，可整目录搬走或全新开始） |
 | env | `Docker/data/neilico/neilico.env`（**新机器建议重新生成，不要沿用旧 JWT/密码**） |
 | 设备侧镜像 | `ghcr.io/aceneil/neilico-agent:latest`（**public，可直接拉**） |
 
-⚠️ `neilico-allinone` 包默认 **private**：要么在新机器上 `docker login ghcr.io`，
-要么在 GitHub 网页把包改成 Public（`https://github.com/users/aceneil/packages/container/neilico-allinone/settings`）。
+`neilico-server` 包由**公开仓库的 CI** 构建，因此默认 **public**（匿名可拉）。
+若该包曾被个人 PAT 手工推送过而显示 private，只能删包让 CI 重建，或在网页把可见性改成 Public
+（`https://github.com/users/aceneil/packages/container/neilico-server/settings`）。
 
 ## 1. 必须改的环境变量
 
@@ -43,7 +44,7 @@
 
 ```bash
 # 新机器上
-docker login ghcr.io            # 若 allinone 包仍是 private
+docker login ghcr.io            # 仅当 server 包不是 public 时才需要
 mkdir -p data/neilico && cp <你改好的>neilico.env data/neilico/neilico.env
 docker compose -f docker-compose.neilico.yaml up -d
 curl -fsS http://127.0.0.1:<SERVER_PORT>/healthz     # 期望 {"db":"up","status":"ok",...}
@@ -112,7 +113,7 @@ ping -c2 <对端虚拟IP>                                   # Mesh（在设备�
 ## 7. 升级镜像（避免踩过的坑）
 
 ```bash
-docker pull ghcr.io/aceneil/neilico-allinone:latest
+docker pull ghcr.io/aceneil/neilico-server:latest
 docker compose -p <原项目名> up -d --force-recreate     # 注意 -p 必须与原项目名一致，否则会换空卷→丢数据
 docker inspect <容器> --format '{{.Image}}'              # 确认镜像 ID 真的变了，不要只看 pull 输出
 ```

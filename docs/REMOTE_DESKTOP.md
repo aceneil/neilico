@@ -8,7 +8,7 @@ NEILICO 的「远程桌面」能力：控制面下发**自建 RustDesk 服务器
 [rustdesk/rustdesk-server](https://github.com/rustdesk/rustdesk-server)（hbbs/hbbr 服务端）。
 
 > 本页覆盖 **控制面 + Dashboard** 的 NEILICO 侧集成。RustDesk **服务端**（hbbs/hbbr）已
-> **vendored 进本仓**并由 allinone 镜像**自行编译**、由控制面**按需拉起**（不再依赖外部容器/镜像），
+> **vendored 进本仓**并由 server 镜像**自行编译**、由控制面**按需拉起**（不再依赖外部容器/镜像），
 > 见下文「自建与按需模式」。Flutter 客户端不在本轮范围。
 
 ## 组成
@@ -29,7 +29,7 @@ NEILICO 的「远程桌面」能力：控制面下发**自建 RustDesk 服务器
 ### 工作原理
 
 - **源码内置**：`third_party/rustdesk-server/`（tag `1.1.16` + 展平的 `hbb_common`）随仓；
-  `vendor.tar.gz` 内含全部 cargo 依赖，`deploy/allinone/Dockerfile` 的 `rustdesk-build` 阶段
+  `vendor.tar.gz` 内含全部 cargo 依赖，`deploy/server/Dockerfile` 的 `rustdesk-build` 阶段
   **完全离线**（`cargo --offline`）编译出 `hbbs`/`hbbr`，装进最终镜像 `/usr/local/bin/`。镜像仍是**单容器**。
 - **按需生命周期**（`RemoteDesktopServer` 进程监管模块，`control-plane/internal/service/rustdesk_server.go`）：
   - `on_demand`（默认）：**无远程桌面活动时不启动** —— 不监听 `21115-21119`、进程数 0。
@@ -57,7 +57,7 @@ NEILICO 的「远程桌面」能力：控制面下发**自建 RustDesk 服务器
 
 ### 密钥位置与迁移铁律
 
-- 密钥目录由 `NEILICO_RD_KEY_DIR` 指定（默认 `/var/lib/neilico/rustdesk`，allinone 部署里绑定挂载
+- 密钥目录由 `NEILICO_RD_KEY_DIR` 指定（默认 `/var/lib/neilico/rustdesk`，server 部署里绑定挂载
   宿主 `data/neilico/rustdesk/`），权限 **700**，密钥文件 **600**。
 - hbbs 首次启动自动生成 `id_ed25519`（**私钥**）与 `id_ed25519.pub`（**公钥**）；hbbr 与 hbbs 共用同一目录，
   读到的是**同一把** Key。
@@ -74,7 +74,7 @@ NEILICO 的「远程桌面」能力：控制面下发**自建 RustDesk 服务器
 
 ## 快速启用
 
-1. **服务端已内置**：hbbs/hbbr 由 allinone 镜像从 `third_party/rustdesk-server/` 自行编译，
+1. **服务端已内置**：hbbs/hbbr 由 server 镜像从 `third_party/rustdesk-server/` 自行编译，
    无需单独部署；镜像发布 `21115/21116/21117/21118/21119`（`21116` 兼 UDP）。首次启动（或首次被触发）
    会生成密钥对，其中 `id_ed25519.pub` 是**公钥**（落在 `NEILICO_RD_KEY_DIR`）。
 2. **让控制面能读到公钥**：绑定挂载密钥目录并把 `NEILICO_RD_KEY_DIR` 指过去（`NEILICO_RD_PUBLIC_KEY_FILE`
@@ -99,7 +99,7 @@ NEILICO 的「远程桌面」能力：控制面下发**自建 RustDesk 服务器
 | `NEILICO_RD_RELAY_HOST` | （留空） | 非空则给 hbbs 传 `-r <relay_host>` |
 
 YAML 形态见 `control-plane/configs/config.example.yaml` 的 `remote_desktop:` 段；
-单容器部署的 env 示例见 `deploy/allinone/.env.example`。
+单容器部署的 env 示例见 `deploy/server/.env.example`。
 
 ### 端口含义
 
@@ -298,7 +298,7 @@ curl -fsS -X PATCH http://<host>:13000/api/v1/remote-desktop/device-policies/<no
 
 ## 与 P1 部署的对应关系（已由「自建与按需模式」取代）
 
-> **注意**：下文的「P1 外部部署」是历史形态。自本轮起 hbbs/hbbr 已 **vendored 进本仓、由 allinone 镜像
+> **注意**：下文的「P1 外部部署」是历史形态。自本轮起 hbbs/hbbr 已 **vendored 进本仓、由 server 镜像
 > 自行编译、由控制面按需拉起**，不再依赖外部容器/镜像。旧的外部 `docker-compose.rustdesk.yaml`
 > **仅作回滚保留**，文档不再推荐使用。以下描述保留以便理解迁移。
 

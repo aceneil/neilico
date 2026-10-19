@@ -12,10 +12,10 @@ services:
       # 上下文 = 仓库根：多阶段构建直接 COPY control-plane/ 与 dashboard/，
       # 不依赖任何源码打包快照（包会过期 → 构建到旧代码）
       context: ../..
-      dockerfile: deploy/allinone/Dockerfile
+      dockerfile: deploy/server/Dockerfile
       args:
         VERSION: v1
-    image: neilico-allinone:local
+    image: neilico-server:local
     container_name: neilico
     restart: unless-stopped
     env_file:

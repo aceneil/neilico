@@ -2,7 +2,7 @@
 
 # NEILICO
 
-NEILICO is a self-hosted control plane for NAT traversal and mesh networking: **domain reverse proxying**, **TCP/UDP port forwarding**, **WireGuard virtual networks**, **subnet routing**, and **remote desktop** (RustDesk) managed from one web console. The control plane, Dashboard, PostgreSQL, and the RustDesk `hbbs`/`hbbr` servers ship as a **single all-in-one container**; each sub-host runs an agent that receives and applies its WireGuard configuration.
+NEILICO is a self-hosted control plane for NAT traversal and mesh networking: **domain reverse proxying**, **TCP/UDP port forwarding**, **WireGuard virtual networks**, **subnet routing**, and **remote desktop** (RustDesk) managed from one web console. The control plane, Dashboard, PostgreSQL, and the RustDesk `hbbs`/`hbbr` servers ship as a **single single-container container**; each sub-host runs an agent that receives and applies its WireGuard configuration.
 
 Remote sessions are initiated by the separate [NEILICO client](https://github.com/aceneil/neilico-client); the web UI is for management and observability only.
 
@@ -35,7 +35,7 @@ Remote sessions are initiated by the separate [NEILICO client](https://github.co
 
 ```mermaid
 flowchart LR
-  U[Browser / TCP-UDP client / NEILICO client] --> C[All-in-one control plane<br/>API + Dashboard + PostgreSQL<br/>on-demand hbbs / hbbr]
+  U[Browser / TCP-UDP client / NEILICO client] --> C[Single-container control plane<br/>API + Dashboard + PostgreSQL<br/>on-demand hbbs / hbbr]
   C -->|Domain reverse proxy / port forwarding| W[WireGuard virtual network]
   W --> A1[Agent - sub-host]
   W --> A2[Agent - sub-host]
@@ -106,7 +106,7 @@ When a badge looks wrong, check in this order: `ip -brief addr show wg0` → `ip
 | `agent/` | Sub-host agent, capability detection, WireGuard setup, routing, and forwarding |
 | `dashboard/` | Vue 3 + Ant Design Vue Dashboard |
 | `third_party/rustdesk-server/` | Vendored RustDesk Server `hbbs`/`hbbr` (AGPL-3.0) |
-| `deploy/` | All-in-one, agent, Compose, and Helm deployment files |
+| `deploy/` | Single-container, agent, Compose, and Helm deployment files |
 | [`docs/`](docs/README.md) | Specifications, enrollment, operations, remote desktop, and network-boundary documentation |
 | `cli/` | `neilicoctl` command-line tool |
 | `scripts/` | Smoke, TLS, verification, and operations scripts |
@@ -115,10 +115,10 @@ The Flutter device-management app, formerly under `desktop/`, and the `rust-core
 
 ## Quick start
 
-Use the reference Compose file [`deploy/allinone/docker-compose.yml`](deploy/allinone/docker-compose.yml) and environment template [`deploy/allinone/.env.example`](deploy/allinone/.env.example). Point the Compose `env_file` and persistent volumes at a data directory of your choice before starting.
+Use the reference Compose file [`deploy/server/docker-compose.yml`](deploy/server/docker-compose.yml) and environment template [`deploy/server/.env.example`](deploy/server/.env.example). Point the Compose `env_file` and persistent volumes at a data directory of your choice before starting.
 
 ```bash
-cd deploy/allinone
+cd deploy/server
 cp .env.example <your-data-root>/neilico.env
 # Generate and replace POSTGRES_PASSWORD, NEILICO_AUTH_JWT_SECRET,
 # NEILICO_BOOTSTRAP_ADMIN_EMAIL, and NEILICO_BOOTSTRAP_ADMIN_PASSWORD.
@@ -149,7 +149,7 @@ Real WireGuard operation requires `NET_ADMIN` or equivalent administrator rights
 
 ## Remote desktop
 
-RustDesk `hbbs` for ID/signaling and `hbbr` for relay are compiled into the all-in-one image and started by the control plane on demand. The default `on_demand` mode starts them only when needed and stops them after `NEILICO_RD_IDLE_TIMEOUT` of inactivity. `always_on` and `off` are also supported. The ports are `21115-21119`, with `21116` used over both TCP and UDP; it is normal for nothing to listen while the service is disabled.
+RustDesk `hbbs` for ID/signaling and `hbbr` for relay are compiled into the single-container image and started by the control plane on demand. The default `on_demand` mode starts them only when needed and stops them after `NEILICO_RD_IDLE_TIMEOUT` of inactivity. `always_on` and `off` are also supported. The ports are `21115-21119`, with `21116` used over both TCP and UDP; it is normal for nothing to listen while the service is disabled.
 
 `hbbr` starts with `-k _` for RustDesk protocol-key validation. This is not a NEILICO account or device allowlist. By default, the ID/relay endpoint accepts registration from any client that can reach it. Public deployments must restrict exposure and source access. Encryption is provided by the RustDesk protocol. The web UI manages devices and policies but exposes no connection entry point. Download and platform status for the separate client are documented in [aceneil/neilico-client](https://github.com/aceneil/neilico-client).
 

@@ -3,8 +3,8 @@
 # NEILICO 单体容器（PostgreSQL + 控制面 API + 内置反代 + Dashboard 静态资源 全在一个容器里）
 #
 # ⚠️ 构建上下文必须是**仓库根**，因为要在不同 stage 里直接 COPY 两个源码目录：
-#     cd <repo> && docker build -f deploy/allinone/Dockerfile -t neilico-allinone:local .
-#   compose 里对应 context: ../..  dockerfile: deploy/allinone/Dockerfile
+#     cd <repo> && docker build -f deploy/server/Dockerfile -t neilico-server:local .
+#   compose 里对应 context: ../..  dockerfile: deploy/server/Dockerfile
 #   （不要用「打包源码成 tar 再喂给构建」的做法：源码一改包就过期，构建的会是旧代码）
 
 # ── stage 1: 前端产物 ────────────────────────────────────────────────
@@ -104,7 +104,7 @@ COPY --from=agent-build /out/downloads/ /opt/neilico/downloads-seed/
 COPY --from=rustdesk-build /out/neilico-rd/hbbs /usr/local/bin/hbbs
 COPY --from=rustdesk-build /out/neilico-rd/hbbr /usr/local/bin/hbbr
 COPY --from=control-build /src/control-plane/configs/config.example.yaml /opt/neilico/configs/config.example.yaml
-COPY deploy/allinone/entrypoint.sh /usr/local/bin/neilico-entrypoint.sh
+COPY deploy/server/entrypoint.sh /usr/local/bin/neilico-entrypoint.sh
 RUN chmod 0755 /usr/local/bin/neilico-entrypoint.sh /usr/local/bin/neilico-control-api /usr/local/bin/hbbs /usr/local/bin/hbbr /usr/local/share/neilico/downloads/neilico-agent-* /opt/neilico/downloads-seed/neilico-agent-* \
     && mkdir -p /var/lib/neilico/rustdesk \
     && chown -R neilico:neilico /var/lib/neilico/rustdesk
