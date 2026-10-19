@@ -103,14 +103,6 @@ pre {
 }
 
 /* 品牌图标（真实 logo）：保持原有 42×42 占位，去掉蓝色底与描边 */
-.brand__mark--img {
-  object-fit: contain;
-  background: transparent;
-  border: 0;
-  border-radius: 10px;
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.28);
-}
-
 .brand__mark {
   display: grid;
   flex: 0 0 auto;
@@ -124,6 +116,16 @@ pre {
   box-shadow: 0 8px 22px rgba(22, 119, 255, 0.28);
   font-size: 22px;
   font-weight: 800;
+}
+
+/* 真实 logo 作为 brand 图标：去掉占位用的蓝色底/描边/蓝色阴影
+   （必须写在 .brand__mark 之后，且提高特异性，否则被基础规则覆盖） */
+.brand__mark.brand__mark--img {
+  object-fit: contain;
+  background: none;
+  border: 0;
+  border-radius: 9px;
+  box-shadow: none;
 }
 
 .brand strong,
