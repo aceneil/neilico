@@ -424,3 +424,4 @@ cd deploy/helm && bash neilico/ci/verify.sh
   - **透明处理的关键**：只把「与画布边缘连通的白色」变透明（flood fill），不能按"接近白"一刀切——否则白色图形本身会被抠掉（第一版就踩了这个坑，图标变成"黑块 + 镂空图形"）。
 - 使用位置：`index.html`（favicon / apple-touch-icon / theme-color）、侧栏 brand 与登录页 brand（`brand__mark--img`，42×42）、README 顶部（`docs/assets/logo.png`）、Homepage 卡片（`data/homepage/config/icons/neilico.png` → `services.yaml` 的 `icon`）。
 - 顺带修掉了此前的 `/favicon.ico` 404。
+- **Homepage 坑**：往 `data/homepage/config/icons/` 放新图标后，**必须重启 homepage 容器**（Next.js 在启动时缓存 public 目录清单），否则新文件一直 404；`network.svg` 等既有文件不受影响，容易误判成路径写错。
