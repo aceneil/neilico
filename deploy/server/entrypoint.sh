@@ -169,6 +169,11 @@ fi
 
 # 自托管 RustDesk 密钥目录：确保控制面运行用户可写，权限收紧到 700（密钥目录约定）。
 # 目录可能是宿主绑定挂载，docker 首次创建时为 root 属主，故这里兜底 chown 给控制面用户。
+# 运行期状态目录（bootstrap.env 回写）：绑定挂载时宿主目录默认 root，交给控制面用户
+state_dir="${NEILICO_STATE_DIR:-/var/lib/neilico}"
+mkdir -p "$state_dir" 2>/dev/null || true
+chown -R "$CONTROL_USER" "$state_dir" 2>/dev/null || true
+
 rd_key_dir="${NEILICO_RD_KEY_DIR:-/var/lib/neilico/rustdesk}"
 mkdir -p "$rd_key_dir" 2>/dev/null || true
 chown -R "$CONTROL_USER" "$rd_key_dir" 2>/dev/null || true

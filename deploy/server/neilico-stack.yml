@@ -25,12 +25,9 @@ services:
       NEILICO_BOOTSTRAP_ADMIN_EMAIL: ""
       NEILICO_BOOTSTRAP_ADMIN_PASSWORD: ""
     volumes:
-      - neilico_pg:/var/lib/postgresql/data
-      - neilico_state:/var/lib/neilico
-
-volumes:
-  neilico_pg:
-  neilico_state:
+      # 相对 docker-compose.yml 所在目录；首次启动会自动建目录并修正属主
+      - ./neilico/data:/var/lib/postgresql/data
+      - ./neilico/state:/var/lib/neilico
 
 # ── 需要下面这些功能时再加，不加不影响启动 ────────────────────────────────
 #    ports:
