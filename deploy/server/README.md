@@ -46,6 +46,37 @@ curl -fsS http://<IP>:11333/healthz
 
 然后在控制台「域名与代理」登记域名 + 规则（目标填 `节点ID:端口`）。
 
+## 不想挂 docker.sock？
+
+「反向代理」页要看到 Docker 里的 nginx/caddy，就必须能访问 Docker API。除了挂 socket，
+还可以在**同网络**里放一个只读的 socket 代理，NEILICO 通过 TCP 连它：
+
+```yaml
+services:
+  docker-proxy:
+    image: tecnativa/docker-socket-proxy:latest
+    restart: unless-stopped
+    environment:
+      CONTAINERS: 1        # 只放开容器列表（探测够用）
+      # 需要"写入并热重载"时再加：EXEC: 1  POST: 1
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    # 不要 publish 端口，只在 compose 内网可达
+
+  server:
+    environment:
+      DOCKER_HOST: tcp://docker-proxy:2375
+```
+
+这样 NEILICO 容器里既没有 socket 文件，也拿不到完整 Docker 权限，只有「列容器」一个能力。
+
+另外两条更"干净"的路子：
+
+1. **干脆不接管**：宿主 Nginx 前面手动加一段 `proxy_pass http://<neilico>:11333` 即可，
+   NEILICO 完全不碰 Docker（见下一节）。
+2. **原生安装的 Nginx/Caddy**（不是容器）：不需要 socket，镜像会直接看
+   `/usr/bin/nginx` 与 `/etc/nginx`（需要把配置目录挂进来）。
+
 ## 复用宿主已有的 Nginx
 
 把面板只绑回环，交给宿主 Nginx 终止 TLS：

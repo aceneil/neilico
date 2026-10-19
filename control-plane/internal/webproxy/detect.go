@@ -114,7 +114,8 @@ func DetectWith(ctx context.Context, opts Options) Result {
 	if socket == "" {
 		socket = dockerSocketPath()
 	}
-	if list, err := dockerListViaSocket(ctx, socket); err == nil {
+	network, addr, baseURL := dockerEndpoint(socket)
+	if list, err := dockerListAt(ctx, network, addr, baseURL); err == nil {
 		for _, c := range candidatesFromDocker(list, opts.WriteGate) {
 			res.Candidates = append(res.Candidates, c)
 		}
@@ -208,28 +209,54 @@ type dockerContainer struct {
 	} `json:"Ports"`
 }
 
+// dockerSocketPath 返回 Docker 端点：DOCKER_HOST 优先（unix:// 或 tcp://），否则默认 socket。
 func dockerSocketPath() string {
-	if v := strings.TrimSpace(os.Getenv("DOCKER_HOST")); strings.HasPrefix(v, "unix://") {
-		return strings.TrimPrefix(v, "unix://")
+	if v := strings.TrimSpace(os.Getenv("DOCKER_HOST")); v != "" {
+		return v
 	}
 	return "/var/run/docker.sock"
 }
 
-// dockerListViaSocket 直接调 Docker Engine API 的 /containers/json。
-func dockerListViaSocket(ctx context.Context, socket string) ([]dockerContainer, error) {
-	if _, err := os.Stat(socket); err != nil {
-		return nil, err
+// dockerEndpoint 把端点字符串拆成 (network, addr, baseURL)。
+//
+//	unix:///var/run/docker.sock  → unix + 路径
+//	tcp://proxy:2375             → tcp  + host:port（docker-socket-proxy 场景）
+//	http://proxy:2375            → tcp
+func dockerEndpoint(raw string) (network, addr, baseURL string) {
+	v := strings.TrimSpace(raw)
+	switch {
+	case strings.HasPrefix(v, "unix://"):
+		return "unix", strings.TrimPrefix(v, "unix://"), "http://docker"
+	case strings.HasPrefix(v, "tcp://"):
+		host := strings.TrimPrefix(v, "tcp://")
+		return "tcp", host, "http://" + host
+	case strings.HasPrefix(v, "http://"), strings.HasPrefix(v, "https://"):
+		host := strings.TrimPrefix(strings.TrimPrefix(v, "http://"), "https://")
+		return "tcp", host, v
+	default:
+		return "unix", v, "http://docker"
+	}
+}
+
+// dockerListAt 调 Docker Engine API 的 /containers/json。
+func dockerListAt(ctx context.Context, network, addr, baseURL string) ([]dockerContainer, error) {
+	if network == "unix" {
+		if _, err := os.Stat(addr); err != nil {
+			return nil, err
+		}
+	} else if strings.TrimSpace(addr) == "" {
+		return nil, fmt.Errorf("docker endpoint %q is empty", addr)
 	}
 	client := &http.Client{
 		Timeout: 5 * time.Second,
 		Transport: &http.Transport{
 			DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
 				var d net.Dialer
-				return d.DialContext(ctx, "unix", socket)
+				return d.DialContext(ctx, network, addr)
 			},
 		},
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://docker/containers/json", nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, baseURL+"/containers/json", nil)
 	if err != nil {
 		return nil, err
 	}

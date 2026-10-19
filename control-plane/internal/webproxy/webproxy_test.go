@@ -3,6 +3,8 @@ package webproxy
 import (
 	"context"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
@@ -147,4 +149,46 @@ func hasHint(hints []string, sub string) bool {
 		}
 	}
 	return false
+}
+
+func TestDockerEndpointParsing(t *testing.T) {
+	cases := []struct{ in, network, addr, base string }{
+		{"unix:///var/run/docker.sock", "unix", "/var/run/docker.sock", "http://docker"},
+		{"tcp://proxy:2375", "tcp", "proxy:2375", "http://proxy:2375"},
+		{"http://127.0.0.1:2375", "tcp", "127.0.0.1:2375", "http://127.0.0.1:2375"},
+		{"/var/run/docker.sock", "unix", "/var/run/docker.sock", "http://docker"},
+	}
+	for _, c := range cases {
+		network, addr, base := dockerEndpoint(c.in)
+		if network != c.network || addr != c.addr || base != c.base {
+			t.Fatalf("%s => (%s,%s,%s), want (%s,%s,%s)", c.in, network, addr, base, c.network, c.addr, c.base)
+		}
+	}
+}
+
+// 通过 TCP 端点（docker-socket-proxy 那种）也能探测，不需要挂 socket 文件。
+func TestDetectViaTCPProxy(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/containers/json" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		_, _ = w.Write([]byte(`[{"Names":["/edge-nginx"],"Image":"nginx:alpine","Ports":[{"PublicPort":8080,"PrivatePort":80,"Type":"tcp"}]},{"Names":["/db"],"Image":"postgres:16"}]`))
+	}))
+	defer srv.Close()
+
+	opts := Options{
+		LookPath:     func(string) (string, error) { return "", errors.New("not found") },
+		Stat:         func(string) (os.FileInfo, error) { return nil, errors.New("missing") },
+		Run:          func(context.Context, string, ...string) (string, error) { return "", errors.New("no cli") },
+		DockerSocket: srv.URL,
+	}
+	res := DetectWith(context.Background(), opts)
+	if len(res.Candidates) != 1 {
+		t.Fatalf("expected 1 candidate, got %#v", res.Candidates)
+	}
+	c := res.Candidates[0]
+	if c.Kind != KindNginx || c.Name != "edge-nginx" || c.Runtime != RuntimeDocker {
+		t.Fatalf("unexpected candidate: %#v", c)
+	}
 }
