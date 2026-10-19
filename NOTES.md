@@ -406,13 +406,13 @@ cd deploy/helm && bash neilico/ci/verify.sh
 
 
 
-## 命名统一：allinone → server（2026-10-19）
+## 命名统一：镜像与部署目录改为 server（2026-10-19）
 
-- **原因**：对外不要出现 "allinone" 字样；统一叫 **server**（单容器控制面）。
+- **原因**：对外统一叫 **server**（单容器控制面），不再使用旧名（见 git 历史）。
 - **改动**（全仓 16 个文件 + 部署目录）：
   - 目录 `deploy/allinone/` → **`deploy/server/`**（`git mv`，Dockerfile/entrypoint/compose/env 示例一并移动）；
-  - 镜像 `neilico-allinone` → **`neilico-server`**；本地 tag `neilico-server:local`；
-  - CI job / cache scope / 摘要 / `ghcr.io/aceneil/neilico-allinone` → **`ghcr.io/aceneil/neilico-server`**；
+  - 镜像名统一为 **`neilico-server`**；本地 tag `neilico-server:local`；
+  - CI job / cache scope / 摘要 / `ghcr.io/aceneil/neilico-server`；
   - 文案里的 "all-in-one" 统一为 "single-container"/「单容器」，entrypoint 日志前缀 `[neilico-server]`。
 - **部署侧同步**：`$HOME/Documents/Docker/docker-compose.neilico.yaml` 的 `dockerfile:` 与 `image:` 已改（改前备份 `.bak-<时间戳>`，并用 YAML 解析断言 dockerfile/image/container_name 三项）；
-- ⚠️ ghcr 上会**新建** `neilico-server` 包（旧的 `neilico-allinone` 不会被自动删除，可手动删）；新包由公开仓库 CI 构建 → 默认 public。
+- ⚠️ ghcr 上会**新建** `neilico-server` 包（旧包不会被自动删除，可手动删）；新包由公开仓库 CI 构建 → 默认 public。
