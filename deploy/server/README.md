@@ -10,7 +10,7 @@
 curl -fsSLo neilico-stack.yml \
   https://raw.githubusercontent.com/aceneil/neilico/main/deploy/server/neilico-stack.yml
 
-# 只改两处：POSTGRES_PASSWORD、NEILICO_ENROLL_PUBLIC_URL
+# 只需改 POSTGRES_PASSWORD（接入地址默认取你访问面板时的地址）
 docker compose -f neilico-stack.yml up -d
 curl -fsS http://<IP>:11333/healthz
 ```
@@ -29,7 +29,7 @@ curl -fsS http://<IP>:11333/healthz
 | 键 | 说明 |
 | :--- | :--- |
 | `POSTGRES_PASSWORD` | 必填，缺了容器直接退出 |
-| `NEILICO_ENROLL_PUBLIC_URL` | 设备接入命令里回连的地址，必须是用户实际访问的地址 |
+| `NEILICO_ENROLL_PUBLIC_URL` | **可留空**：留空时用你打开面板时的地址（Host）生成接入命令；面板在反向代理后或设备要走另一个域名时再显式指定 |
 | `NEILICO_BOOTSTRAP_ADMIN_EMAIL` / `_PASSWORD` | 留空 = 首次注册；填了就用它建首个管理员 |
 
 监听端口、数据库驱动、Dashboard 目录、日志格式、下载目录都写在镜像里，**不需要在 compose 里重复**。

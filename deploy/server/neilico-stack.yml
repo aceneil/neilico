@@ -18,8 +18,9 @@ services:
     environment:
       # ① 必填：数据库密码，缺了容器直接退出
       POSTGRES_PASSWORD: "neilico"
-      # ② 设备接入命令里回连的地址（换成你的 IP 或域名）
-      NEILICO_ENROLL_PUBLIC_URL: "http://your-ip-or-domain:11333"
+      # ② 无需配置：留空即用「你打开面板时的地址」生成接入命令。
+      #    只有在反向代理后面、或设备应走另一个域名时才需要显式指定：
+      #    NEILICO_ENROLL_PUBLIC_URL: "https://neilico.example.com"
       # ③ 留空 = 首次打开页面时注册管理员
       #    （不写这两行会用镜像内置的 admin@example.com 占位账号）
       NEILICO_BOOTSTRAP_ADMIN_EMAIL: ""
