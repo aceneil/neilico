@@ -1,9 +1,9 @@
-# NEILICO — 单文件部署（只开一个端口 33311）
+# NEILICO — 单文件部署（只开一个端口 11333）
 # ---------------------------------------------------------------------------
 #   docker compose -f neilico-stack.yml up -d
-#   打开 http://<服务器IP>:33311
+#   打开 http://<服务器IP>:11333
 #
-# 只有一个端口：33311 -> 容器内 8080（控制台 + API）。
+# 只有一个端口：11333 -> 容器内 8080（控制台 + API）。
 # 「域名反代 / 端口转发 / 远程桌面」等需要额外端口的模块，文件末尾按需解锁。
 #
 # 数据在具名卷 neilico_pg / neilico_state 里，删容器不丢；**不要 down -v**。
@@ -16,7 +16,7 @@ services:
     container_name: neilico
     restart: unless-stopped
     ports:
-      - "33311:8080"
+      - "11333:8080"
     environment:
       PGDATA: /var/lib/postgresql/data
       POSTGRES_DB: neilico
@@ -51,7 +51,7 @@ volumes:
 
 # ── 需要时再解锁（现在别开，少暴露端口）──────────────────────────────────
 #    ports:
-#      - "33311:8080"
+#      - "11333:8080"
 #      - "18081:8081"                       # 域名反代
 #      - "20000-20004:20000-20004/tcp"      # 端口转发（与 NEILICO_STREAM_PORT_MIN/MAX 一致）
 #      - "20000-20004:20000-20004/udp"
