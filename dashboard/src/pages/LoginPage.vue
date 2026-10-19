@@ -42,7 +42,7 @@ async function submit() {
       <div class="login-visual__grid" aria-hidden="true" />
       <div class="login-visual__content">
         <div class="brand brand--hero">
-          <div class="brand__mark">U</div>
+          <img class="brand__mark brand__mark--img" src="/neilico-icon.png" alt="" />
           <div><strong>NEILICO</strong><span>统一网络管理平台</span></div>
         </div>
         <h1>安全连接每一个节点</h1>

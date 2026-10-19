@@ -1,8 +1,10 @@
 **English** | [简体中文](README.zh-CN.md)
 
+<p align="center"><img src="docs/assets/logo.png" width="104" alt="NEILICO" /></p>
+
 # NEILICO
 
-NEILICO is a self-hosted control plane for NAT traversal and mesh networking: **domain reverse proxying**, **TCP/UDP port forwarding**, **WireGuard virtual networks**, **subnet routing**, and **remote desktop** (RustDesk) managed from one web console. The control plane, Dashboard, PostgreSQL, and the RustDesk `hbbs`/`hbbr` servers ship as a **single single-container container**; each sub-host runs an agent that receives and applies its WireGuard configuration.
+NEILICO is a self-hosted control plane for NAT traversal and mesh networking: **domain reverse proxying**, **TCP/UDP port forwarding**, **WireGuard virtual networks**, **subnet routing**, and **remote desktop** (RustDesk) managed from one web console. The control plane, Dashboard, PostgreSQL, and the RustDesk `hbbs`/`hbbr` servers ship as a **single container**; each sub-host runs an agent that receives and applies its WireGuard configuration.
 
 Remote sessions are initiated by the separate [NEILICO client](https://github.com/aceneil/neilico-client); the web UI is for management and observability only.
 

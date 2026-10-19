@@ -1,8 +1,10 @@
 [English](README.md) | **简体中文**
 
+<p align="center"><img src="docs/assets/logo.png" width="104" alt="NEILICO" /></p>
+
 # NEILICO
 
-NEILICO 是一套自托管的内网穿透与 Mesh 组网控制面：**域名反向代理**、**TCP/UDP 端口转发**、**WireGuard 虚拟网络**、**子网路由**与**远程桌面**（RustDesk）集中在一个 Web 后台里管理。控制面、Dashboard、PostgreSQL 与 RustDesk 服务端（`hbbs`/`hbbr`）打包成**一个 single-container 容器**；各台子主机跑一个 Agent，负责领取并应用 WireGuard 配置。
+NEILICO 是一套自托管的内网穿透与 Mesh 组网控制面：**域名反向代理**、**TCP/UDP 端口转发**、**WireGuard 虚拟网络**、**子网路由**与**远程桌面**（RustDesk）集中在一个 Web 后台里管理。控制面、Dashboard、PostgreSQL 与 RustDesk 服务端（`hbbs`/`hbbr`）打包成**一个单容器（single container）**；各台子主机跑一个 Agent，负责领取并应用 WireGuard 配置。
 
 远程连接本身由独立的 [NEILICO client](https://github.com/aceneil/neilico-client) 发起，Web 只做管理与可视化。
 
@@ -35,7 +37,7 @@ NEILICO 是一套自托管的内网穿透与 Mesh 组网控制面：**域名反�
 
 ```mermaid
 flowchart LR
-  U[浏览器 / TCP-UDP 客户端 / NEILICO 客户端] --> C[single-container 控制面<br/>API + Dashboard + PostgreSQL<br/>按需启动 hbbs / hbbr]
+  U[浏览器 / TCP-UDP 客户端 / NEILICO 客户端] --> C[单容器控制面<br/>API + Dashboard + PostgreSQL<br/>按需启动 hbbs / hbbr]
   C -->|域名反代 / 端口转发| W[WireGuard 虚拟网络]
   W --> A1[Agent · 子主机]
   W --> A2[Agent · 子主机]
@@ -106,7 +108,7 @@ docker run -d --network host --cap-add NET_ADMIN --device /dev/net/tun \
 | `agent/` | 子主机 Agent、能力探测、WireGuard 应用、路由与转发 |
 | `dashboard/` | Vue 3 + Ant Design Vue Dashboard |
 | `third_party/rustdesk-server/` | vendored RustDesk Server `hbbs`/`hbbr`（AGPL-3.0） |
-| `deploy/` | single-container、Agent、Compose 和 Helm 部署文件 |
+| `deploy/` | 单容器、Agent、Compose 和 Helm 部署文件 |
 | [`docs/`](docs/README.md) | 规格、接入、运维、远程桌面和网络边界文档 |
 | `cli/` | `neilicoctl` 命令行 |
 | `scripts/` | 冒烟、TLS、验证和运维脚本 |
@@ -149,7 +151,7 @@ powershell -ExecutionPolicy Bypass -Command "& ([scriptblock]::Create((irm https
 
 ## 远程桌面
 
-RustDesk `hbbs`（ID/信令）和 `hbbr`（中继）已编译进 single-container 镜像，由控制面按需启动。默认 `on_demand` 模式只在有活动时启动，并在空闲超过 `NEILICO_RD_IDLE_TIMEOUT` 后回收；也支持 `always_on` 和 `off`。端口为 `21115-21119`，其中 `21116` 同时使用 TCP/UDP；服务未启用时不监听是正常的。
+RustDesk `hbbs`（ID/信令）和 `hbbr`（中继）已编译进 单容器镜像，由控制面按需启动。默认 `on_demand` 模式只在有活动时启动，并在空闲超过 `NEILICO_RD_IDLE_TIMEOUT` 后回收；也支持 `always_on` 和 `off`。端口为 `21115-21119`，其中 `21116` 同时使用 TCP/UDP；服务未启用时不监听是正常的。
 
 `hbbr` 启动时使用 `-k _` 做 RustDesk 协议 Key 校验，但这不是 NEILICO 账号/设备白名单。ID/中继入口默认接受任何能够到达服务端的客户端注册，公网部署必须自行限制暴露面和访问来源。加密由 RustDesk 协议负责。Web 只管理设备与策略，不提供连接入口。独立客户端的下载方式和平台状态见 [aceneil/neilico-client](https://github.com/aceneil/neilico-client)。
 

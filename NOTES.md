@@ -416,3 +416,11 @@ cd deploy/helm && bash neilico/ci/verify.sh
   - 文案统一为「单容器 / single-container」，entrypoint 日志前缀 `[neilico-server]`。
 - **部署侧同步**：`$HOME/Documents/Docker/docker-compose.neilico.yaml` 的 `dockerfile:` 与 `image:` 已改（改前备份 `.bak-<时间戳>`，并用 YAML 解析断言 dockerfile/image/container_name 三项）；
 - ⚠️ ghcr 上会**新建** `neilico-server` 包（旧包不会被自动删除，可手动删）；新包由公开仓库 CI 构建 → 默认 public。
+
+## 项目图标接入（2026-10-19）
+
+- 源图：用户提供的方形 logo（黑底圆角 + 白色拱形/节点图形 + `neilico` 字标）。
+- 生成（`dashboard/public/`）：`neilico-icon.png`(512)、`neilico-icon-192.png`、`apple-touch-icon.png`(180)、`favicon-32.png`、`favicon.ico`(16/32/48/64/128/256)。
+  - **透明处理的关键**：只把「与画布边缘连通的白色」变透明（flood fill），不能按"接近白"一刀切——否则白色图形本身会被抠掉（第一版就踩了这个坑，图标变成"黑块 + 镂空图形"）。
+- 使用位置：`index.html`（favicon / apple-touch-icon / theme-color）、侧栏 brand 与登录页 brand（`brand__mark--img`，42×42）、README 顶部（`docs/assets/logo.png`）、Homepage 卡片（`data/homepage/config/icons/neilico.png` → `services.yaml` 的 `icon`）。
+- 顺带修掉了此前的 `/favicon.ico` 404。

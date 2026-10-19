@@ -93,7 +93,7 @@ function onUserMenuClick({ key }: { key: string | number }) {
       class="app-sider"
     >
       <div class="brand brand--sider">
-        <div class="brand__mark">U</div>
+        <img class="brand__mark brand__mark--img" src="/neilico-icon.png" alt="" />
         <div v-if="!preferences.sidebarCollapsed">
           <strong>NEILICO</strong>
           <span>统一网络控制台</span>

@@ -102,6 +102,15 @@ pre {
   align-items: center;
 }
 
+/* 品牌图标（真实 logo）：保持原有 42×42 占位，去掉蓝色底与描边 */
+.brand__mark--img {
+  object-fit: contain;
+  background: transparent;
+  border: 0;
+  border-radius: 10px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.28);
+}
+
 .brand__mark {
   display: grid;
   flex: 0 0 auto;
