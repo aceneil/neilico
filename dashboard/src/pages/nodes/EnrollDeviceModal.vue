@@ -1,12 +1,15 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import {
+  AppleOutlined,
   CheckOutlined,
   CopyOutlined,
+  DesktopOutlined,
   GithubOutlined,
   KeyOutlined,
   LinkOutlined,
-  ReloadOutlined
+  ReloadOutlined,
+  WindowsOutlined
 } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
 import { enrollTokensApi } from '@/api/enroll-tokens'
@@ -79,8 +82,35 @@ const commandTabs: Array<{
     key: 'windows',
     label: 'Windows',
     prerequisite: '请在“以管理员身份运行”的 PowerShell 中执行。'
+  },
+  {
+    key: 'client',
+    label: '客户端',
+    prerequisite: '先在目标机器上安装 NEILICO 客户端，再用令牌接入。'
   }
 ]
+
+// 客户端接入链接（由控制面生成，带一次性令牌）
+const clientUri = computed(() => result.value?.commands?.client ?? '')
+
+// 各平台「打开这个链接」的命令：客户端会把地址 + 令牌一起收下
+const clientOpeners = computed(() => {
+  if (!clientUri.value) return []
+  return [
+    { label: 'Windows（PowerShell）', command: `start "" "${clientUri.value}"` },
+    { label: 'macOS / Linux（终端）', command: `open "${clientUri.value}"  # Linux: xdg-open "${clientUri.value}"` }
+  ]
+})
+
+const clientDownloads = [
+  { key: 'windows', label: 'Windows x64', file: 'neilico-client-windows-x64.zip', ready: true },
+  { key: 'macos', label: 'macOS', file: 'neilico-client-macos-x64.zip', ready: false },
+  { key: 'linux', label: 'Linux x64', file: 'neilico-client-linux-x64.zip', ready: false }
+] as const
+
+function downloadUrl(file: string) {
+  return `/downloads/${file}`
+}
 
 const expiryLabel = computed(() => {
   if (!result.value) return ''
@@ -350,7 +380,58 @@ onBeforeUnmount(() => {
       />
       <a-tabs v-if="result" class="enroll-command-tabs" default-active-key="docker">
         <a-tab-pane v-for="tab in commandTabs" :key="tab.key" :tab="tab.label">
-          <div v-if="commandFor(tab.key)" class="enroll-command-card">
+          <!-- 客户端：下载 + 一条令牌链接完成接入 -->
+          <div v-if="tab.key === 'client'" class="enroll-client">
+            <a-alert
+              type="info"
+              show-icon
+              message="客户端用令牌向控制面汇报"
+              description="客户端不是 agent：它拿这串令牌换到「控制面地址 + 身份」，之后自己上报在线状态与远程桌面能力，无需在服务器上开放额外端口。"
+              class="enroll-alert"
+            />
+            <div class="enroll-client-downloads">
+              <a-button
+                v-for="item in clientDownloads"
+                :key="item.key"
+                :type="item.ready ? 'primary' : 'default'"
+                :disabled="!item.ready"
+                :href="item.ready ? downloadUrl(item.file) : undefined"
+                target="_blank"
+              >
+                <WindowsOutlined v-if="item.key === 'windows'" />
+                <AppleOutlined v-else-if="item.key === 'macos'" />
+                <DesktopOutlined v-else />
+                {{ item.label }}{{ item.ready ? '' : '（构建中）' }}
+              </a-button>
+            </div>
+            <div v-if="clientUri" class="enroll-command-card">
+              <div class="enroll-client-label">接入链接</div>
+              <pre class="enroll-command enroll-command--compact"><code>{{ clientUri }}</code></pre>
+              <div class="enroll-command-actions">
+                <span class="enroll-prerequisite">{{ tab.prerequisite }}</span>
+                <a-button type="primary" @click="copyCommand(clientUri)">
+                  <CopyOutlined /> 复制链接
+                </a-button>
+              </div>
+            </div>
+            <a-alert
+              v-else
+              type="warning"
+              show-icon
+              message="控制面没有返回客户端接入链接"
+              description="请重新生成令牌；若仍为空，说明服务端版本较旧。"
+            />
+            <div v-if="clientOpeners.length" class="enroll-client-openers">
+              <div v-for="opener in clientOpeners" :key="opener.label" class="enroll-client-opener">
+                <span class="enroll-client-label">{{ opener.label }}</span>
+                <pre class="enroll-command enroll-command--compact"><code>{{ opener.command }}</code></pre>
+                <a-button size="small" @click="copyCommand(opener.command)">
+                  <CopyOutlined /> 复制
+                </a-button>
+              </div>
+            </div>
+          </div>
+          <div v-else-if="commandFor(tab.key)" class="enroll-command-card">
             <div v-if="tab.key === 'docker' && result.agent_image" class="enroll-image-source">
               <GithubOutlined />
               <span>镜像来源：</span>
@@ -479,6 +560,44 @@ onBeforeUnmount(() => {
 
 .enroll-detected {
   margin-bottom: 12px;
+}
+
+.enroll-client-downloads {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.enroll-client-label {
+  margin-bottom: 6px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.enroll-command--compact {
+  min-height: 0;
+  padding: 12px 14px;
+  font-size: 12px;
+}
+
+.enroll-client-openers {
+  display: grid;
+  gap: 14px;
+  margin-top: 15px;
+}
+
+.enroll-client-opener {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: end;
+  gap: 10px;
+}
+
+.enroll-client-opener .enroll-client-label {
+  grid-column: 1 / -1;
 }
 
 /* Docker 页签的「镜像来源」标注：让用户一眼看出镜像是从哪个仓库拉的 */

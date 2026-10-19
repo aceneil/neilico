@@ -35,6 +35,9 @@ type enrollCommands struct {
 	MacOS   string `json:"macos"`
 	Windows string `json:"windows"`
 	Docker  string `json:"docker"`
+	// Client 是桌面/移动客户端的接入 URI（neilico://enroll?...），
+	// 客户端用它把「控制面地址 + 一次性令牌」一次拿走，之后自己向控制面汇报。
+	Client string `json:"client"`
 }
 
 func (s *Server) registerEnroll(mux *http.ServeMux) {
@@ -241,11 +244,15 @@ func enrollCommandSet(server, token, image string) enrollCommands {
 	//   避免命令变长、也避免与 compose 用法（compose 自己 pull）不一致。
 	dockerCommand := strings.Join(dockerLines, " \\\n")
 
+	// 客户端接入：一条 URI 带走控制面地址与令牌，交给已安装的客户端处理。
+	clientURI := "neilico://enroll?server=" + url.QueryEscape(base) + "&token=" + url.QueryEscape(token)
+
 	return enrollCommands{
 		Linux:   shellCommand,
 		MacOS:   shellCommand,
 		Windows: `powershell -ExecutionPolicy Bypass -Command "& ([scriptblock]::Create((irm ` + base + `/install.ps1))) -Token ` + token + `"`,
 		Docker:  dockerCommand,
+		Client:  clientURI,
 	}
 }
 

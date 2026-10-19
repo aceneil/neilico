@@ -129,6 +129,8 @@ export interface EnrollTokenCommands {
   macos?: string
   windows?: string
   docker?: string
+  /** 桌面/移动客户端的接入 URI（neilico://enroll?server=…&token=…） */
+  client?: string
 }
 
 export interface EnrollToken {

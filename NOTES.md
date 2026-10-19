@@ -428,3 +428,9 @@ cd deploy/helm && bash neilico/ci/verify.sh
 - **品牌图标 CSS 两个坑**（2026-10-19 二次修复）：
   1. `.brand__mark--img` 原来写在 `.brand__mark` **之前**，同特异性后者胜出 → 侧栏仍显示蓝色占位块的蓝底/蓝框。改为 `.brand__mark.brand__mark--img` 且放到基础规则之后，并 `background: none; border: 0; box-shadow: none`。
   2. 第一版图标是按"接近白=透明"生成的，原图自带 ~十几 px 的**白色光晕**留了下来，深色背景上是一圈白边。必须按剪影重建 alpha（见 skill `app-icon-asset-pipeline`）。
+
+## 接入弹窗新增「客户端」页签（2026-10-19）
+
+- 控制面 `enrollCommands` 增加 `client` 字段：`neilico://enroll?server=<base>&token=<token>`（base 取 `enroll.public_url`，未配置时是请求 Host）。
+- 前端 `EnrollDeviceModal.vue` 末尾新增「客户端」页签：Windows 包下载（`/downloads/neilico-client-windows-x64.zip`，白名单早已放行）+ 接入链接 + 各平台打开命令；macOS/Linux 标「构建中」。
+- **未完成**：客户端本身尚未实现 `neilico://enroll` 处理器，也没有「用令牌换控制面身份」的接口（需要 `POST /api/v1/client/enroll` + 客户端心跳）。当前链接只是把地址与令牌带过去，落地页是空的。
