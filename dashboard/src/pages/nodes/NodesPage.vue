@@ -6,11 +6,9 @@
 // 详情抽屉「远程控制」四控件（可被远程 / 隧道模式 / 单独隧道 / Mesh），即时 PATCH。
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import {
-  CopyOutlined,
   DeleteOutlined,
   DesktopOutlined,
   FilterOutlined,
-  SafetyCertificateOutlined,
   SearchOutlined
 } from '@ant-design/icons-vue'
 import { message, Modal } from 'ant-design-vue'
@@ -22,17 +20,14 @@ import { nodesApi, type NodeListQuery } from '@/api/nodes'
 import { remoteDesktopApi } from '@/api/remote-desktop'
 import EnrollDeviceModal from '@/pages/nodes/EnrollDeviceModal.vue'
 import { useAuthStore } from '@/stores/auth'
-import { copyText } from '@/utils/clipboard'
 import { useThemeStore } from '@/stores/theme'
 import { canManageNodes, canManageRemoteDesktopPolicies } from '@/utils/permissions'
 import { formatBytes, formatTime } from '@/utils/format'
-import { maskSecret } from '@/utils/sensitive'
 import type {
   Node,
   NodeCapabilities,
   NodeCertificate,
   NodeMetrics,
-  NodeRegisterResult,
   RemoteDesktopDevicePolicy,
   RemoteDesktopDevicePolicyPatch,
   RemoteDesktopTunnelMode
@@ -53,10 +48,6 @@ const filtersCollapsed = ref(false)
 const selectedNode = ref<Node | null>(null)
 const detailOpen = ref(false)
 const enrollOpen = ref(false)
-const registerOpen = ref(false)
-const registering = ref(false)
-const registerFormRef = ref()
-const registration = ref<NodeRegisterResult | null>(null)
 const nodeMetrics = ref<NodeMetrics | null>(null)
 const mtlsCertificate = ref<NodeCertificate | null>(null)
 const mtlsLoading = ref(false)
@@ -76,15 +67,6 @@ const tunnelModeOptions: { value: RemoteDesktopTunnelMode; label: string }[] = [
   { value: 'direct', label: '直连' },
   { value: 'relay', label: '中继' }
 ]
-
-const registerForm = reactive({
-  name: '',
-  os: 'linux',
-  arch: 'amd64',
-  version: '0.1.0',
-  tagsText: '',
-  public_key: ''
-})
 
 const statusOptions = [
   { label: '全部状态', value: '' },
@@ -325,21 +307,8 @@ function reloadSilently() {
 
 // ── 自动刷新：设备接入后无需手动刷新 ─────────────────────────────────────
 const AUTO_REFRESH_MS = 10000
-const autoRefresh = ref(true)
 const lastRefreshedAt = ref<number | null>(null)
 let pollTimer: number | undefined
-
-const lastRefreshedLabel = computed(() =>
-  lastRefreshedAt.value
-    ? new Date(lastRefreshedAt.value).toLocaleTimeString('zh-CN', { hour12: false })
-    : '—'
-)
-
-// 页头「自动刷新」开关的悬浮说明。操作按钮本体已上移到「设备管理」页头唯一操作行，
-// 这里只提供文案与状态；reload / autoRefresh / enroll / register 一并经 defineExpose 暴露。
-const autoRefreshTooltip = computed(
-  () => `每 ${AUTO_REFRESH_MS / 1000} 秒自动刷新；上次 ${lastRefreshedLabel.value}`
-)
 
 // 对比前后两次列表，把「新出现的设备」直接说出来，避免用户以为没生效
 function announceNewNodes(previous: Node[], next: Node[]) {
@@ -354,7 +323,7 @@ function announceNewNodes(previous: Node[], next: Node[]) {
 function startPolling() {
   stopPolling()
   pollTimer = window.setInterval(() => {
-    if (document.visibilityState !== 'visible' || !autoRefresh.value) return
+    if (document.visibilityState !== 'visible') return
     void reloadSilently()
   }, AUTO_REFRESH_MS)
 }
@@ -368,7 +337,7 @@ function stopPolling() {
 
 // 从后台切回来时立刻刷一次（标签页在后台时轮询是暂停的）
 function handleVisibilityChange() {
-  if (document.visibilityState === 'visible' && autoRefresh.value) {
+  if (document.visibilityState === 'visible') {
     void reloadSilently()
   }
 }
@@ -507,65 +476,13 @@ function removeNode(node: Node) {
   })
 }
 
-async function registerNode() {
-  await registerFormRef.value?.validate()
-  registering.value = true
-  try {
-    registration.value = await nodesApi.register({
-      name: registerForm.name.trim(),
-      os: registerForm.os,
-      arch: registerForm.arch,
-      version: registerForm.version.trim(),
-      tags: registerForm.tagsText.split(',').map((tag) => tag.trim()).filter(Boolean),
-      ...(registerForm.public_key.trim() ? { public_key: registerForm.public_key.trim() } : {})
-    })
-    registerOpen.value = false
-    message.success('节点注册成功')
-    await loadNow()
-  } catch (cause) {
-    message.error(apiErrorMessage(cause))
-  } finally {
-    registering.value = false
-  }
-}
-
-function closeRegistration() {
-  registration.value = null
-}
-
-async function copyRegistration() {
-  if (!registration.value) return
-  const content = `node_id=${registration.value.node_id}\nagent_token=${registration.value.agent_token}`
-  const ok = await copyText(content)
-  if (ok) {
-    message.success('注册凭据已复制')
-  } else {
-    message.error('复制失败：请手动选中凭据复制')
-  }
-}
-
-function resetRegister() {
-  Object.assign(registerForm, {
-    name: '',
-    os: 'linux',
-    arch: 'amd64',
-    version: '0.1.0',
-    tagsText: '',
-    public_key: ''
-  })
-  registerFormRef.value?.clearValidate()
-}
 
 void loadNow()
 
 defineExpose({
   // 交给「设备管理」页头单一操作行复用的控制面（defineExpose 的 ref 经 proxyRefs 解包）。
   reload: loadNow,
-  autoRefresh,
-  autoRefreshTooltip,
-  enrollOpen,
-  registerOpen,
-  resetRegister
+  enrollOpen
 })
 </script>
 
@@ -904,85 +821,6 @@ defineExpose({
       @enrolled="reloadSilently()"
     />
 
-    <a-modal
-      v-model:open="registerOpen"
-      title="注册节点"
-      :confirm-loading="registering"
-      ok-text="注册"
-      cancel-text="取消"
-      @ok="registerNode"
-    >
-      <a-form ref="registerFormRef" layout="vertical" :model="registerForm">
-        <a-form-item
-          label="节点名称"
-          name="name"
-          :rules="[{ required: true, message: '请输入节点名称' }, { max: 255, message: '名称不能超过 255 字符' }]"
-        >
-          <a-input v-model:value="registerForm.name" placeholder="例如 edge-shanghai-01" />
-        </a-form-item>
-        <div class="form-grid">
-          <a-form-item label="操作系统" name="os" :rules="[{ required: true, message: '请选择操作系统' }]">
-            <a-select
-              v-model:value="registerForm.os"
-              :options="[
-                { value: 'linux', label: 'Linux' },
-                { value: 'windows', label: 'Windows' },
-                { value: 'darwin', label: 'macOS' }
-              ]"
-            />
-          </a-form-item>
-          <a-form-item label="架构" name="arch" :rules="[{ required: true, message: '请选择架构' }]">
-            <a-select
-              v-model:value="registerForm.arch"
-              :options="[
-                { value: 'amd64', label: 'amd64' },
-                { value: 'arm64', label: 'arm64' },
-                { value: 'armv7', label: 'armv7' }
-              ]"
-            />
-          </a-form-item>
-        </div>
-        <a-form-item label="Agent 版本" name="version" :rules="[{ required: true, message: '请输入版本' }]">
-          <a-input v-model:value="registerForm.version" placeholder="0.1.0" />
-        </a-form-item>
-        <a-form-item label="标签" name="tagsText">
-          <a-input v-model:value="registerForm.tagsText" placeholder="生产, 上海, edge（使用逗号分隔）" />
-        </a-form-item>
-        <a-form-item label="公钥（可选）" name="public_key">
-          <a-textarea
-            v-model:value="registerForm.public_key"
-            :rows="3"
-            placeholder="留空时由控制面生成节点密钥"
-          />
-        </a-form-item>
-      </a-form>
-    </a-modal>
-
-    <a-modal :open="Boolean(registration)" :closable="false" :mask-closable="false" width="680px">
-      <template #title><SafetyCertificateOutlined /> 节点注册成功</template>
-      <a-alert
-        type="warning"
-        show-icon
-        message="注册凭据只显示这一次"
-        description="请通过复制按钮立即保存 agent_token。展示值按安全策略打码，关闭弹窗后无法再次获取。"
-        class="registration-alert"
-      />
-      <a-descriptions v-if="registration" bordered :column="1">
-        <a-descriptions-item label="Node ID">
-          <a-typography-paragraph copyable code :content="registration.node_id" />
-        </a-descriptions-item>
-        <a-descriptions-item label="Agent Token">
-          <div class="secret-value">
-            <code>{{ maskSecret(registration.agent_token) }}</code>
-            <a-button size="small" @click="copyRegistration"><CopyOutlined /> 复制</a-button>
-          </div>
-        </a-descriptions-item>
-      </a-descriptions>
-      <template #footer>
-        <a-button @click="copyRegistration"><CopyOutlined /> 复制凭据</a-button>
-        <a-button type="primary" @click="closeRegistration">我已安全保存</a-button>
-      </template>
-    </a-modal>
   </div>
 </template>
 
