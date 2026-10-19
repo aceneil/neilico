@@ -1,42 +1,38 @@
-# NEILICO — 单文件部署（所有功能，端口压到最少）
+# NEILICO — 单端口入口（Caddy 按 Host 分流）
 # ---------------------------------------------------------------------------
 #   docker compose -f neilico-stack.yml up -d
-#   面板：http://<服务器IP>:11333
+#   面板：http://<IP 或域名>:11333
 #
-# 端口账本（每一个都对应一个无法合并的协议）：
-#   11333/tcp  面板 + API                    ← 必须
-#   11334/tcp  域名反代（HTTP 业务域名）      ← 用「域名反代」时
-#   20000/tcp+udp 端口转发（1 条规则）        ← 用「端口转发」时，每条规则 +1 个端口
-#   21116/tcp+udp 远程桌面信令/ID             ← 用自托管 RustDesk 时
-#   21117/tcp  远程桌面中继（NAT→NAT 必需）   ← 同上
+# 对外只开一个 TCP 端口：
+#   11333 → Caddy
+#           ├─ 命中「业务域名」列表 → server:8081（内置反代）
+#           └─ 其它（含 IP 直连）   → server:8080（面板 + /api/v1）
 #
-# 已裁掉的（按需再加）：
-#   21115   NAT 类型探测（可选）
-#   21118/9 浏览器版 Web 客户端（不用网页远程桌面就不需要）
-#   51820/udp 只有「别的设备主动直连这台」才需要；agent 是主动出站连控制面的
-#
-# 数据在具名卷里，删容器不丢；**不要 down -v**。
+# 远程桌面只有原生客户端（21116/21117），不占 Web 端口；
+# /webclient 不做（按你说的：远程桌面只做设置，不在网页里开）。
+# 组网：agent 主动出站连控制面，本机不需要额外 UDP 入站。
 # ---------------------------------------------------------------------------
 name: neilico
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
 
 services:
   server:
     image: ghcr.io/aceneil/neilico-server:latest
     container_name: neilico
     restart: unless-stopped
-    ports:
-      - "11333:8080"            # 面板 + API
-      - "11334:8081"            # 域名反代
-      - "20000:20000/tcp"       # 端口转发（1 条）
-      - "20000:20000/udp"
-      - "21116:21116/tcp"       # RustDesk 信令
-      - "21116:21116/udp"
-      - "21117:21117/tcp"       # RustDesk 中继
+    expose:
+      - "8080"
+      - "8081"
     environment:
       PGDATA: /var/lib/postgresql/data
       POSTGRES_DB: neilico
       POSTGRES_USER: neilico
-      POSTGRES_PASSWORD: "neilico"        # 必填，缺了容器直接退出
+      POSTGRES_PASSWORD: "neilico"          # 必填，缺了容器直接退出
 
       NEILICO_DATABASE_DRIVER: postgres
       NEILICO_SERVER_HOST: 0.0.0.0
@@ -44,20 +40,20 @@ services:
       NEILICO_SERVER_DASHBOARD_SPA: "true"
       NEILICO_DOWNLOADS_DIR: /usr/local/share/neilico/downloads
 
-      # 接入命令里下发的地址：换成公网 IP 或域名
-      NEILICO_ENROLL_PUBLIC_URL: "http://<服务器公网IP>:11333"
+      # 用户实际访问的地址；换成域名/IP 后接入命令才回得来
+      NEILICO_ENROLL_PUBLIC_URL: "http://neilico.example.com:11333"
 
-      # 内置反代
+      # 内置反代（域名 → 节点虚拟 IP）
       NEILICO_PROXY_KIND: builtin
       NEILICO_PROXY_LISTEN: ":8081"
 
-      # 端口转发区间（必须与上面 ports 一致：这里只开 1 个）
+      # 端口转发区间（与 ports 段一致；不用就一起删）
       NEILICO_STREAM_PORT_MIN: "20000"
       NEILICO_STREAM_PORT_MAX: "20000"
 
-      # 自托管 RustDesk
-      NEILICO_RD_ID_SERVER: "<服务器公网IP>"
-      NEILICO_RD_RELAY_SERVER: "<服务器公网IP>"
+      # 自托管 RustDesk（原生客户端用）
+      NEILICO_RD_ID_SERVER: "neilico.example.com"
+      NEILICO_RD_RELAY_SERVER: "neilico.example.com"
       NEILICO_RD_KEY_DIR: /var/lib/neilico-rd
       NEILICO_RD_SERVER_MODE: on_demand
       NEILICO_RD_IDLE_TIMEOUT: 10m
@@ -65,9 +61,16 @@ services:
       NEILICO_LOG_LEVEL: info
       NEILICO_LOG_FORMAT: json
 
-      # 留空 = 首次注册管理员；不写会用镜像内置的 admin@example.com 占位账号
+      # 留空 = 首次注册管理员；不写就用镜像内置的 admin@example.com 占位账号
       NEILICO_BOOTSTRAP_ADMIN_EMAIL: ""
       NEILICO_BOOTSTRAP_ADMIN_PASSWORD: ""
+    ports:
+      # 只有「非 HTTP」能力需要独立端口；不用就删
+      - "20000:20000/tcp"       # 端口转发
+      - "20000:20000/udp"
+      - "21116:21116/tcp"       # RustDesk 信令
+      - "21116:21116/udp"
+      - "21117:21117/tcp"       # RustDesk 中继
     volumes:
       - neilico_pg:/var/lib/postgresql/data
       - neilico_state:/var/lib/neilico
@@ -78,6 +81,42 @@ services:
       timeout: 3s
       retries: 10
       start_period: 40s
+    logging: *default-logging
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: neilico-caddy
+    restart: unless-stopped
+    depends_on:
+      server:
+        condition: service_healthy
+    ports:
+      - "11333:11333"
+    configs:
+      - source: caddyfile
+        target: /etc/caddy/Caddyfile
+    logging: *default-logging
+
+configs:
+  caddyfile:
+    content: |
+      # 单端口按 Host 分流
+      :11333 {
+        # 业务域名（走域名反代的）写在这里；多个域名用空格分隔
+        @biz host app.example.com
+        # @biz host app.example.com nas.example.com
+
+        handle @biz {
+          encode zstd gzip
+          reverse_proxy server:8081
+        }
+
+        # 其它一律进控制面：IP 直连、面板域名、/api/v1 都走这里
+        handle {
+          encode zstd gzip
+          reverse_proxy server:8080
+        }
+      }
 
 volumes:
   neilico_pg:
