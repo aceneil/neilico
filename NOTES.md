@@ -385,7 +385,8 @@ cd deploy/helm && bash neilico/ci/verify.sh
 **判定（自动 + 可手动覆盖）**
 - Agent 每次心跳上报 `network`: `environment(host|container|vm)` + `gateway_ip` + `gateway_mac` + `gateway_on_physical`（默认路由是否走物理网卡）。
 - 站点键 `NodeSiteKey`：**默认网关 MAC 相同 = 同一台路由器 = 同一 LAN** → `gw:<mac>`；否则 `node:<id>`（宁可不合并不误合并）。
-  - 容器、非物理网卡、拿不到 MAC、以及 QEMU slirp(`52:55:0a:00:02:02`)/libvirt(`52:54:00:12:34:56`) 这类 NAT 网关 MAC 一律不参与自动合并。
+  - 判据是 **「默认路由是否走物理网卡」**（`/sys/class/net/<if>/device` 存在），**不是「是否在容器里」**：`docker --network host` 的 Agent 看到的正是宿主机网络（实测 `environment=container` 但 `gateway_on_physical=true`，正常参与自动合并）；bridge 容器的 veth 没有 `device` 链接，天然被排除。
+  - 拿不到网关 MAC、或网关是 QEMU slirp(`52:55:0a:00:02:02`)/libvirt(`52:54:00:12:34:56`) 这类 NAT 网关 MAC 时，不参与自动合并。
 - **手动站点优先**：路由上的 `site` 非空时用 `manual:<label>`，可人工纠正误判（同组路由都填同一个站点名）。
 - 冲突规则：同一 `(site, cidr)` 可挂多节点（主备）；**不同 site 复用同一 CIDR → 409 `route_conflict`**（WireGuard AllowedIPs 同一前缀只能指向一个 peer）。
 
@@ -400,5 +401,7 @@ cd deploy/helm && bash neilico/ci/verify.sh
 - 集成：`TestSubnetRouteRedundancyAndFailover`（同网关自动成组、主掉线备用接管、跨站点同网段 409、手动站点强制合并）。
 - 真机：把两台节点写成同一 `gateway_mac` → 同一 CIDR 两条路由均 **201**；列表 `effective_site=gw:aa:bb:cc:dd:ee:01`，离线 NAS（prio 10）`active=false`、在线本机（prio 20）`active=true`；测试路由已清理。
 - ⚠️ **自动识别依赖新版 Agent**：现网 `neilico-agent` 容器仍是旧镜像（不上报 `network`），在它升级前站点会退化成 `node:<id>`（不自动合并，但也不出错）。需要重建并发布 agent 镜像（`ghcr.io/aceneil/neilico-agent`）后才真正"无感"。
+- **已发布并更新（2026-10-19）**：本机构建 `neilico-agent:v2` → 推送 `ghcr.io/aceneil/neilico-agent:latest`（digest `sha256:66f5fe7603…`）；本机 agent 容器 `pull + up -d --force-recreate` 换新后，心跳真实上报 `environment=container / gateway_ip=192.168.123.88 / gateway_mac=8a:96:b6:60:47:58 / gateway_on_physical=true`。用这份真实 MAC 建同一 CIDR 的两条路由（NAS prio 10 离线、本机 prio 20 在线）→ 均 201、`effective_site=gw:8a:96:b6:60:47:58`、NAS `active=false`、本机 `active=true`。NAS 那台仍跑旧镜像（离线 12 天），恢复后需同样更新。
+- 推送脚本：`~/.hermes/cache/scratch/push-agent-image.sh`（令牌经 stdin 传给 `docker login`，不回显）。
 
 

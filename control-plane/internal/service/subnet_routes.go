@@ -38,7 +38,10 @@ var natGatewayMACs = map[string]bool{
 // 不成立的情形：Agent 在容器里（看到的是 docker bridge）、默认路由不在物理网卡上、
 // 拿不到网关 MAC、或网关是虚拟机 NAT 网关。
 func NodeSiteKey(node models.Node) string {
-	if node.Environment == "container" || !node.GatewayOnPhysical {
+	// 判据是「默认路由走物理网卡」，而不是「不在容器里」：
+	// docker --network host 的容器看到的正是宿主机网络（能看到物理网卡），
+	// 而 bridge 容器的 veth 没有 /sys/class/net/<if>/device，天然被排除。
+	if !node.GatewayOnPhysical {
 		return "node:" + node.ID.String()
 	}
 	mac := strings.ToLower(strings.TrimSpace(node.GatewayMAC))
