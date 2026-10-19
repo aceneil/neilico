@@ -1,0 +1,65 @@
+# NEILICO — 单文件部署（只开一个端口 33311）
+# ---------------------------------------------------------------------------
+#   docker compose -f neilico-stack.yml up -d
+#   打开 http://<服务器IP>:33311
+#
+# 只有一个端口：33311 -> 容器内 8080（控制台 + API）。
+# 「域名反代 / 端口转发 / 远程桌面」等需要额外端口的模块，文件末尾按需解锁。
+#
+# 数据在具名卷 neilico_pg / neilico_state 里，删容器不丢；**不要 down -v**。
+# ---------------------------------------------------------------------------
+name: neilico
+
+services:
+  server:
+    image: ghcr.io/aceneil/neilico-server:latest
+    container_name: neilico
+    restart: unless-stopped
+    ports:
+      - "33311:8080"
+    environment:
+      PGDATA: /var/lib/postgresql/data
+      POSTGRES_DB: neilico
+      POSTGRES_USER: neilico
+      # 必填：镜像缺这个直接退出
+      POSTGRES_PASSWORD: "neilico"
+      NEILICO_DATABASE_DRIVER: postgres
+      NEILICO_SERVER_HOST: 0.0.0.0
+      NEILICO_SERVER_DASHBOARD_DIR: /opt/neilico/dashboard
+      NEILICO_SERVER_DASHBOARD_SPA: "true"
+      NEILICO_DOWNLOADS_DIR: /usr/local/share/neilico/downloads
+      NEILICO_LOG_LEVEL: info
+      NEILICO_LOG_FORMAT: json
+      # 留空 = 启用「首次注册管理员」向导。
+      # 不写这两行的话，镜像会用内置默认号 admin@example.com /
+      # replace-with-a-strong-password（测试完记得改掉）。
+      NEILICO_BOOTSTRAP_ADMIN_EMAIL: ""
+      NEILICO_BOOTSTRAP_ADMIN_PASSWORD: ""
+    volumes:
+      - neilico_pg:/var/lib/postgresql/data
+      - neilico_state:/var/lib/neilico
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8080/healthz >/dev/null"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 40s
+
+volumes:
+  neilico_pg:
+  neilico_state:
+
+# ── 需要时再解锁（现在别开，少暴露端口）──────────────────────────────────
+#    ports:
+#      - "33311:8080"
+#      - "18081:8081"                       # 域名反代
+#      - "20000-20004:20000-20004/tcp"      # 端口转发（与 NEILICO_STREAM_PORT_MIN/MAX 一致）
+#      - "20000-20004:20000-20004/udp"
+#      - "21115-21119:21115-21119/tcp"      # 自托管 RustDesk
+#      - "21116:21116/udp"
+#    environment:
+#      NEILICO_STREAM_PORT_MIN: "20000"
+#      NEILICO_STREAM_PORT_MAX: "20004"
+#      NEILICO_RD_ID_SERVER: "<服务器IP或域名>"
+#      NEILICO_RD_RELAY_SERVER: "<服务器IP或域名>"
+#      NEILICO_RD_KEY_DIR: /var/lib/neilico-rd
