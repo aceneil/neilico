@@ -1,0 +1,73 @@
+# NEILICO — 服务器部署用的 compose（直接用发布镜像，不在本机构建）
+# ---------------------------------------------------------------------------
+# 用法：
+#   1) 把本文件与 neilico.env 放到同一目录（例如 /opt/neilico/）
+#   2) 生成密钥并填好 neilico.env（见文件内注释）
+#   3) docker compose -f docker-compose.deploy.yml up -d
+#
+# 与仓库里的 docker-compose.yml 的区别：
+#   · 那个是「开发/本机构建」用（build: + image: neilico-server:local）
+#   · 这个只 pull `ghcr.io/aceneil/neilico-server`，适合服务器部署
+# ---------------------------------------------------------------------------
+name: neilico
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  # 单容器 = PostgreSQL + 控制面 API + 内置反代 + Dashboard + 按需 hbbs/hbbr
+  server:
+    # 生产建议固定版本，避免 latest 漂移：
+    #   image: ghcr.io/aceneil/neilico-server:sha-<commit>
+    image: ghcr.io/aceneil/neilico-server:latest
+    container_name: neilico
+    restart: unless-stopped
+    env_file:
+      - ./neilico.env
+    environment:
+      PGDATA: /var/lib/postgresql/data
+      NEILICO_DATABASE_DRIVER: postgres
+      NEILICO_SERVER_HOST: 0.0.0.0
+      NEILICO_SERVER_DASHBOARD_DIR: /opt/neilico/dashboard
+      NEILICO_SERVER_DASHBOARD_SPA: "true"
+      # 下载分发目录（/downloads/* 与 install.sh / install.ps1 读取）
+      NEILICO_DOWNLOADS_DIR: /usr/local/share/neilico/downloads
+      # 轮换管理员密码后回写此文件（必须与下面的 volumes 挂载点一致）
+      NEILICO_BOOTSTRAP_ENV_FILE: /opt/neilico/bootstrap.env
+      # 端口转发（Stream）可用区间；必须与下面 ports 里发布的段一致
+      NEILICO_STREAM_PORT_MIN: "${NEILICO_STREAM_PORT_MIN:-20000}"
+      NEILICO_STREAM_PORT_MAX: "${NEILICO_STREAM_PORT_MAX:-20019}"
+    ports:
+      # Dashboard + API（同端口、同源）
+      - "${NEILICO_HTTP_PORT:-13000}:8080"
+      # 内置反向代理（域名反代入口）
+      - "${NEILICO_PROXY_PORT:-18081}:8081"
+      # 端口转发段（区间与上面的 STREAM_PORT_MIN/MAX 必须一致）
+      - "${NEILICO_STREAM_PORT_MIN:-20000}-${NEILICO_STREAM_PORT_MAX:-20019}:${NEILICO_STREAM_PORT_MIN:-20000}-${NEILICO_STREAM_PORT_MAX:-20019}/tcp"
+      - "${NEILICO_STREAM_PORT_MIN:-20000}-${NEILICO_STREAM_PORT_MAX:-20019}:${NEILICO_STREAM_PORT_MIN:-20000}-${NEILICO_STREAM_PORT_MAX:-20019}/udp"
+      # 自托管 RustDesk（hbbs/hbbr）。按需模式下未启用时这些端口不监听属正常。
+      - "21115:21115/tcp"   # NAT 类型测试
+      - "21116:21116/tcp"   # ID 注册 / 信令
+      - "21116:21116/udp"   # ID 注册 / 信令（UDP）
+      - "21117:21117/tcp"   # 中继转发
+      - "21118:21118/tcp"   # 直连 / Web 客户端
+      - "21119:21119/tcp"   # Web 客户端
+    volumes:
+      # PostgreSQL 数据（**必须持久化**，否则重建即丢库）
+      - ./data/pg:/var/lib/postgresql/data
+      # 让「轮换密码」能把新密码写回 env（宿主文件需先存在）
+      - ./neilico.env:/opt/neilico/bootstrap.env
+      # RustDesk 服务端密钥（id_ed25519 / .pub）：不挂就每次重建都换 Key，所有客户端要重配
+      - ./data/rustdesk:/var/lib/neilico/rustdesk
+      # 分发的 agent / 客户端安装包
+      - ./data/downloads:/usr/local/share/neilico/downloads
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8080/healthz >/dev/null"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 30s
+    logging: *default-logging
