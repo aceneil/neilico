@@ -1,12 +1,21 @@
-# NEILICO — 单文件部署（只开一个端口 11333）
+# NEILICO — 单文件部署（所有功能，端口压到最少）
 # ---------------------------------------------------------------------------
 #   docker compose -f neilico-stack.yml up -d
-#   打开 http://<服务器IP>:11333
+#   面板：http://<服务器IP>:11333
 #
-# 只有一个端口：11333 -> 容器内 8080（控制台 + API）。
-# 「域名反代 / 端口转发 / 远程桌面」等需要额外端口的模块，文件末尾按需解锁。
+# 端口账本（每一个都对应一个无法合并的协议）：
+#   11333/tcp  面板 + API                    ← 必须
+#   11334/tcp  域名反代（HTTP 业务域名）      ← 用「域名反代」时
+#   20000/tcp+udp 端口转发（1 条规则）        ← 用「端口转发」时，每条规则 +1 个端口
+#   21116/tcp+udp 远程桌面信令/ID             ← 用自托管 RustDesk 时
+#   21117/tcp  远程桌面中继（NAT→NAT 必需）   ← 同上
 #
-# 数据在具名卷 neilico_pg / neilico_state 里，删容器不丢；**不要 down -v**。
+# 已裁掉的（按需再加）：
+#   21115   NAT 类型探测（可选）
+#   21118/9 浏览器版 Web 客户端（不用网页远程桌面就不需要）
+#   51820/udp 只有「别的设备主动直连这台」才需要；agent 是主动出站连控制面的
+#
+# 数据在具名卷里，删容器不丢；**不要 down -v**。
 # ---------------------------------------------------------------------------
 name: neilico
 
@@ -16,28 +25,53 @@ services:
     container_name: neilico
     restart: unless-stopped
     ports:
-      - "11333:8080"
+      - "11333:8080"            # 面板 + API
+      - "11334:8081"            # 域名反代
+      - "20000:20000/tcp"       # 端口转发（1 条）
+      - "20000:20000/udp"
+      - "21116:21116/tcp"       # RustDesk 信令
+      - "21116:21116/udp"
+      - "21117:21117/tcp"       # RustDesk 中继
     environment:
       PGDATA: /var/lib/postgresql/data
       POSTGRES_DB: neilico
       POSTGRES_USER: neilico
-      # 必填：镜像缺这个直接退出
-      POSTGRES_PASSWORD: "neilico"
+      POSTGRES_PASSWORD: "neilico"        # 必填，缺了容器直接退出
+
       NEILICO_DATABASE_DRIVER: postgres
       NEILICO_SERVER_HOST: 0.0.0.0
       NEILICO_SERVER_DASHBOARD_DIR: /opt/neilico/dashboard
       NEILICO_SERVER_DASHBOARD_SPA: "true"
       NEILICO_DOWNLOADS_DIR: /usr/local/share/neilico/downloads
+
+      # 接入命令里下发的地址：换成公网 IP 或域名
+      NEILICO_ENROLL_PUBLIC_URL: "http://<服务器公网IP>:11333"
+
+      # 内置反代
+      NEILICO_PROXY_KIND: builtin
+      NEILICO_PROXY_LISTEN: ":8081"
+
+      # 端口转发区间（必须与上面 ports 一致：这里只开 1 个）
+      NEILICO_STREAM_PORT_MIN: "20000"
+      NEILICO_STREAM_PORT_MAX: "20000"
+
+      # 自托管 RustDesk
+      NEILICO_RD_ID_SERVER: "<服务器公网IP>"
+      NEILICO_RD_RELAY_SERVER: "<服务器公网IP>"
+      NEILICO_RD_KEY_DIR: /var/lib/neilico-rd
+      NEILICO_RD_SERVER_MODE: on_demand
+      NEILICO_RD_IDLE_TIMEOUT: 10m
+
       NEILICO_LOG_LEVEL: info
       NEILICO_LOG_FORMAT: json
-      # 留空 = 启用「首次注册管理员」向导。
-      # 不写这两行的话，镜像会用内置默认号 admin@example.com /
-      # replace-with-a-strong-password（测试完记得改掉）。
+
+      # 留空 = 首次注册管理员；不写会用镜像内置的 admin@example.com 占位账号
       NEILICO_BOOTSTRAP_ADMIN_EMAIL: ""
       NEILICO_BOOTSTRAP_ADMIN_PASSWORD: ""
     volumes:
       - neilico_pg:/var/lib/postgresql/data
       - neilico_state:/var/lib/neilico
+      - neilico_rd:/var/lib/neilico-rd
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8080/healthz >/dev/null"]
       interval: 10s
@@ -48,18 +82,4 @@ services:
 volumes:
   neilico_pg:
   neilico_state:
-
-# ── 需要时再解锁（现在别开，少暴露端口）──────────────────────────────────
-#    ports:
-#      - "11333:8080"
-#      - "18081:8081"                       # 域名反代
-#      - "20000-20004:20000-20004/tcp"      # 端口转发（与 NEILICO_STREAM_PORT_MIN/MAX 一致）
-#      - "20000-20004:20000-20004/udp"
-#      - "21115-21119:21115-21119/tcp"      # 自托管 RustDesk
-#      - "21116:21116/udp"
-#    environment:
-#      NEILICO_STREAM_PORT_MIN: "20000"
-#      NEILICO_STREAM_PORT_MAX: "20004"
-#      NEILICO_RD_ID_SERVER: "<服务器IP或域名>"
-#      NEILICO_RD_RELAY_SERVER: "<服务器IP或域名>"
-#      NEILICO_RD_KEY_DIR: /var/lib/neilico-rd
+  neilico_rd:
