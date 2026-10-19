@@ -374,5 +374,6 @@ cd deploy/helm && bash neilico/ci/verify.sh
 - **追加（`d1c2132`，设备管理「接入能力」列）**：徽标文案改为能力名 **Tunnel / Subnet Routes / Mesh**（此顺序），去掉 `ready/degraded/unavailable` 后缀与下方「原因：…」整行；**状态与 Agent 上报的 reason 移入徽标 tooltip**（`capabilityTitle()`），颜色仍表示在线且就绪（绿）/ 其余（灰）。表格与详情抽屉同步。
 - **追加（`43d6841` + `d29a9d3`，设备列表）**：删掉「最后心跳」列（状态徽标 tooltip 已含 `last_seen` 与陈旧判定）；删掉整列「操作」——**单击任意一行直接打开详情抽屉**（`customRow` + 行 `cursor:pointer`），**删除设备按钮移到抽屉右上角**（`#extra`，仅 `canWrite` 可见，删除成功后自动关抽屉）。表格去掉 `scroll.x`/`fixed=left` 以免留出无列区域。
 - **追加（`841eb37`，设备管理页头）**：**自动刷新改为常开**（去掉了页头开关与 `autoRefresh` 状态，10s 轮询 + 回到前台立即刷一次，逻辑无条件执行）；**删除「手动注册」**（按钮、表单、注册凭据弹窗、`registerNode()` 全移除；接入只剩 enroll token 的「接入设备」）。页头操作行现为：刷新 / 接入设备 / 远程桌面设置。
+- **追加（`b7d79bc`，详情抽屉改名 + 心跳合并）**：后端新增 **`PATCH /api/v1/nodes/{id}`**（`{name}`，trim 后 1–255 字符，租户隔离，审计 `node.update`；`NodeService.Update` + `TestNodeRenameFlow` 覆盖 200/400/404/401 与审计落库）；前端抽屉标题旁加铅笔 → 改名弹窗（列表行同步、无需整表重载）；**「最后心跳」行删除，合并进「状态」单元格的 tooltip**（`detailStatusTooltip`：`最后心跳：…` + 超时说明）。真机验证：改名 PATCH 200 → 标题即时更新 → 改回原名，DB 已复原 `NAS-E125`。
 
 

@@ -56,6 +56,7 @@ scope 不足时还会返回 `detail`；API Token 使用 `insufficient_scope`，J
 | GET | `/api/v1/nodes` | JWT | 节点列表；返回 `capabilities`，可按 `status`、`tag`、分页 |
 | POST | `/api/v1/nodes/{id}/heartbeat` | agent_token | 心跳；可更新 `capabilities`，返回下一次间隔 |
 | GET/DELETE | `/api/v1/nodes/{id}` | JWT，按 tenant scope | 详情含 `capabilities`/`virtual_ip`/`network_id`；删除 |
+| PATCH | `/api/v1/nodes/{id}` | JWT（platform_admin / tenant_admin / ops） | 改名：`{"name": "..."}`，trim 后 1–255 字符，写审计 `node.update` |
 | POST | `/api/v1/nodes/{id}/network-report` | agent_token | 公网端点上报 |
 | POST | `/api/v1/nodes/{id}/traffic` | agent_token | 流量增量上报 |
 | GET/POST | `/api/v1/domains` | JWT；写需 proxy 管理权限 | 域名列表/创建 |
