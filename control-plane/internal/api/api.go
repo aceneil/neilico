@@ -308,6 +308,7 @@ func NewWithProxy(
 	server.registerM2B(mux)
 	server.registerM4B(mux)
 	server.registerEnroll(mux)
+	server.registerClientEnroll(mux)
 	server.registerPublicDownloads(mux)
 	server.registerAccount(mux)
 	server.registerRemoteDesktop(mux)
