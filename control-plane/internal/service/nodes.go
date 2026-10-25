@@ -120,6 +120,12 @@ type HeartbeatInput struct {
 	// Candidates 是 agent 上报的候选地址（stun / public / lan）。
 	// 老版本 agent 不带这个字段 → 行为与现在完全一致（不动既有 endpoint 逻辑）。
 	Candidates []models.Candidate `json:"candidates,omitempty"`
+	// DirectPath 表示本机与**所有**对端都建立了直连握手（打洞成功）。
+	//
+	// 用指针而不是裸 bool：裸 bool + omitempty 会把 false 一起丢掉，控制面就再也
+	// 分不清「直连正常」和「直连失败」——那正是中继兜底唯一需要的信号。
+	// nil = 老版本 agent 没上报（保持库里原值不变，行为与上线前完全一致）。
+	DirectPath *bool `json:"direct_path,omitempty"`
 }
 
 func (s *NodeService) Register(ctx context.Context, tenantID uuid.UUID, input NodeRegisterInput) (NodeRegisterOutput, error) {
@@ -256,6 +262,27 @@ func (s *NodeService) AuthenticateNode(ctx context.Context, nodeID uuid.UUID, ag
 		return models.Node{}, fmt.Errorf("authenticate node: %w", err)
 	}
 	return node, nil
+}
+
+// AuthenticateRelay 校验中继会话的归属：node id + agent token 必须匹配。
+//
+// 走的是和心跳一样的鉴权路径（agent token 的哈希比对），失败一律返回 ErrForbidden，
+// **不泄露**是节点不存在还是 token 不对——中继的 ERROR 帧也不会带原因。
+func (s *NodeService) AuthenticateRelay(ctx context.Context, nodeID uuid.UUID, agentToken string) error {
+	if agentToken == "" {
+		return ErrForbidden
+	}
+	var count int64
+	err := s.db.WithContext(ctx).Model(&models.Node{}).
+		Where("id = ? AND agent_token_hash = ?", nodeID, auth.HashAgentToken(agentToken)).
+		Count(&count).Error
+	if err != nil {
+		return fmt.Errorf("authenticate relay session: %w", err)
+	}
+	if count == 0 {
+		return ErrForbidden
+	}
+	return nil
 }
 
 type NetworkReportInput struct {
@@ -445,8 +472,19 @@ func (s *NodeService) Heartbeat(ctx context.Context, nodeID uuid.UUID, agentToke
 			candidatesChanged = true
 		}
 	}
+	directPathChanged := false
+	if input.DirectPath != nil {
+		if node.DirectPath != *input.DirectPath {
+			node.DirectPath = *input.DirectPath
+			directPathChanged = true
+		}
+	}
 	if err := s.db.WithContext(ctx).Save(&node).Error; err != nil {
 		return models.Node{}, fmt.Errorf("record heartbeat: %w", err)
+	}
+	if directPathChanged {
+		// 直连状态变了 → 对端是否需要中继兜底也变了，重新生成所在网络的配置。
+		s.bumpNetworksForNode(ctx, node.ID)
 	}
 	if candidatesChanged {
 		// 候选变了 → 重新生成所在网络的配置，让对端尽快拿到新候选。

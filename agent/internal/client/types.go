@@ -44,6 +44,12 @@ type HeartbeatRequest struct {
 	// Candidates 是本机的候选地址，随心跳上报给控制面并下发给对端。
 	// 字段是新增的，老版本控制面会直接忽略（omitempty 保持向后兼容）。
 	Candidates []Candidate `json:"candidates,omitempty"`
+	// DirectPath 表示本机与**所有**对端都建立了直连握手（打洞成功）。
+	//
+	// 用指针而不是裸 bool：裸 bool + omitempty 会把 false 一起丢掉，控制面就再也
+	// 分不清「直连正常」和「直连失败」——那正是中继兜底唯一需要的信号。
+	// nil = 暂时判断不出来（不上报）。
+	DirectPath *bool `json:"direct_path,omitempty"`
 }
 
 type HeartbeatResponse struct {
@@ -82,6 +88,11 @@ type Peer struct {
 	ListenPort int `json:"listen_port,omitempty"`
 	// Candidates 是对端上报的候选地址（stun / public / lan），供本机打洞选路。
 	Candidates []Candidate `json:"candidates,omitempty"`
+	// RelayEndpoint 是中继地址（host:port）。直连可用时控制面**不下发**这个字段；
+	// 有它才说明这个对端需要走中继兜底。
+	RelayEndpoint string `json:"relay_endpoint,omitempty"`
+	// RelayNodeID 是对端的 node uuid：中继按它把报文转发到对端。
+	RelayNodeID string `json:"relay_node_id,omitempty"`
 }
 
 type Network struct {

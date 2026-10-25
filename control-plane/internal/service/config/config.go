@@ -34,10 +34,23 @@ type Manager struct {
 	crypto   *cert.Crypto
 	provider mesh.Provider
 	metrics  *metrics.Metrics
+	// relayEndpoint 是下发给 agent 的中继地址（host:port）。
+	// 空 = 中继未启用：不下发任何中继字段，行为与中继上线前完全一致。
+	relayEndpoint string
 }
 
 func New(db *gorm.DB, crypto *cert.Crypto, observer *metrics.Metrics) *Manager {
 	return &Manager{db: db, crypto: crypto, provider: wireguard.New(), metrics: observer}
+}
+
+// SetRelayEndpoint 设置下发给 agent 的中继地址（空字符串 = 关闭中继兜底）。
+func (m *Manager) SetRelayEndpoint(endpoint string) {
+	m.relayEndpoint = strings.TrimSpace(endpoint)
+}
+
+// RelayEndpoint 返回当前配置的中继地址（空 = 未启用）。
+func (m *Manager) RelayEndpoint() string {
+	return m.relayEndpoint
 }
 
 type NodeIdentity struct {
@@ -59,6 +72,14 @@ type Peer struct {
 	ListenPort int `json:"listen_port,omitempty"`
 	// Candidates 是对端上报的候选地址（stun / public / lan），agent 用它做 UDP 打洞选路。
 	Candidates []models.Candidate `json:"candidates,omitempty"`
+	// DirectPathFailed 表示对端上报过「直连不通」（心跳里的 direct_path=false）。
+	// 老版本 agent 从不上报这个字段 → 永远是 false → 行为与中继上线前完全一致。
+	// 快照里必须保留它：投递阶段要用它和请求方自己的状态一起判断要不要走中继。
+	DirectPathFailed bool `json:"direct_path_failed,omitempty"`
+	// RelayEndpoint 是中继地址（host:port）。直连可用时**不下发**这个字段。
+	RelayEndpoint string `json:"relay_endpoint,omitempty"`
+	// RelayNodeID 是对端的 node uuid：中继按它把报文转发到对端。
+	RelayNodeID string `json:"relay_node_id,omitempty"`
 }
 
 type Network struct {
@@ -329,6 +350,8 @@ func (m *Manager) buildNodeConfig(ctx context.Context, db *gorm.DB, node models.
 		if m.metrics != nil && config.PolicyFiltered {
 			m.metrics.IncACLDenied()
 		}
+		// 直连不通的对端补上中继信息（直连正常时一个字段都不加）。
+		m.applyRelayEndpoints(&networkConfig, node)
 		config.Network = &networkConfig
 		config.ACL = built.ACL
 		config.Routes = built.Routes
@@ -408,6 +431,8 @@ func (m *Manager) buildNetworkConfig(ctx context.Context, db *gorm.DB, network m
 			ListenPort:     node.ListenPort,
 			// 对端候选地址随配置下发：agent 据此做 UDP 打洞（stun → public → lan）。
 			Candidates: []models.Candidate(node.Candidates),
+			// 对端的直连状态：投递时和请求方自己的状态一起判断要不要走中继。
+			DirectPathFailed: !node.DirectPath,
 		})
 	}
 	sort.Slice(peers, func(i, j int) bool {
@@ -437,6 +462,29 @@ func (m *Manager) buildNetworkConfig(ctx context.Context, db *gorm.DB, network m
 		ACL:     convertedACL,
 		Routes:  convertedRoutes,
 	}, nil
+}
+
+// applyRelayEndpoints 给「直连不通」的对端补上中继信息。
+//
+// 判定规则：一对 peer 里只要**有一方**上报 direct_path=false，就给这个 peer 加上
+// relay_endpoint / relay_node_id；两边的 direct_path 都是 true 时不下发任何字段
+// （保持既有直连行为，一个字节都不变）。
+//
+// 中继没启用（relayEndpoint 为空）时同样不下发——中继默认关闭。
+func (m *Manager) applyRelayEndpoints(network *Network, node models.Node) {
+	if network == nil || m.relayEndpoint == "" {
+		return
+	}
+	for index := range network.Peers {
+		peer := &network.Peers[index]
+		if node.DirectPath && !peer.DirectPathFailed {
+			peer.RelayEndpoint = ""
+			peer.RelayNodeID = ""
+			continue
+		}
+		peer.RelayEndpoint = m.relayEndpoint
+		peer.RelayNodeID = peer.NodeID
+	}
 }
 
 func filterPeers(localMember models.NetworkMember, peers []Peer, rules []ACLRule) ([]Peer, bool) {

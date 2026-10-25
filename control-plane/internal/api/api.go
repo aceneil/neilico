@@ -225,6 +225,8 @@ func NewWithProxy(
 	}
 	alertEngine := alertservice.NewEngine(db, opts.Alerts, alertNotifier, promMetrics, logger)
 	configManager := configservice.New(db, certificateCrypto, promMetrics)
+	// 中继地址（空 = 中继关闭，不下发任何中继字段）。
+	configManager.SetRelayEndpoint(opts.Relay.Endpoint)
 	// 节点的候选地址变化时需要重新生成配置（否则对端拿不到新候选）：
 	// 用接口注入，避免 service 包与 config 包循环依赖。
 	nodeService.SetConfigBumper(configManager)

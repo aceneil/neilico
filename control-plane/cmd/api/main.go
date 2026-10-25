@@ -21,6 +21,7 @@ import (
 	"neilico/control-plane/internal/config"
 	"neilico/control-plane/internal/db"
 	"neilico/control-plane/internal/metrics"
+	"neilico/control-plane/internal/relay"
 	"neilico/control-plane/internal/service"
 	"neilico/control-plane/internal/service/alerts"
 	acmeclient "neilico/control-plane/internal/service/cert/acme"
@@ -119,6 +120,25 @@ func run() error {
 		AgreeTOS:     cfg.ACME.AgreeTOS,
 		CACertFile:   cfg.ACME.CACertFile,
 	}, acmeTransport)
+	// 中继兜底：默认关闭。开启后给「直连不通」的 peer 下发 relay_endpoint，
+	// agent 用本地回环代理把 WireGuard 报文交给中继转发。
+	relayOptions := relay.OptionsFromEnv()
+	if err := relayOptions.Validate(); err != nil {
+		return fmt.Errorf("relay configuration: %w", err)
+	}
+	if relayOptions.Enabled {
+		relayServer := relay.New(relay.ServerOptions{
+			Listen:         relayOptions.Listen,
+			PublicEndpoint: relayOptions.PublicEndpoint(),
+			Logger:         logger,
+		}, nodeService, promMetrics)
+		go func() {
+			if err := relayServer.Serve(ctx); err != nil && ctx.Err() == nil {
+				logger.Error("relay server failed", "error", err)
+			}
+		}()
+		logger.Info("relay enabled", "listen", relayOptions.Listen, "public_endpoint", relayOptions.PublicEndpoint())
+	}
 	handler := api.NewWithProxy(handle, manager, nodeService, promMetrics, logger, version, proxyProvider, api.ProxyOptions{
 		Enabled:       cfg.Proxy.Enabled,
 		Kind:          cfg.Proxy.Kind,
@@ -170,6 +190,9 @@ func run() error {
 			ServerCertDays:  cfg.PKI.ServerCertDays,
 			NodeCertDays:    cfg.PKI.NodeCertDays,
 			RenewBeforeDays: cfg.PKI.RenewBeforeDays,
+		},
+		Relay: api.RelayOptions{
+			Endpoint: relayOptions.PublicEndpoint(),
 		},
 		RemoteDesktop: api.RemoteDesktopOptions{
 			Enabled:       cfg.RemoteDesktop.Enabled,

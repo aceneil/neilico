@@ -32,12 +32,21 @@ type ProxyOptions struct {
 	Dashboard        DashboardOptions     `json:"-"`
 	Bootstrap        BootstrapOptions     `json:"-"`
 	RemoteDesktop    RemoteDesktopOptions `json:"remote_desktop"`
+	// Relay 是中继兜底的配置：中继地址（host:port）。空 = 中继关闭，
+	// 控制面不会给任何对端下发 relay_endpoint（行为与中继上线前完全一致）。
+	Relay RelayOptions `json:"relay"`
 	// StreamPortMin/Max 限定「端口转发」可用的监听端口区间，必须与容器发布的端口段一致。
 	StreamPortMin int `json:"-"`
 	StreamPortMax int `json:"-"`
 }
 
 // BootstrapOptions 承载「首次登入引导 / 自助账号」所需配置。
+// RelayOptions 承载中继兜底的配置。
+type RelayOptions struct {
+	// Endpoint 是下发给 agent 的中继地址（host:port）。
+	Endpoint string `json:"endpoint"`
+}
+
 type BootstrapOptions struct {
 	// EnvFile 是轮换密码后原子回写的 bootstrap env 路径（空 = 不启用回写）。
 	EnvFile string

@@ -128,9 +128,17 @@ func (c *Client) HeartbeatWithReport(ctx context.Context, nodeID, version string
 //
 // 候选采集失败绝不影响心跳：调用方拿不到候选时传 nil 即可（老版本控制面也会忽略）。
 func (c *Client) HeartbeatWithCandidates(ctx context.Context, nodeID, version string, reported *capabilities.Capabilities, network *netinfo.Info, candidates []Candidate) (HeartbeatResponse, error) {
+	return c.HeartbeatWithDirectPath(ctx, nodeID, version, reported, network, candidates, nil)
+}
+
+// HeartbeatWithDirectPath 在心跳里额外带上「本机与所有对端是否都握手成功」。
+//
+// directPath 为 nil 时不上报这个字段（老版本控制面 / 判断不出来的情况）。
+// 控制面据此决定要不要给相关对端下发 relay_endpoint（走中继兜底）。
+func (c *Client) HeartbeatWithDirectPath(ctx context.Context, nodeID, version string, reported *capabilities.Capabilities, network *netinfo.Info, candidates []Candidate, directPath *bool) (HeartbeatResponse, error) {
 	var output HeartbeatResponse
 	path := "/api/v1/nodes/" + url.PathEscape(nodeID) + "/heartbeat"
-	request := HeartbeatRequest{Version: version, Capabilities: reported, Network: network, Candidates: candidates}
+	request := HeartbeatRequest{Version: version, Capabilities: reported, Network: network, Candidates: candidates, DirectPath: directPath}
 	if err := c.do(ctx, http.MethodPost, path, request, &output); err != nil {
 		return HeartbeatResponse{}, err
 	}

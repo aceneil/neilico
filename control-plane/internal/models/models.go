@@ -53,10 +53,14 @@ type Node struct {
 	// 控制面落库后随配置下发给对端，agent 用它做 UDP 打洞选路。
 	// 新增列由 AutoMigrate 自动补齐（not null + default '[]'，升级不会炸）。
 	Candidates datatypes.JSONSlice[Candidate] `gorm:"type:jsonb;not null;default:'[]'" json:"candidates"`
-	OS         string                         `gorm:"type:varchar(64);not null" json:"os"`
-	Arch       string                         `gorm:"type:varchar(64);not null" json:"arch"`
-	Version    string                         `gorm:"type:varchar(64);not null" json:"version"`
-	Status     string                         `gorm:"type:varchar(32);not null;default:offline;index" json:"status"`
+	// DirectPath 表示本机与所有对端都建立了直连握手（打洞成功）。
+	// 值为 false 时控制面会给相关对端下发 relay_endpoint，让 agent 走中继兜底。
+	// 默认 true：老版本 agent 不上报这个字段 → 行为与上线前完全一致（不下发中继）。
+	DirectPath bool   `gorm:"not null;default:true" json:"direct_path"`
+	OS         string `gorm:"type:varchar(64);not null" json:"os"`
+	Arch       string `gorm:"type:varchar(64);not null" json:"arch"`
+	Version    string `gorm:"type:varchar(64);not null" json:"version"`
+	Status     string `gorm:"type:varchar(32);not null;default:offline;index" json:"status"`
 	// 运行环境与默认网关（Agent 心跳上报），用于自动识别「同一个实体局域网」。
 	Environment       string                                        `gorm:"type:varchar(16);not null;default:''" json:"environment"`
 	GatewayIP         string                                        `gorm:"type:varchar(64);not null;default:''" json:"gateway_ip"`

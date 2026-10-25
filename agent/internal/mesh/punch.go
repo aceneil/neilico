@@ -77,6 +77,9 @@ type PuncherOptions struct {
 	SetEndpoint func(ctx context.Context, publicKey, endpoint string) error
 	// Handshake 返回对端最近一次握手时间；默认走 wgctrl。
 	Handshake func(ctx context.Context, publicKey string) (time.Time, error)
+	// AllHandshakes 判断本机与**所有**对端是否都有新鲜的握手；默认走 wgctrl。
+	// 没有配置时返回 false（调用方按「判断不出来」处理）。
+	AllHandshakes func(ctx context.Context) (bool, error)
 	// Prefixes 返回本机内网网段（判断对端的 LAN 候选是否同网段）。
 	Prefixes func() []netip.Prefix
 	// Logger 是日志出口。
@@ -147,6 +150,17 @@ func (p *Puncher) Apply(ctx context.Context, peers []PeerCandidates) error {
 		}
 	}
 	return errors.Join(failures...)
+}
+
+// AllPeersHandshaking 判断本机与所有对端是否都建立了（新鲜的）直连握手。
+//
+// 没有对端时返回 true——没有 peer 就谈不上直连不通。
+// 判断不出来（wgctrl 不可用）时返回 false，调用方据此**不上报** direct_path。
+func (p *Puncher) AllPeersHandshaking(ctx context.Context) (bool, error) {
+	if p.options.AllHandshakes == nil {
+		return false, errors.New("未配置握手探测")
+	}
+	return p.options.AllHandshakes(ctx)
 }
 
 // NeedsPeers 报告打洞器是否还没有拿到过对端信息。
@@ -535,4 +549,49 @@ func (w *WGPuncher) Handshake(ctx context.Context, publicKey string) (time.Time,
 		}
 	}
 	return time.Time{}, nil
+}
+
+// PeerState 返回对端当前的 endpoint 与最近一次握手时间。
+//
+// endpoint 是空字符串表示对端还没有 endpoint（WireGuard 会按 AllowedIPs 里的
+// 目标自己学习）。
+func (w *WGPuncher) PeerState(ctx context.Context, publicKey string) (string, time.Time, error) {
+	device, err := w.client.Device(w.interfaceName)
+	if err != nil {
+		return "", time.Time{}, err
+	}
+	for _, peer := range device.Peers {
+		if peer.PublicKey.String() != strings.TrimSpace(publicKey) {
+			continue
+		}
+		endpoint := ""
+		if peer.Endpoint != nil {
+			endpoint = peer.Endpoint.String()
+		}
+		return endpoint, peer.LastHandshakeTime, nil
+	}
+	return "", time.Time{}, nil
+}
+
+// AllPeersHandshaking 判断设备上所有对端是否都有新鲜的握手。
+//
+// 「新鲜」的判定用 DirectPathWindow：WireGuard 的重协商周期是 120 秒，握手时间戳
+// 在重协商之前不会刷新，所以窗口必须大于 120 秒，否则会把好好的隧道判成断线。
+func (w *WGPuncher) AllPeersHandshaking(ctx context.Context) (bool, error) {
+	device, err := w.client.Device(w.interfaceName)
+	if err != nil {
+		return false, err
+	}
+	if len(device.Peers) == 0 {
+		return true, nil
+	}
+	for _, peer := range device.Peers {
+		if peer.LastHandshakeTime.IsZero() {
+			return false, nil
+		}
+		if time.Since(peer.LastHandshakeTime) > DirectPathWindow {
+			return false, nil
+		}
+	}
+	return true, nil
 }

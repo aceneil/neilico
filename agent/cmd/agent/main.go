@@ -128,8 +128,13 @@ func run(args []string, stdout, stderr io.Writer) error {
 	collector := newCandidateCollector(cfg, logger)
 	// dry-run 下没有真实隧道，打洞器不启用（避免对着候选地址发无意义的包）。
 	var puncher *mesh.Puncher
+	var relayManager *mesh.RelayManager
 	if !metrics.DryRun() {
-		puncher = newPuncher(cfg, logger)
+		puncher, relayManager = newMeshClients(cfg, identity, logger)
+	}
+	if relayManager != nil {
+		relayManager.Start(ctx)
+		defer relayManager.Close()
 	}
 
 	var wg sync.WaitGroup
@@ -139,7 +144,18 @@ func run(args []string, stdout, stderr io.Writer) error {
 		heartbeat.Run(ctx, time.Duration(cfg.HeartbeatInterval), func(ctx context.Context) (time.Duration, error) {
 			// 候选地址采集失败绝不阻塞心跳：拿不到候选就少几个字段而已。
 			candidates := collector.candidates(ctx)
-			response, err := apiClient.HeartbeatWithCandidates(ctx, identity.NodeID, version, capabilitySnapshot(), networkInfo(), candidates)
+			// 直连状态：本机与所有对端都有新鲜握手 → true，否则 false。
+			// 控制面据此决定要不要给相关对端下发 relay_endpoint（走中继兜底）。
+			// 判断不出来时不上报这个字段（保持老版本行为）。
+			var directPath *bool
+			if puncher != nil {
+				alive, handshakeErr := puncher.AllPeersHandshaking(ctx)
+				if handshakeErr == nil {
+					value := alive
+					directPath = &value
+				}
+			}
+			response, err := apiClient.HeartbeatWithDirectPath(ctx, identity.NodeID, version, capabilitySnapshot(), networkInfo(), candidates, directPath)
 			if err != nil {
 				return 0, err
 			}
@@ -148,7 +164,7 @@ func run(args []string, stdout, stderr io.Writer) error {
 	}()
 	go func() {
 		defer wg.Done()
-		runConfigLoop(ctx, cfg, identity, apiClient, reconciler, puncher, metrics, logger)
+		runConfigLoop(ctx, cfg, identity, apiClient, reconciler, puncher, relayManager, metrics, logger)
 	}()
 	go func() { defer wg.Done(); runEndpointLoop(ctx, cfg, identity, apiClient, collector, logger) }()
 	if puncher != nil {
@@ -426,7 +442,7 @@ func enrollAndSaveWithCapabilities(ctx context.Context, cfg config.Config, stdou
 	return identity, nil
 }
 
-func runConfigLoop(ctx context.Context, cfg config.Config, identity state.State, apiClient *client.Client, reconciler *mesh.Reconciler, puncher *mesh.Puncher, observer *agentmetrics.Metrics, logger *slog.Logger) {
+func runConfigLoop(ctx context.Context, cfg config.Config, identity state.State, apiClient *client.Client, reconciler *mesh.Reconciler, puncher *mesh.Puncher, relayManager *mesh.RelayManager, observer *agentmetrics.Metrics, logger *slog.Logger) {
 	backoff := heartbeat.NewBackoff(time.Second, 60*time.Second)
 	timer := time.NewTimer(0)
 	defer timer.Stop()
@@ -453,7 +469,7 @@ func runConfigLoop(ctx context.Context, cfg config.Config, identity state.State,
 			logger.Info("local mesh state drift detected; re-applying", "missing", strings.Join(missing, "; "))
 			forceReapply = true
 		}
-		err = pollOnce(ctx, identity, apiClient, reconciler, puncher, observer, logger, forceReapply)
+		err = pollOnce(ctx, identity, apiClient, reconciler, puncher, relayManager, observer, logger, forceReapply)
 		if err != nil {
 			timer.Reset(backoff.Next())
 			continue
@@ -470,7 +486,7 @@ func needsSchemaReapply(appliedSchema int) bool {
 	return appliedSchema != mesh.ApplicationSchemaVersion
 }
 
-func pollOnce(ctx context.Context, identity state.State, apiClient *client.Client, reconciler *mesh.Reconciler, puncher *mesh.Puncher, observer *agentmetrics.Metrics, logger *slog.Logger, forceReapply bool) error {
+func pollOnce(ctx context.Context, identity state.State, apiClient *client.Client, reconciler *mesh.Reconciler, puncher *mesh.Puncher, relayManager *mesh.RelayManager, observer *agentmetrics.Metrics, logger *slog.Logger, forceReapply bool) error {
 	schemaChanged := needsSchemaReapply(identity.ApplicationSchema)
 	result, err := apiClient.Config(ctx, identity.NodeID, identity.AppliedVersion)
 	if err != nil {
@@ -532,6 +548,13 @@ func pollOnce(ctx context.Context, identity state.State, apiClient *client.Clien
 	if puncher != nil && result.Delivery.Network != nil {
 		if err := puncher.Apply(ctx, mesh.PeerCandidatesFromPeers(result.Delivery.Network.Peers)); err != nil {
 			logger.Warn("hole punching setup failed", "error", err)
+		}
+	}
+	// 中继兜底：只有控制面明确下发了 relay_endpoint 的对端才会走中继；
+	// 没有 relay_endpoint 的对端一个字节都不会被改动。
+	if relayManager != nil && result.Delivery.Network != nil {
+		if err := relayManager.Apply(ctx, mesh.RelayPeersFromPeers(result.Delivery.Network.Peers)); err != nil {
+			logger.Warn("relay setup failed", "error", err)
 		}
 	}
 	return nil
@@ -792,24 +815,33 @@ func syncPuncherPeers(ctx context.Context, identity state.State, apiClient *clie
 	}
 }
 
-// newPuncher 构造打洞器：拿到配置后按候选顺序给对端挑 endpoint。
+// newMeshClients 构造打洞器与中继管理器。
 //
-// wgctrl 不可用时（没有真实内核接口）降级成「只发打洞包、不改 endpoint」。
-func newPuncher(cfg config.Config, logger *slog.Logger) *mesh.Puncher {
-	options := mesh.PuncherOptions{
+// wgctrl 不可用时（没有真实内核接口）降级成「只发打洞包、不改 endpoint」，
+// 中继也退化成「只转发、不接管 endpoint」。
+func newMeshClients(cfg config.Config, identity state.State, logger *slog.Logger) (*mesh.Puncher, *mesh.RelayManager) {
+	punchOptions := mesh.PuncherOptions{
 		Logger: logger,
 		Prefixes: func() []netip.Prefix {
 			return mesh.LocalPrefixes(cfg.Mesh.Interface)
 		},
 	}
+	relayOptions := mesh.RelayOptions{
+		NodeID: identity.NodeID,
+		Token:  identity.AgentToken,
+		Logger: logger,
+	}
 	backend, err := mesh.NewWGPuncher(cfg.Mesh.Interface)
 	if err != nil {
 		logger.Warn("wgctrl 不可用；打洞只发 UDP 包，不改 WireGuard endpoint", "reason", err.Error())
 	} else {
-		options.SetEndpoint = backend.SetEndpoint
-		options.Handshake = backend.Handshake
+		punchOptions.SetEndpoint = backend.SetEndpoint
+		punchOptions.Handshake = backend.Handshake
+		punchOptions.AllHandshakes = backend.AllPeersHandshaking
+		relayOptions.SetEndpoint = backend.SetEndpoint
+		relayOptions.PeerState = backend.PeerState
 	}
-	return mesh.NewPuncher(options)
+	return mesh.NewPuncher(punchOptions), mesh.NewRelayManager(relayOptions)
 }
 
 func detectPublicEndpoint(ctx context.Context, listenPort int) string {

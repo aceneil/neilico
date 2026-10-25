@@ -26,6 +26,9 @@ type Metrics struct {
 	streamBytes          *prometheus.GaugeVec
 	p2pSuccessRate       prometheus.Gauge
 	relayBytes           prometheus.Gauge
+	relayPackets         *prometheus.CounterVec
+	relayBytesTotal      prometheus.Counter
+	relaySessions        prometheus.Gauge
 	heartbeatLatency     prometheus.Gauge
 	alertsFiring         *prometheus.GaugeVec
 	proxyProviderUp      *prometheus.GaugeVec
@@ -82,6 +85,21 @@ func New(db *gorm.DB) *Metrics {
 		Name: "neilico_relay_bytes",
 		Help: "Relay traffic bytes; no relay throughput collector is connected in V1-R2.",
 	})
+	relayPackets := prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "neilico_relay_packets_total",
+		Help: "Total relay packets processed, by direction (in/out/dropped).",
+	}, []string{"direction"})
+	relayBytesTotal := prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "neilico_relay_bytes_total",
+		Help: "Total relay payload bytes forwarded.",
+	})
+	relaySessions := prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "neilico_relay_sessions",
+		Help: "Current number of registered relay sessions.",
+	})
+	for _, direction := range []string{"in", "out", "dropped"} {
+		relayPackets.WithLabelValues(direction).Add(0)
+	}
 	heartbeatLatency := prometheus.NewGauge(prometheus.GaugeOpts{
 		Name: "neilico_agent_heartbeat_latency",
 		Help: "Agent heartbeat request latency; no heartbeat latency samples are collected in V1-R2.",
@@ -152,7 +170,8 @@ func New(db *gorm.DB) *Metrics {
 	registry.MustRegister(
 		httpRequests, nodesOnline, proxyRequests, proxyRequestsGauge,
 		streamConnections, streamBytes,
-		p2pSuccessRate, relayBytes, heartbeatLatency, alertsFiring,
+		p2pSuccessRate, relayBytes, relayPackets, relayBytesTotal, relaySessions,
+		heartbeatLatency, alertsFiring,
 		proxyProviderUp, tunnelUp, configVersion, aclDenied, acmeOrders,
 		acmeOrderDuration, certificateExpiry, certificateRenewals, tlsHandshakes,
 		pkiCAExpiry, pkiIssued, pkiCertificateExpiry,
@@ -168,6 +187,9 @@ func New(db *gorm.DB) *Metrics {
 		streamBytes:          streamBytes,
 		p2pSuccessRate:       p2pSuccessRate,
 		relayBytes:           relayBytes,
+		relayPackets:         relayPackets,
+		relayBytesTotal:      relayBytesTotal,
+		relaySessions:        relaySessions,
 		heartbeatLatency:     heartbeatLatency,
 		alertsFiring:         alertsFiring,
 		proxyProviderUp:      proxyProviderUp,
@@ -199,6 +221,27 @@ func (m *Metrics) SetConfigVersion(targetType, targetID string, version int) {
 
 func (m *Metrics) IncACLDenied() {
 	m.aclDenied.Inc()
+}
+
+// ObserveRelayPacket 记录中继收发的包数（direction: in/out/dropped）。
+func (m *Metrics) ObserveRelayPacket(direction string, count int) {
+	if count <= 0 {
+		return
+	}
+	m.relayPackets.WithLabelValues(direction).Add(float64(count))
+}
+
+// ObserveRelayBytes 记录中继转发的字节数。
+func (m *Metrics) ObserveRelayBytes(count int) {
+	if count <= 0 {
+		return
+	}
+	m.relayBytesTotal.Add(float64(count))
+}
+
+// SetRelaySessions 更新当前中继会话数。
+func (m *Metrics) SetRelaySessions(count int) {
+	m.relaySessions.Set(float64(count))
 }
 
 func (m *Metrics) Handler() http.Handler {
