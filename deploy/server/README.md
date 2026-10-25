@@ -237,7 +237,26 @@ services:
 
 ---
 
-## 5. 从源码构建
+## 5. 中继兜底（打洞失败时）
+
+两端都在不可达 NAT 后时，STUN/打洞可能失败。中继跑在**控制面进程内**，默认关闭：
+
+```yaml
+    ports:
+      - "11333:11333"
+      - "51821:51821/udp"                 # 中继
+    environment:
+      NEILICO_RELAY_ENABLED: "true"
+      NEILICO_RELAY_LISTEN: ":51821"
+      NEILICO_RELAY_PUBLIC_HOST: "<公网域名或IP>"   # 下发对端的地址，必须公网可达
+```
+
+- 只有**直连不通**的 peer 才会拿到 `relay_endpoint`，走得通的对端完全不受影响
+- 鉴权复用 node token，每会话限流 2000 pps / 20 MB/s，2 分钟无流量过期
+- 指标：`neilico_relay_packets_total` / `neilico_relay_bytes_total` / `neilico_relay_sessions`
+- 代价：流量绕服务器一圈，带宽受服务器出口限制（不是 P2P）
+
+## 6. 从源码构建
 
 ```bash
 git clone https://github.com/aceneil/neilico.git && cd neilico
@@ -247,7 +266,7 @@ docker build -f deploy/server/Dockerfile -t neilico-server:local .
 
 ---
 
-## 6. 升级与备份
+## 7. 升级与备份
 
 ```bash
 docker compose -f neilico-stack.yml pull
@@ -265,7 +284,7 @@ tar czf neilico-$(date +%F).tgz neilico/
 
 ---
 
-## 7. 已知限制
+## 8. 已知限制
 
 - 单容器是单点部署，无水平扩展 / 滚动升级。
 - PostgreSQL 与应用同生命周期：用 `docker stop` 正常停止，entrypoint 会先停应用再 `fast` 停库。
