@@ -622,6 +622,8 @@ type candidateCollector struct {
 	stunAddr       string
 	stunAt         time.Time
 	stunRefreshing bool
+	// stunPortWarned 保证「NAT 改写了端口」只提示一次。
+	stunPortWarned bool
 	publicAddr     string
 }
 
@@ -652,12 +654,40 @@ func (c *candidateCollector) candidates(ctx context.Context) []client.Candidate 
 	result := make([]client.Candidate, 0, 8)
 	result = append(result, c.lanCandidates()...)
 	if address := c.stunAddress(); address != "" {
-		result = append(result, client.Candidate{Kind: "stun", Addr: address})
+		// 只有 NAT 保留了监听端口时，"公网 IP:51820" 才是对端真能打通的地址。
+		// 端口被随机映射时上报它只会让对端白试（甚至把能用的隧道换掉），宁可不报。
+		if c.stunPortPreserved(address) {
+			result = append(result, client.Candidate{Kind: "stun", Addr: address})
+		} else {
+			c.warnStunPortOnce(address)
+		}
 	}
 	if address := c.cachedPublicAddress(); address != "" {
 		result = append(result, client.Candidate{Kind: "public", Addr: address})
 	}
 	return result
+}
+
+// stunPortPreserved 判断 NAT 是否把监听端口原样映射出去。
+func (c *candidateCollector) stunPortPreserved(address string) bool {
+	_, port, err := net.SplitHostPort(address)
+	if err != nil {
+		return false
+	}
+	return port == strconv.Itoa(c.listenPort)
+}
+
+// warnStunPortOnce 对「端口被改写」只提示一次，避免每 30s 刷日志。
+func (c *candidateCollector) warnStunPortOnce(address string) {
+	c.mutex.Lock()
+	warned := c.stunPortWarned
+	c.stunPortWarned = true
+	c.mutex.Unlock()
+	if warned {
+		return
+	}
+	c.logger.Info("STUN 显示 NAT 改写了端口，stun 候选不上报（改走 public / lan / 中继）",
+		"mapped_address", address, "listen_port", c.listenPort)
 }
 
 // lanCandidates 返回本机的内网地址 + WireGuard 监听端口。
