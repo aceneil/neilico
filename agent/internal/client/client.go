@@ -120,9 +120,17 @@ func (c *Client) HeartbeatWithCapabilities(ctx context.Context, nodeID, version 
 
 // HeartbeatWithReport 额外携带运行环境/网关信息（用于站点自动识别）。
 func (c *Client) HeartbeatWithReport(ctx context.Context, nodeID, version string, reported *capabilities.Capabilities, network *netinfo.Info) (HeartbeatResponse, error) {
+	return c.HeartbeatWithCandidates(ctx, nodeID, version, reported, network, nil)
+}
+
+// HeartbeatWithCandidates 在心跳里额外带上本机的候选地址（stun / public / lan），
+// 控制面会落库并随配置下发给对端，用于 UDP 打洞选路。
+//
+// 候选采集失败绝不影响心跳：调用方拿不到候选时传 nil 即可（老版本控制面也会忽略）。
+func (c *Client) HeartbeatWithCandidates(ctx context.Context, nodeID, version string, reported *capabilities.Capabilities, network *netinfo.Info, candidates []Candidate) (HeartbeatResponse, error) {
 	var output HeartbeatResponse
 	path := "/api/v1/nodes/" + url.PathEscape(nodeID) + "/heartbeat"
-	request := HeartbeatRequest{Version: version, Capabilities: reported, Network: network}
+	request := HeartbeatRequest{Version: version, Capabilities: reported, Network: network, Candidates: candidates}
 	if err := c.do(ctx, http.MethodPost, path, request, &output); err != nil {
 		return HeartbeatResponse{}, err
 	}

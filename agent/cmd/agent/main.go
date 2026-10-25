@@ -8,11 +8,14 @@ import (
 	"io"
 	"log/slog"
 	"neilico/agent/internal/netinfo"
+	"net"
 	"net/http"
+	"net/netip"
 	"os"
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -122,20 +125,36 @@ func run(args []string, stdout, stderr io.Writer) error {
 		ListenPort:      cfg.Mesh.ListenPort,
 	})
 
+	collector := newCandidateCollector(cfg, logger)
+	// dry-run 下没有真实隧道，打洞器不启用（避免对着候选地址发无意义的包）。
+	var puncher *mesh.Puncher
+	if !metrics.DryRun() {
+		puncher = newPuncher(cfg, logger)
+	}
+
 	var wg sync.WaitGroup
 	wg.Add(3)
 	go func() {
 		defer wg.Done()
 		heartbeat.Run(ctx, time.Duration(cfg.HeartbeatInterval), func(ctx context.Context) (time.Duration, error) {
-			response, err := apiClient.HeartbeatWithReport(ctx, identity.NodeID, version, capabilitySnapshot(), networkInfo())
+			// 候选地址采集失败绝不阻塞心跳：拿不到候选就少几个字段而已。
+			candidates := collector.candidates(ctx)
+			response, err := apiClient.HeartbeatWithCandidates(ctx, identity.NodeID, version, capabilitySnapshot(), networkInfo(), candidates)
 			if err != nil {
 				return 0, err
 			}
 			return time.Duration(response.NextHeartbeatSeconds) * time.Second, nil
 		}, metrics, logger)
 	}()
-	go func() { defer wg.Done(); runConfigLoop(ctx, cfg, identity, apiClient, reconciler, metrics, logger) }()
-	go func() { defer wg.Done(); runEndpointLoop(ctx, cfg, identity, apiClient, logger) }()
+	go func() {
+		defer wg.Done()
+		runConfigLoop(ctx, cfg, identity, apiClient, reconciler, puncher, metrics, logger)
+	}()
+	go func() { defer wg.Done(); runEndpointLoop(ctx, cfg, identity, apiClient, collector, logger) }()
+	if puncher != nil {
+		wg.Add(1)
+		go func() { defer wg.Done(); puncher.Run(ctx) }()
+	}
 
 	if cfg.Metrics.Enabled {
 		server := &http.Server{Addr: cfg.Metrics.Listen, Handler: metrics.Handler(), ReadHeaderTimeout: 5 * time.Second}
@@ -407,7 +426,7 @@ func enrollAndSaveWithCapabilities(ctx context.Context, cfg config.Config, stdou
 	return identity, nil
 }
 
-func runConfigLoop(ctx context.Context, cfg config.Config, identity state.State, apiClient *client.Client, reconciler *mesh.Reconciler, observer *agentmetrics.Metrics, logger *slog.Logger) {
+func runConfigLoop(ctx context.Context, cfg config.Config, identity state.State, apiClient *client.Client, reconciler *mesh.Reconciler, puncher *mesh.Puncher, observer *agentmetrics.Metrics, logger *slog.Logger) {
 	backoff := heartbeat.NewBackoff(time.Second, 60*time.Second)
 	timer := time.NewTimer(0)
 	defer timer.Stop()
@@ -434,7 +453,7 @@ func runConfigLoop(ctx context.Context, cfg config.Config, identity state.State,
 			logger.Info("local mesh state drift detected; re-applying", "missing", strings.Join(missing, "; "))
 			forceReapply = true
 		}
-		err = pollOnce(ctx, identity, apiClient, reconciler, observer, logger, forceReapply)
+		err = pollOnce(ctx, identity, apiClient, reconciler, puncher, observer, logger, forceReapply)
 		if err != nil {
 			timer.Reset(backoff.Next())
 			continue
@@ -451,7 +470,7 @@ func needsSchemaReapply(appliedSchema int) bool {
 	return appliedSchema != mesh.ApplicationSchemaVersion
 }
 
-func pollOnce(ctx context.Context, identity state.State, apiClient *client.Client, reconciler *mesh.Reconciler, observer *agentmetrics.Metrics, logger *slog.Logger, forceReapply bool) error {
+func pollOnce(ctx context.Context, identity state.State, apiClient *client.Client, reconciler *mesh.Reconciler, puncher *mesh.Puncher, observer *agentmetrics.Metrics, logger *slog.Logger, forceReapply bool) error {
 	schemaChanged := needsSchemaReapply(identity.ApplicationSchema)
 	result, err := apiClient.Config(ctx, identity.NodeID, identity.AppliedVersion)
 	if err != nil {
@@ -473,6 +492,7 @@ func pollOnce(ctx context.Context, identity state.State, apiClient *client.Clien
 			result = latest
 		} else if result.NotModified {
 			observer.ConfigPull("not_modified")
+			syncPuncherPeers(ctx, identity, apiClient, puncher, logger)
 			return nil
 		}
 		if forceReapply {
@@ -484,6 +504,7 @@ func pollOnce(ctx context.Context, identity state.State, apiClient *client.Clien
 		}
 	} else if result.NotModified {
 		observer.ConfigPull("not_modified")
+		syncPuncherPeers(ctx, identity, apiClient, puncher, logger)
 		return nil
 	} else if result.Delivery.Version <= identity.AppliedVersion {
 		// M2b snapshots may return the requested historical version. Fetch the
@@ -496,6 +517,7 @@ func pollOnce(ctx context.Context, identity state.State, apiClient *client.Clien
 		}
 		if latest.NotModified || latest.Delivery.Version <= identity.AppliedVersion {
 			observer.ConfigPull("not_modified")
+			syncPuncherPeers(ctx, identity, apiClient, puncher, logger)
 			return nil
 		}
 		result = latest
@@ -505,10 +527,17 @@ func pollOnce(ctx context.Context, identity state.State, apiClient *client.Clien
 		logger.Warn("configuration apply failed; retaining previous version", "version", result.Delivery.Version, "error", err)
 		return err
 	}
+	// 打洞是「配置应用之后」的可选步骤：没有候选（老版本 agent / 老版本控制面）
+	// 时它什么都不会做，既有行为完全不变。
+	if puncher != nil && result.Delivery.Network != nil {
+		if err := puncher.Apply(ctx, mesh.PeerCandidatesFromPeers(result.Delivery.Network.Peers)); err != nil {
+			logger.Warn("hole punching setup failed", "error", err)
+		}
+	}
 	return nil
 }
 
-func runEndpointLoop(ctx context.Context, cfg config.Config, identity state.State, apiClient *client.Client, logger *slog.Logger) {
+func runEndpointLoop(ctx context.Context, cfg config.Config, identity state.State, apiClient *client.Client, collector *candidateCollector, logger *slog.Logger) {
 	timer := time.NewTimer(0)
 	defer timer.Stop()
 	for {
@@ -519,7 +548,9 @@ func runEndpointLoop(ctx context.Context, cfg config.Config, identity state.Stat
 		}
 		endpoint := strings.TrimSpace(cfg.Mesh.PublicEndpoint)
 		if endpoint == "" {
-			endpoint = detectPublicEndpoint(ctx, cfg.Mesh.ListenPort)
+			// 强制重新探测：保持既有的「每 5 分钟探测一次出口地址」的节奏不变，
+			// 同时把结果缓存给心跳里的 public 候选用（避免重复打 ipify）。
+			endpoint = collector.publicAddress(ctx)
 		}
 		// 同时上报本机内网地址：处于同一内网的设备之间可以直接用内网地址建隧道，
 		// 不必依赖（常常不可达的）公网出口。注意即使公网地址探测失败也要上报——
@@ -573,6 +604,182 @@ func sameAddresses(left, right []string) bool {
 		}
 	}
 	return true
+}
+
+// candidateCollector 采集本机候选地址（lan / stun / public），随心跳上报给控制面，
+// 由控制面落库并随配置下发给对端，用于 UDP 打洞选路。
+//
+// 任何一步失败都**不阻塞心跳**：STUN 探测失败只是少一个候选；public 探测失败沿用
+// 既有行为（public endpoint 为空）。心跳里原有的 endpoint 语义完全不变。
+type candidateCollector struct {
+	logger        *slog.Logger
+	interfaceName string
+	listenPort    int
+	// staticPublic 是配置里写死的公网地址（有它就不必再探测出口 IP）。
+	staticPublic string
+
+	mutex          sync.Mutex
+	stunAddr       string
+	stunAt         time.Time
+	stunRefreshing bool
+	publicAddr     string
+}
+
+const (
+	// stunCacheTTL 是 STUN 探测结果的缓存时间：心跳比它密，不必每次心跳都打 STUN。
+	stunCacheTTL = 30 * time.Second
+	// stunDiscoveryBudget 是单次心跳允许花在 STUN 探测上的时间上限（不能拖慢心跳）。
+	stunDiscoveryBudget = 6 * time.Second
+	// defaultAgentListenPort 是配置缺失时的 WireGuard 监听端口。
+	defaultAgentListenPort = 51820
+)
+
+func newCandidateCollector(cfg config.Config, logger *slog.Logger) *candidateCollector {
+	listenPort := cfg.Mesh.ListenPort
+	if listenPort < 1 || listenPort > 65535 {
+		listenPort = defaultAgentListenPort
+	}
+	return &candidateCollector{
+		logger:        logger,
+		interfaceName: cfg.Mesh.Interface,
+		listenPort:    listenPort,
+		staticPublic:  strings.TrimSpace(cfg.Mesh.PublicEndpoint),
+	}
+}
+
+// candidates 采集本次心跳要上报的候选地址。
+func (c *candidateCollector) candidates(ctx context.Context) []client.Candidate {
+	result := make([]client.Candidate, 0, 8)
+	result = append(result, c.lanCandidates()...)
+	if address := c.stunAddress(); address != "" {
+		result = append(result, client.Candidate{Kind: "stun", Addr: address})
+	}
+	if address := c.cachedPublicAddress(); address != "" {
+		result = append(result, client.Candidate{Kind: "public", Addr: address})
+	}
+	return result
+}
+
+// lanCandidates 返回本机的内网地址 + WireGuard 监听端口。
+func (c *candidateCollector) lanCandidates() []client.Candidate {
+	prefixes := mesh.LocalPrefixes(c.interfaceName)
+	result := make([]client.Candidate, 0, len(prefixes))
+	for _, prefix := range prefixes {
+		result = append(result, client.Candidate{
+			Kind: "lan",
+			Addr: net.JoinHostPort(prefix.Addr().String(), strconv.Itoa(c.listenPort)),
+		})
+	}
+	return result
+}
+
+// stunAddress 返回 STUN 探测到的公网映射地址。
+//
+// 探测在后台异步进行——**心跳绝不能被 STUN 拖慢**（服务器不通时一次要等 6s）。
+// 结果缓存 30s：缓存过期就在后台刷新，本次心跳先用缓存里的旧值（没有就返回空）。
+// 探测失败只记 warn，agent 的其它行为完全不受影响。
+func (c *candidateCollector) stunAddress() string {
+	c.mutex.Lock()
+	address := c.stunAddr
+	fresh := time.Since(c.stunAt) < stunCacheTTL
+	refreshing := c.stunRefreshing
+	c.mutex.Unlock()
+	if fresh || refreshing {
+		return address
+	}
+	c.mutex.Lock()
+	c.stunRefreshing = true
+	c.mutex.Unlock()
+	go c.refreshStun()
+	return address
+}
+
+// refreshStun 在后台重新探测 STUN 地址。
+func (c *candidateCollector) refreshStun() {
+	defer func() {
+		c.mutex.Lock()
+		c.stunRefreshing = false
+		c.mutex.Unlock()
+	}()
+	discoverCtx, cancel := context.WithTimeout(context.Background(), stunDiscoveryBudget)
+	defer cancel()
+	address, err := mesh.DiscoverAny(discoverCtx, mesh.Servers(), c.listenPort)
+	c.mutex.Lock()
+	c.stunAt = time.Now()
+	if err == nil {
+		c.stunAddr = address
+	}
+	c.mutex.Unlock()
+	if err != nil {
+		c.logger.Warn("STUN 探测失败（不影响心跳，继续沿用既有 endpoint）", "error", err)
+		return
+	}
+	c.logger.Info("STUN 探测完成", "mapped_address", address)
+}
+
+// cachedPublicAddress 返回缓存里的公网出口地址（心跳只用缓存，不发起探测）。
+//
+// 配置里写死了公网地址时直接用它（探测也就没必要了）。
+func (c *candidateCollector) cachedPublicAddress() string {
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+	if c.staticPublic != "" {
+		return c.staticPublic
+	}
+	return c.publicAddr
+}
+
+// publicAddress 探测并缓存公网出口地址（ipify 探测）。
+//
+// 由既有的「每 5 分钟上报一次 endpoint」的循环调用，心跳只读缓存——保持原来的
+// 探测节奏，也避免心跳被 HTTP 探测拖慢。
+func (c *candidateCollector) publicAddress(ctx context.Context) string {
+	address := detectPublicEndpoint(ctx, c.listenPort)
+	c.mutex.Lock()
+	c.publicAddr = address
+	c.mutex.Unlock()
+	return address
+}
+
+// syncPuncherPeers 让打洞器拿到对端的候选地址。
+//
+// 配置没变化时 agent 拿到 304（不重新应用配置），但打洞器仍然需要对端信息才能在
+// 隧道不通时切换候选，所以这里在「打洞器还没有对端信息」时补拉一次最新配置。
+func syncPuncherPeers(ctx context.Context, identity state.State, apiClient *client.Client, puncher *mesh.Puncher, logger *slog.Logger) {
+	if puncher == nil || !puncher.NeedsPeers() {
+		return
+	}
+	latest, err := apiClient.Config(ctx, identity.NodeID, 0)
+	if err != nil {
+		logger.Warn("pull latest config for hole punching failed", "error", err)
+		return
+	}
+	if latest.Delivery.Network == nil {
+		return
+	}
+	if err := puncher.Apply(ctx, mesh.PeerCandidatesFromPeers(latest.Delivery.Network.Peers)); err != nil {
+		logger.Warn("hole punching setup failed", "error", err)
+	}
+}
+
+// newPuncher 构造打洞器：拿到配置后按候选顺序给对端挑 endpoint。
+//
+// wgctrl 不可用时（没有真实内核接口）降级成「只发打洞包、不改 endpoint」。
+func newPuncher(cfg config.Config, logger *slog.Logger) *mesh.Puncher {
+	options := mesh.PuncherOptions{
+		Logger: logger,
+		Prefixes: func() []netip.Prefix {
+			return mesh.LocalPrefixes(cfg.Mesh.Interface)
+		},
+	}
+	backend, err := mesh.NewWGPuncher(cfg.Mesh.Interface)
+	if err != nil {
+		logger.Warn("wgctrl 不可用；打洞只发 UDP 包，不改 WireGuard endpoint", "reason", err.Error())
+	} else {
+		options.SetEndpoint = backend.SetEndpoint
+		options.Handshake = backend.Handshake
+	}
+	return mesh.NewPuncher(options)
 }
 
 func detectPublicEndpoint(ctx context.Context, listenPort int) string {

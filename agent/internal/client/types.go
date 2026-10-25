@@ -25,11 +25,25 @@ type RegisterResponse struct {
 	PrivateKey string `json:"private_key"`
 }
 
+// Candidate 是本机的一个候选地址（ip:port），供对端挑一条能走通的路径。
+//
+// Kind 目前的取值：
+//   - "lan"：本机内网地址（直连可达，优先）；
+//   - "public"：公网出口地址（ipify 探测，出口 IP ≠ 端口映射，仅作兜底）；
+//   - "stun"：STUN 服务器观察到的公网映射地址（打洞最需要的那个）。
+type Candidate struct {
+	Kind string `json:"kind"`
+	Addr string `json:"addr"`
+}
+
 type HeartbeatRequest struct {
 	Version      string                     `json:"version"`
 	Capabilities *capabilities.Capabilities `json:"capabilities,omitempty"`
 	// Network 描述本机的运行环境与默认网关，用于控制面判断「是否同一实体局域网」。
 	Network *netinfo.Info `json:"network,omitempty"`
+	// Candidates 是本机的候选地址，随心跳上报给控制面并下发给对端。
+	// 字段是新增的，老版本控制面会直接忽略（omitempty 保持向后兼容）。
+	Candidates []Candidate `json:"candidates,omitempty"`
 }
 
 type HeartbeatResponse struct {
@@ -66,6 +80,8 @@ type Peer struct {
 	LocalAddresses []string `json:"local_addresses,omitempty"`
 	// ListenPort 是对端自己的监听端口（与本机可能不同）。
 	ListenPort int `json:"listen_port,omitempty"`
+	// Candidates 是对端上报的候选地址（stun / public / lan），供本机打洞选路。
+	Candidates []Candidate `json:"candidates,omitempty"`
 }
 
 type Network struct {

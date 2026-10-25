@@ -48,11 +48,15 @@ type Node struct {
 	// 因为公网出口在 NAT/代理后经常互相不可达（实测导致 mesh 起不来）。
 	LocalAddresses datatypes.JSONSlice[string] `gorm:"type:jsonb;not null;default:'[]'" json:"local_addresses"`
 	// ListenPort 是节点 WireGuard 的监听端口；对端拼内网 endpoint 时要用它。
-	ListenPort int    `gorm:"not null;default:51820" json:"listen_port"`
-	OS         string `gorm:"type:varchar(64);not null" json:"os"`
-	Arch       string `gorm:"type:varchar(64);not null" json:"arch"`
-	Version    string `gorm:"type:varchar(64);not null" json:"version"`
-	Status     string `gorm:"type:varchar(32);not null;default:offline;index" json:"status"`
+	ListenPort int `gorm:"not null;default:51820" json:"listen_port"`
+	// Candidates 是 agent 心跳上报的候选地址（stun / public / lan）。
+	// 控制面落库后随配置下发给对端，agent 用它做 UDP 打洞选路。
+	// 新增列由 AutoMigrate 自动补齐（not null + default '[]'，升级不会炸）。
+	Candidates datatypes.JSONSlice[Candidate] `gorm:"type:jsonb;not null;default:'[]'" json:"candidates"`
+	OS         string                         `gorm:"type:varchar(64);not null" json:"os"`
+	Arch       string                         `gorm:"type:varchar(64);not null" json:"arch"`
+	Version    string                         `gorm:"type:varchar(64);not null" json:"version"`
+	Status     string                         `gorm:"type:varchar(32);not null;default:offline;index" json:"status"`
 	// 运行环境与默认网关（Agent 心跳上报），用于自动识别「同一个实体局域网」。
 	Environment       string                                        `gorm:"type:varchar(16);not null;default:''" json:"environment"`
 	GatewayIP         string                                        `gorm:"type:varchar(64);not null;default:''" json:"gateway_ip"`
@@ -73,6 +77,17 @@ type Node struct {
 	HeartbeatStale   bool   `gorm:"-" json:"heartbeat_stale"`
 
 	Tenant *Tenant `gorm:"foreignKey:TenantID;constraint:OnDelete:RESTRICT,OnUpdate:CASCADE" json:"-"`
+}
+
+// Candidate 是节点上报的一个候选地址（ip:port），供对端挑一条能走通的路径。
+//
+// Kind 目前只有三种取值：
+//   - "lan"：本机内网地址（同一网段内直连可达，优先级最高）；
+//   - "public"：公网出口地址（ipify 探测；出口 IP ≠ 端口映射，仅作兜底）；
+//   - "stun"：STUN 服务器观察到的公网映射地址（打洞最需要的那个）。
+type Candidate struct {
+	Kind string `json:"kind"`
+	Addr string `json:"addr"`
 }
 
 type CA struct {

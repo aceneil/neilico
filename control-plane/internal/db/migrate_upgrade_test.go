@@ -64,3 +64,47 @@ func TestAutoMigrateAddsNewNotNullColumnToPopulatedTable(t *testing.T) {
 		t.Fatalf("历史行的 capabilities 规范化后仍不可用：%+v", caps)
 	}
 }
+
+// 候选地址列（candidates）同样是「给已有数据的表加新列」：
+// 必须带默认值，否则已有部署升级时容器启动即崩（与 capabilities 同一类事故）。
+func TestAutoMigrateAddsCandidatesColumnToPopulatedTable(t *testing.T) {
+	handle, err := gorm.Open(sqlite.Open("file:upgrade_candidates?mode=memory&cache=shared"), &gorm.Config{
+		Logger: logger.Default.LogMode(logger.Silent),
+	})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+
+	// 1) 按当前模型建表
+	if err := handle.AutoMigrate(&models.Node{}); err != nil {
+		t.Fatalf("初次 AutoMigrate: %v", err)
+	}
+	// 2) 删掉新列 → 等价于升级前的旧表结构
+	if err := handle.Migrator().DropColumn(&models.Node{}, "candidates"); err != nil {
+		t.Fatalf("构造旧表（删除 candidates 列）失败：%v", err)
+	}
+	// 3) 用原始 SQL 插入一行历史数据
+	legacyInsert := `INSERT INTO nodes
+        (id, tenant_id, name, public_key, private_key, os, arch, version, status, tags, agent_token_hash, created_at)
+        VALUES ('11111111-1111-1111-1111-111111111111',
+                '22222222-2222-2222-2222-222222222222',
+                'legacy-node', 'PUBKEY', '', 'linux', 'amd64', '0.1.0', 'offline', '[]', 'deadbeef',
+                CURRENT_TIMESTAMP)`
+	if err := handle.Exec(legacyInsert).Error; err != nil {
+		t.Fatalf("写入历史行失败：%v", err)
+	}
+
+	// 4) 升级路径：新增 NOT NULL 列必须带 default
+	if err := handle.AutoMigrate(&models.Node{}); err != nil {
+		t.Fatalf("AutoMigrate 在已有数据的表上失败（新增 candidates 列缺少 default，真实部署会崩溃重启）：%v", err)
+	}
+
+	// 5) 历史行必须仍可读，且候选为空列表
+	var node models.Node
+	if err := handle.Where("name = ?", "legacy-node").First(&node).Error; err != nil {
+		t.Fatalf("升级后读取历史行失败：%v", err)
+	}
+	if len(node.Candidates) != 0 {
+		t.Fatalf("历史行的候选应为空：%+v", node.Candidates)
+	}
+}

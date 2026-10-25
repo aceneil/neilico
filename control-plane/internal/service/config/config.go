@@ -57,6 +57,8 @@ type Peer struct {
 	LocalAddresses []string `json:"local_addresses,omitempty"`
 	// ListenPort 是对端自己的 WireGuard 监听端口（与本机可能不同）。
 	ListenPort int `json:"listen_port,omitempty"`
+	// Candidates 是对端上报的候选地址（stun / public / lan），agent 用它做 UDP 打洞选路。
+	Candidates []models.Candidate `json:"candidates,omitempty"`
 }
 
 type Network struct {
@@ -404,6 +406,8 @@ func (m *Manager) buildNetworkConfig(ctx context.Context, db *gorm.DB, network m
 			// 对端内网地址随配置下发：agent 若判断与本机同内网，会优先用它建隧道
 			LocalAddresses: []string(node.LocalAddresses),
 			ListenPort:     node.ListenPort,
+			// 对端候选地址随配置下发：agent 据此做 UDP 打洞（stun → public → lan）。
+			Candidates: []models.Candidate(node.Candidates),
 		})
 	}
 	sort.Slice(peers, func(i, j int) bool {

@@ -442,3 +442,32 @@ cd deploy/helm && bash neilico/ci/verify.sh
 - API：`GET /api/v1/web-proxy/detect`、`POST /preview`、`POST /apply`。
 - 前端：`/proxy`「反向代理」页（内置代理状态 + 外部代理列表 + 域名表单 + 预览/校验/写入）。
 - **权限坑**：控制面以 `neilico` 非 root 用户运行，读不了 `root:docker(660)` 的 socket。entrypoint 现在会按 socket 的 GID 建组并把运行用户加进去（实测 `docker socket access prepared for neilico (gid 116)`），挂载 socket 即可，无需 group_add。
+
+## STUN + UDP 打洞（Mesh P0，2026-10-26）
+
+**背景**：mesh 组网一直有个硬骨头——两边都在 NAT 后面时，`public_endpoint`（ipify 探测的**出口 IP**）不等于 WireGuard 端口的**公网映射地址**，对端按「公网IP:51820」拨过来包到不了本机，隧道永远不握手。
+
+**A. agent 侧 STUN（`agent/internal/mesh/stun.go`）**
+- 手写 RFC 5389 Binding Request（20 字节头 + 12 字节事务 ID），**零第三方依赖**；解析 `XOR-MAPPED-ADDRESS`（0x0020，兼容老的 `MAPPED-ADDRESS`）。超时 2s、重试 2 次（共 3 次尝试）。
+- 服务器可配：`NEILICO_AGENT_STUN_SERVERS`（逗号分隔），默认 `stun.l.google.com:19302`。
+- **探测失败不影响 agent 启动**：只记 warn，行为与「只有 ipify 探测」时完全一致。
+- **坑：探测绝不绑定 WireGuard 的监听端口**。绑了会和 WireGuard 抢同一个端口（WireGuard 建接口直接失败），而且真要测出「NAT 把 51820 映射成哪个外部端口」也必须复用 WireGuard 自己的套接字（本期不做）。因此探测一律用临时端口，返回的端口以**本机 WireGuard 监听端口**为准（假设 NAT 保留端口；不保留的 NAT 只能靠中继兜底，那是下一步）。
+
+**B. 候选地址上报（心跳）**
+- `client.Candidate{kind, addr}`：`lan`（内网地址 + 自己的监听端口）/ `public`（ipify 出口地址，保留既有语义）/ `stun`（STUN 观察到的公网映射地址）。
+- 心跳新增 `candidates`（`omitempty`，老控制面直接忽略）；**采集失败不阻塞心跳**：STUN 探测在**后台异步**跑（服务器不通时一次要等 6s，绝不能拖慢心跳），结果缓存 30s；public 沿用既有「每 5 分钟探测一次」的节奏，心跳只读缓存。
+
+**C. 控制面（落库 + 下发）**
+- `nodes.candidates` 新列（`jsonb not null default '[]'`，AutoMigrate 自动补列；升级路径有回归测试，参照 `internal/db/migrate_upgrade_test.go` 的「建表→删列→插历史行→再迁移」套路）。
+- 心跳落库时清洗：只认 `lan/public/stun` + 合法 `ip:port`，去重，最多 16 条。
+- **关键点：配置是按版本下发的**（agent 拿到 304 就不会重新拉）。候选变了却没人 bump 版本，对端永远拿不到新候选 → 所以心跳里检测到候选变化就 `BumpForNetwork`（接口注入，避免 service ↔ config 循环依赖），让对端尽快拿到。
+- 生成的 `peers[]` 里带 `candidates`；老 agent 不上报时字段直接不出现（`omitempty`），行为不变。
+
+**D. 打洞（`agent/internal/mesh/punch.go`）**
+- 候选顺序：**同网段 LAN → stun → public → LAN（跨网段）→ 控制面下发的 endpoint**。
+- 换候选的动作：向候选地址发 3 个 16 字节随机载荷的 UDP 包（间隔 200ms，**不构造 WireGuard 握手**，免得污染 wg 状态），再用 `wgctrl` 把候选写进对端的 peer endpoint（只改 endpoint，不动 AllowedIPs/PSK，也不 `ReplacePeers`）。
+- 验证：WireGuard 自己的握手 10s 内更新 = 该候选可用；否则换下一个。每 30s 重新评估；已连通的 endpoint 连续 3 个周期没有新握手也换。
+- **最重要的安全约束：绝不覆盖「已经能用」的 endpoint**。控制面下发的 endpoint 先用着，只有确认它握手不通才按候选顺序换——否则一次 STUN 抖动就能把能用的隧道弄断（这比「打不通」严重得多）。
+- 与 `ApplyConfig` 解耦：`Apply(ctx, peers)` 是「拿到配置之后」的可选步骤，没有候选的对端一个字节都不动。
+
+**已知边界（下一步做中继的原因）**：NAT 不保留端口、或对称型 NAT 时，打洞仍会失败；这属于本期不做的中继（relay）要解决的场景。

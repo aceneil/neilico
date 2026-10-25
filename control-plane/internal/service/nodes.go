@@ -31,6 +31,21 @@ type NodeService struct {
 	db      *gorm.DB
 	timeout time.Duration
 	crypto  *cert.Crypto
+	bumper  ConfigBumper
+}
+
+// ConfigBumper 重新生成配置快照。
+//
+// 用接口而不是直接依赖 service/config 包：config 包依赖 service 包，直接 import
+// 会形成循环依赖。节点的候选地址变了之后必须重新生成配置，否则对端永远拿不到
+// 新的候选（配置是按版本下发的，版本不变 → agent 拿到 304 → 看不到新候选）。
+type ConfigBumper interface {
+	BumpForNetwork(ctx context.Context, networkID uuid.UUID, reason string) (models.ConfigVersion, error)
+}
+
+// SetConfigBumper 注入配置版本刷新器（可选；不注入则候选变化不会触发重新下发）。
+func (s *NodeService) SetConfigBumper(bumper ConfigBumper) {
+	s.bumper = bumper
 }
 
 func NewNodeService(db *gorm.DB, heartbeatTimeout time.Duration, keyCrypto ...*cert.Crypto) *NodeService {
@@ -102,6 +117,9 @@ type HeartbeatInput struct {
 	Version      string                     `json:"version"`
 	Capabilities *capabilities.Capabilities `json:"capabilities,omitempty"`
 	Network      *NetworkFacts              `json:"network,omitempty"`
+	// Candidates 是 agent 上报的候选地址（stun / public / lan）。
+	// 老版本 agent 不带这个字段 → 行为与现在完全一致（不动既有 endpoint 逻辑）。
+	Candidates []models.Candidate `json:"candidates,omitempty"`
 }
 
 func (s *NodeService) Register(ctx context.Context, tenantID uuid.UUID, input NodeRegisterInput) (NodeRegisterOutput, error) {
@@ -293,6 +311,61 @@ func normalizeLocalAddresses(values []string) []string {
 	return normalized
 }
 
+// maxReportedCandidates 是单个节点最多保留的候选地址数量（防止超长请求体）。
+const maxReportedCandidates = 16
+
+// normalizeCandidates 校验并规整 agent 上报的候选地址：
+// 只接受已知种类（lan / public / stun）与合法的 ip:port，去重，最多保留
+// maxReportedCandidates 条。脏数据直接丢弃（不让脏数据进库）。
+func normalizeCandidates(values []models.Candidate) []models.Candidate {
+	normalized := make([]models.Candidate, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		kind := strings.ToLower(strings.TrimSpace(value.Kind))
+		switch kind {
+		case "lan", "public", "stun":
+		default:
+			continue
+		}
+		addr := strings.TrimSpace(value.Addr)
+		if addr == "" {
+			continue
+		}
+		if _, err := netip.ParseAddrPort(addr); err != nil {
+			continue
+		}
+		key := kind + "|" + addr
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		normalized = append(normalized, models.Candidate{Kind: kind, Addr: addr})
+		if len(normalized) >= maxReportedCandidates {
+			break
+		}
+	}
+	return normalized
+}
+
+// sameCandidates 比较两组候选是否一致（顺序无关）。
+func sameCandidates(left, right []models.Candidate) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	counts := make(map[string]int, len(left))
+	for _, value := range left {
+		counts[value.Kind+"|"+value.Addr]++
+	}
+	for _, value := range right {
+		key := value.Kind + "|" + value.Addr
+		counts[key]--
+		if counts[key] < 0 {
+			return false
+		}
+	}
+	return true
+}
+
 func usableReportedAddress(address netip.Addr) bool {
 	return address.IsValid() && !address.IsLoopback() && !address.IsLinkLocalUnicast() && !address.IsUnspecified()
 }
@@ -364,10 +437,40 @@ func (s *NodeService) Heartbeat(ctx context.Context, nodeID uuid.UUID, agentToke
 		node.GatewayMAC = strings.ToLower(strings.TrimSpace(input.Network.GatewayMAC))
 		node.GatewayOnPhysical = input.Network.GatewayOnPhysical
 	}
+	candidatesChanged := false
+	if len(input.Candidates) > 0 {
+		normalized := normalizeCandidates(input.Candidates)
+		if !sameCandidates(node.Candidates, normalized) {
+			node.Candidates = datatypes.JSONSlice[models.Candidate](normalized)
+			candidatesChanged = true
+		}
+	}
 	if err := s.db.WithContext(ctx).Save(&node).Error; err != nil {
 		return models.Node{}, fmt.Errorf("record heartbeat: %w", err)
 	}
+	if candidatesChanged {
+		// 候选变了 → 重新生成所在网络的配置，让对端尽快拿到新候选。
+		s.bumpNetworksForNode(ctx, node.ID)
+	}
 	return node, nil
+}
+
+// bumpNetworksForNode 重新生成该节点所在网络的配置（候选变化时调用）。
+func (s *NodeService) bumpNetworksForNode(ctx context.Context, nodeID uuid.UUID) {
+	if s.bumper == nil {
+		return
+	}
+	var memberships []models.NetworkMember
+	if err := s.db.WithContext(ctx).Where("node_id = ?", nodeID).Find(&memberships).Error; err != nil {
+		return
+	}
+	for _, membership := range memberships {
+		if _, err := s.bumper.BumpForNetwork(ctx, membership.NetworkID, "node candidates updated"); err != nil {
+			// 刷新失败不影响心跳本身：下一轮心跳候选没变就不会再刷，
+			// 但配置版本刷新是幂等的，重试由后续的心跳/其它变更兜底。
+			continue
+		}
+	}
 }
 
 type NodeListFilter struct {

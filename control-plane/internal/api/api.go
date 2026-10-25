@@ -225,6 +225,9 @@ func NewWithProxy(
 	}
 	alertEngine := alertservice.NewEngine(db, opts.Alerts, alertNotifier, promMetrics, logger)
 	configManager := configservice.New(db, certificateCrypto, promMetrics)
+	// 节点的候选地址变化时需要重新生成配置（否则对端拿不到新候选）：
+	// 用接口注入，避免 service 包与 config 包循环依赖。
+	nodeService.SetConfigBumper(configManager)
 	pkiService := pki.New(db, certificateCrypto, pki.Options{
 		Enabled:         opts.PKI.Enabled,
 		CommonName:      opts.PKI.CommonName,
